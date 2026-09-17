@@ -6,7 +6,6 @@ import KycAttestation
 import Pool
 import PoolAccess
 import PoolFactory
-import PoolFactoryApi
 
 data Parties = Parties with
     venueGovernance : Party
@@ -45,7 +44,7 @@ poolFixture parties = do
   factoryCid <- submit parties.venueGovernance $ createCmd PoolFactory with
     venueGovernance = parties.venueGovernance; venueOperator = parties.venueOperator
   contracts <- submit (requiredApprovers settings) $
-    exerciseCmd (toInterfaceContractId @PoolFactoryApi factoryCid) PoolFactory_CreatePool with settings
+    exerciseCmd factoryCid PoolFactory_CreatePool with settings
   pure (factoryCid, contracts)
 
 accessFixture : Party -> Party -> ContractId Pool

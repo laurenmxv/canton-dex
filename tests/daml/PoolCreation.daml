@@ -7,8 +7,6 @@ import Daml.Script
 import Fixtures
 import Pool
 import PoolFactory
-import PoolFactoryApi
-import PoolProposal
 
 main : Script ()
 main = script do

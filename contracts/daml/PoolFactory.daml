@@ -1,8 +1,29 @@
 module PoolFactory where
 
+import DA.List (dedup)
+import Splice.Api.Token.HoldingV2 (Account, InstrumentId)
 import Pool
-import PoolFactoryApi
-import PoolProposal
+
+data PoolSettings = PoolSettings with
+    venueGovernance : Party
+    lpTokenIssuer : Party
+    poolHoldings : Party
+    baseInstrumentId : InstrumentId
+    quoteInstrumentId : InstrumentId
+    baseAccount : Account
+    quoteAccount : Account
+    lpTokenInstrumentId : InstrumentId
+    feeBps : Decimal
+    baseReserve : Decimal
+    quoteReserve : Decimal
+    lpTokenSupply : Decimal
+  deriving (Eq, Show)
+
+data PoolContracts = PoolContracts with
+    poolCid : ContractId Pool
+    configCid : ContractId PoolConfig
+    stateCid : ContractId PoolState
+  deriving (Eq, Show)
 
 template PoolFactory
   with
@@ -19,14 +40,17 @@ template PoolFactory
         assertMsg "Factory governance mismatch" (settings.venueGovernance == venueGovernance)
         assertMsg "Invalid pool settings" (validSettings settings)
         create PoolProposal with
-          factoryCid = toInterfaceContractId @PoolFactoryApi self
+          factoryCid = self
           venueOperator
           settings
           approvals = []
 
-    interface instance PoolFactoryApi for PoolFactory where
-      view = PoolFactoryView with venueGovernance; venueOperator
-      createPool settings = do
+    nonconsuming choice PoolFactory_CreatePool : PoolContracts
+      with settings : PoolSettings
+      controller requiredApprovers settings
+      do
+        assertMsg "Factory governance mismatch" (settings.venueGovernance == venueGovernance)
+        assertMsg "Invalid pool settings" (validSettings settings)
         poolCid <- create Pool with
           venueGovernance = settings.venueGovernance
           lpTokenIssuer = settings.lpTokenIssuer
@@ -51,3 +75,50 @@ template PoolFactory
           quoteReserve = settings.quoteReserve
           lpTokenSupply = settings.lpTokenSupply
         pure PoolContracts with poolCid; configCid; stateCid
+
+template PoolProposal
+  with
+    factoryCid : ContractId PoolFactory
+    venueOperator : Party
+    settings : PoolSettings
+    approvals : [Party]
+  where
+    signatory venueOperator, approvals
+    observer filter (`notElem` approvals) (requiredApprovers settings)
+    ensure validSettings settings
+      && approvals == dedup approvals
+      && all (`elem` requiredApprovers settings) approvals
+
+    choice PoolProposal_Approve : ContractId PoolProposal
+      with approver : Party
+      controller approver
+      do
+        assertMsg "Approval is not pending"
+          (approver `elem` requiredApprovers settings && approver `notElem` approvals)
+        create this with approvals = approvals ++ [approver]
+
+    choice PoolProposal_Finalize : PoolContracts
+      controller venueOperator
+      do
+        assertMsg "Missing pool approvals"
+          (all (`elem` approvals) (requiredApprovers settings))
+        factory <- fetch factoryCid
+        assertMsg "Factory operator mismatch" (factory.venueOperator == venueOperator)
+        assertMsg "Factory governance mismatch"
+          (factory.venueGovernance == settings.venueGovernance)
+        exercise factoryCid PoolFactory_CreatePool with settings
+
+requiredApprovers : PoolSettings -> [Party]
+requiredApprovers settings = dedup
+  [settings.venueGovernance, settings.lpTokenIssuer, settings.poolHoldings]
+
+validSettings : PoolSettings -> Bool
+validSettings settings =
+  settings.baseInstrumentId /= settings.quoteInstrumentId
+    && settings.lpTokenInstrumentId.admin == settings.lpTokenIssuer
+    && settings.baseAccount.owner == Some settings.poolHoldings
+    && settings.quoteAccount.owner == Some settings.poolHoldings
+    && validFee settings.feeBps
+    && settings.baseReserve > 0.0
+    && settings.quoteReserve > 0.0
+    && settings.lpTokenSupply > 0.0

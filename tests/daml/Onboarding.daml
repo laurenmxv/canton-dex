@@ -1,0 +1,31 @@
+module Onboarding where
+
+import DA.Assert ((===))
+import Daml.Script
+import Fixtures
+import KycAttestation
+import PoolAccess
+
+main : Script ()
+main = script do
+  parties <- allocateParties ()
+  (_, pool) <- poolFixture parties
+  alice <- allocateParty "Alice"
+
+  debug "Existing party and approved KYC."
+  attestationCid <- submit parties.venueOperator $ createCmd KycAttestation with
+    venueOperator = parties.venueOperator; trader = alice; pools = [pool.poolCid]
+
+  debug "Operator grants Alice access to the pool."
+  let access = PoolAccess with
+        venueOperator = parties.venueOperator; trader = alice
+        poolCid = pool.poolCid; attestationCid
+  accessCid <- submit parties.venueOperator $ createCmd access
+
+  aliceAccess <- queryContractId alice accessCid
+  operatorAccess <- queryContractId parties.venueOperator accessCid
+  aliceAccess === Some access
+  operatorAccess === Some access
+  aliceKyc <- queryContractId alice attestationCid
+  aliceKyc === Some (KycAttestation parties.venueOperator alice [pool.poolCid])
+  debug "Alice can see her PoolAccess and KYC attestation."

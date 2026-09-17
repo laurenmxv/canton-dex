@@ -1,0 +1,13 @@
+module KycAttestation where
+
+import Pool
+
+template KycAttestation
+  with
+    venueOperator : Party
+    trader : Party
+    pools : [ContractId Pool]
+  where
+    signatory venueOperator
+    observer trader
+    ensure not (null pools)

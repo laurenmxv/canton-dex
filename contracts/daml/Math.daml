@@ -1,0 +1,14 @@
+module Math where
+
+swapOutput : Decimal -> Decimal -> Decimal -> Decimal -> Decimal
+swapOutput feeBps reserveIn reserveOut amountIn =
+  let netInput = amountIn * (10000.0 - feeBps) / 10000.0
+  in reserveOut * netInput / (reserveIn + netInput)
+
+liquidityMinted : Decimal -> Decimal -> Decimal -> Decimal -> Decimal -> Decimal
+liquidityMinted baseReserve quoteReserve supply baseAmount quoteAmount =
+  min (baseAmount * supply / baseReserve) (quoteAmount * supply / quoteReserve)
+
+liquidityWithdrawn : Decimal -> Decimal -> Decimal -> Decimal -> (Decimal, Decimal)
+liquidityWithdrawn baseReserve quoteReserve supply lpTokens =
+  (baseReserve * lpTokens / supply, quoteReserve * lpTokens / supply)

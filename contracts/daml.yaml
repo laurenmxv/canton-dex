@@ -1,0 +1,12 @@
+sdk-version: 3.5.7
+name: oz-dex-ri
+version: 0.0.1
+source: daml
+dependencies:
+  - daml-prim
+  - daml-stdlib
+data-dependencies:
+  - ../dars/splice-api-token-holding-v2-1.0.0.dar
+build-options:
+  - --target=2.3
+  - -Wupgrade-interfaces

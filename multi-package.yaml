@@ -1,0 +1,4 @@
+sdk-version: 3.5.7
+packages:
+  - contracts
+  - tests

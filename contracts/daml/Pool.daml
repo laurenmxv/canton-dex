@@ -1,0 +1,194 @@
+module Pool where
+
+import Splice.Api.Token.HoldingV2 (Account, InstrumentId)
+import Math
+
+data SwapDirection = BaseToQuote | QuoteToBase
+  deriving (Eq, Show)
+
+data SwapRequest = SwapRequest with
+    poolCid : ContractId Pool
+    trader : Party
+    direction : SwapDirection
+    amountIn : Decimal
+    minOut : Decimal
+  deriving (Eq, Show)
+
+data DepositRequest = DepositRequest with
+    poolCid : ContractId Pool
+    trader : Party
+    baseAmount : Decimal
+    quoteAmount : Decimal
+    minLpTokens : Decimal
+  deriving (Eq, Show)
+
+data WithdrawalRequest = WithdrawalRequest with
+    poolCid : ContractId Pool
+    trader : Party
+    lpTokens : Decimal
+    minBase : Decimal
+    minQuote : Decimal
+  deriving (Eq, Show)
+
+data SwapResult = SwapResult with
+    stateCid : ContractId PoolState
+    amountsOut : [Decimal]
+  deriving (Eq, Show)
+
+data DepositResult = DepositResult with
+    stateCid : ContractId PoolState
+    lpTokens : Decimal
+  deriving (Eq, Show)
+
+data WithdrawalResult = WithdrawalResult with
+    stateCid : ContractId PoolState
+    baseAmount : Decimal
+    quoteAmount : Decimal
+  deriving (Eq, Show)
+
+template Pool
+  with
+    venueGovernance : Party
+    lpTokenIssuer : Party
+    poolHoldings : Party
+    baseInstrumentId : InstrumentId
+    quoteInstrumentId : InstrumentId
+    baseAccount : Account
+    quoteAccount : Account
+    lpTokenInstrumentId : InstrumentId
+  where
+    signatory venueGovernance, lpTokenIssuer, poolHoldings
+    ensure baseInstrumentId /= quoteInstrumentId
+      && lpTokenInstrumentId.admin == lpTokenIssuer
+      && baseAccount.owner == Some poolHoldings
+      && quoteAccount.owner == Some poolHoldings
+
+    nonconsuming choice Pool_Swap : SwapResult
+      with
+        configCid : ContractId PoolConfig
+        stateCid : ContractId PoolState
+        requests : [SwapRequest]
+      controller venueGovernance
+      do
+        (config, state) <- loadComponents this self configCid stateCid
+        assertMsg "Swap batch must not be empty" (not (null requests))
+        (nextState, amountsOut) <- applySwaps config.feeBps state requests
+        archive stateCid
+        nextCid <- create nextState
+        pure SwapResult with stateCid = nextCid; amountsOut
+
+    nonconsuming choice Pool_AddLiquidity : DepositResult
+      with
+        configCid : ContractId PoolConfig
+        stateCid : ContractId PoolState
+        request : DepositRequest
+      controller venueGovernance
+      do
+        (_, state) <- loadComponents this self configCid stateCid
+        assertMsg "Deposit pool mismatch" (request.poolCid == state.poolCid)
+        assertMsg "Invalid deposit amounts"
+          (request.baseAmount > 0.0 && request.quoteAmount > 0.0 && request.minLpTokens >= 0.0)
+        assertMsg "Deposit must be proportional"
+          (request.baseAmount * state.quoteReserve == request.quoteAmount * state.baseReserve)
+        let lpTokens = liquidityMinted state.baseReserve state.quoteReserve state.lpTokenSupply
+              request.baseAmount request.quoteAmount
+        assertMsg "Deposit below minimum LP output" (lpTokens > 0.0 && lpTokens >= request.minLpTokens)
+        archive stateCid
+        nextCid <- create state with
+          baseReserve = state.baseReserve + request.baseAmount
+          quoteReserve = state.quoteReserve + request.quoteAmount
+          lpTokenSupply = state.lpTokenSupply + lpTokens
+        pure DepositResult with stateCid = nextCid; lpTokens
+
+    nonconsuming choice Pool_WithdrawLiquidity : WithdrawalResult
+      with
+        configCid : ContractId PoolConfig
+        stateCid : ContractId PoolState
+        request : WithdrawalRequest
+      controller venueGovernance
+      do
+        (_, state) <- loadComponents this self configCid stateCid
+        assertMsg "Withdrawal pool mismatch" (request.poolCid == state.poolCid)
+        assertMsg "Withdrawal must be positive and partial"
+          (request.lpTokens > 0.0 && request.lpTokens < state.lpTokenSupply)
+        assertMsg "Invalid withdrawal limits" (request.minBase >= 0.0 && request.minQuote >= 0.0)
+        let (baseAmount, quoteAmount) = liquidityWithdrawn state.baseReserve state.quoteReserve
+              state.lpTokenSupply request.lpTokens
+        assertMsg "Withdrawal below minimum output"
+          (baseAmount > 0.0 && quoteAmount > 0.0
+            && baseAmount >= request.minBase && quoteAmount >= request.minQuote)
+        archive stateCid
+        nextCid <- create state with
+          baseReserve = state.baseReserve - baseAmount
+          quoteReserve = state.quoteReserve - quoteAmount
+          lpTokenSupply = state.lpTokenSupply - request.lpTokens
+        pure WithdrawalResult with stateCid = nextCid; baseAmount; quoteAmount
+
+template PoolConfig
+  with
+    poolCid : ContractId Pool
+    venueGovernance : Party
+    lpTokenIssuer : Party
+    poolHoldings : Party
+    feeBps : Decimal
+  where
+    signatory venueGovernance, lpTokenIssuer, poolHoldings
+    ensure validFee feeBps
+
+    choice PoolConfig_Update : ContractId PoolConfig
+      with newFeeBps : Decimal
+      controller venueGovernance
+      do
+        assertMsg "Fee must be between 0 and 10000 bps" (validFee newFeeBps)
+        create this with feeBps = newFeeBps
+
+template PoolState
+  with
+    poolCid : ContractId Pool
+    venueGovernance : Party
+    lpTokenIssuer : Party
+    poolHoldings : Party
+    baseReserve : Decimal
+    quoteReserve : Decimal
+    lpTokenSupply : Decimal
+  where
+    signatory venueGovernance, lpTokenIssuer, poolHoldings
+    ensure baseReserve > 0.0 && quoteReserve > 0.0 && lpTokenSupply > 0.0
+
+validFee : Decimal -> Bool
+validFee feeBps = feeBps >= 0.0 && feeBps < 10000.0
+
+loadComponents : Pool -> ContractId Pool -> ContractId PoolConfig -> ContractId PoolState
+  -> Update (PoolConfig, PoolState)
+loadComponents pool poolCid configCid stateCid = do
+  config <- fetch configCid
+  state <- fetch stateCid
+  assertMsg "Configuration pool mismatch" (config.poolCid == poolCid)
+  assertMsg "State pool mismatch" (state.poolCid == poolCid)
+  assertMsg "Configuration authority mismatch"
+    ((config.venueGovernance, config.lpTokenIssuer, config.poolHoldings)
+      == (pool.venueGovernance, pool.lpTokenIssuer, pool.poolHoldings))
+  assertMsg "State authority mismatch"
+    ((state.venueGovernance, state.lpTokenIssuer, state.poolHoldings)
+      == (pool.venueGovernance, pool.lpTokenIssuer, pool.poolHoldings))
+  pure (config, state)
+
+applySwaps : Decimal -> PoolState -> [SwapRequest] -> Update (PoolState, [Decimal])
+applySwaps _ state [] = pure (state, [])
+applySwaps feeBps state (request :: rest) = do
+  assertMsg "Swap pool mismatch" (request.poolCid == state.poolCid)
+  assertMsg "Invalid swap amounts" (request.amountIn > 0.0 && request.minOut >= 0.0)
+  let (reserveIn, reserveOut) = case request.direction of
+        BaseToQuote -> (state.baseReserve, state.quoteReserve)
+        QuoteToBase -> (state.quoteReserve, state.baseReserve)
+      amountOut = swapOutput feeBps reserveIn reserveOut request.amountIn
+  assertMsg "Swap below minimum output" (amountOut > 0.0 && amountOut >= request.minOut)
+  let nextState = case request.direction of
+        BaseToQuote -> state with
+          baseReserve = reserveIn + request.amountIn
+          quoteReserve = reserveOut - amountOut
+        QuoteToBase -> state with
+          baseReserve = reserveOut - amountOut
+          quoteReserve = reserveIn + request.amountIn
+  (finalState, amountsOut) <- applySwaps feeBps nextState rest
+  pure (finalState, amountOut :: amountsOut)

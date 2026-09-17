@@ -1,0 +1,8 @@
+package: splice-api-token-holding-v2
+version: 1.0.0
+file: dars/splice-api-token-holding-v2-1.0.0.dar
+main-package-id: dcf74571dd11e678637924e9f10a61a15727801c83c0f21d3218656b7e6039f8
+sha256: 1773772d230ae7331dc24b0055db91e65943e1beb879436b52288365f156868f
+source: https://github.com/hyperledger-labs/splice/tree/69b43eb761e38695052c983715aa855c8cb207fc/token-standard/splice-api-token-holding-v2
+license: Apache-2.0
+license-file: dars/LICENSE-Apache-2.0.txt

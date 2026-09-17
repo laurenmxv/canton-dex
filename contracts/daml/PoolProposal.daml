@@ -1,0 +1,36 @@
+module PoolProposal where
+
+import DA.List (dedup)
+import PoolFactoryApi
+
+template PoolProposal
+  with
+    factoryCid : ContractId PoolFactoryApi
+    venueOperator : Party
+    settings : PoolSettings
+    approvals : [Party]
+  where
+    signatory venueOperator, approvals
+    observer filter (`notElem` approvals) (requiredApprovers settings)
+    ensure validSettings settings
+      && approvals == dedup approvals
+      && all (`elem` requiredApprovers settings) approvals
+
+    choice PoolProposal_Approve : ContractId PoolProposal
+      with approver : Party
+      controller approver
+      do
+        assertMsg "Approval is not pending"
+          (approver `elem` requiredApprovers settings && approver `notElem` approvals)
+        create this with approvals = approvals ++ [approver]
+
+    choice PoolProposal_Finalize : PoolContracts
+      controller venueOperator
+      do
+        assertMsg "Missing pool approvals"
+          (all (`elem` approvals) (requiredApprovers settings))
+        factory <- fetch factoryCid
+        assertMsg "Factory operator mismatch" ((view factory).venueOperator == venueOperator)
+        assertMsg "Factory governance mismatch"
+          ((view factory).venueGovernance == settings.venueGovernance)
+        exercise factoryCid PoolFactory_CreatePool with settings

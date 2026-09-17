@@ -1,0 +1,64 @@
+module Swaps where
+
+import DA.Assert ((===))
+import DA.Foldable (forA_)
+import DA.Optional (isSome, mapOptional)
+import Daml.Script
+import Fixtures
+import Pool
+import PoolAccess
+
+main : Script ()
+main = script do
+  parties <- allocateParties ()
+  (_, pool) <- poolFixture parties
+  alice <- allocateParty "Alice"
+  bob <- allocateParty "Bob"
+  carol <- allocateParty "Carol"
+  (_, aliceAccess) <- accessFixture parties.venueOperator alice pool.poolCid
+  (_, bobAccess) <- accessFixture parties.venueOperator bob pool.poolCid
+  (_, carolAccess) <- accessFixture parties.venueOperator carol pool.poolCid
+  Some originalPool <- queryContractId parties.venueGovernance pool.poolCid
+  Some originalConfig <- queryContractId parties.venueGovernance pool.configCid
+  Some originalState <- queryContractId parties.venueGovernance pool.stateCid
+
+  debug "Alice, Bob and Carol request swaps through their own PoolAccess."
+  aliceSwap <- submit alice $ exerciseCmd aliceAccess PoolAccess_RequestSwap with
+    direction = BaseToQuote; amountIn = 1000.0; minOut = 500.0
+  bobSwap <- submit bob $ exerciseCmd bobAccess PoolAccess_RequestSwap with
+    direction = BaseToQuote; amountIn = 100.0; minOut = 0.0
+  carolSwap <- submit carol $ exerciseCmd carolAccess PoolAccess_RequestSwap with
+    direction = QuoteToBase; amountIn = 500.0; minOut = 997.0
+
+  -- Simulate the backend queue; leave Bob pending and preserve arrival order.
+  let backendQueue = [aliceSwap, bobSwap, carolSwap]
+      batch = filter (\request -> request.trader /= bob) backendQueue
+      remainingQueue = filter (\request -> request.trader == bob) backendQueue
+  map (.trader) backendQueue === [alice, bob, carol]
+  map (.trader) batch === [alice, carol]
+  remainingQueue === [bobSwap]
+  beforeSettlement <- queryContractId parties.venueGovernance pool.stateCid
+  beforeSettlement === Some originalState
+
+  debug "Governance settles Alice then Carol in one transaction."
+  (result, transaction) <- submitResultAndTree (actAs parties.venueGovernance) $
+    exerciseCmd pool.poolCid Pool_Swap with
+      configCid = pool.configCid; stateCid = pool.stateCid; requests = batch
+  result.amountsOut === [500.0, 997.0]
+  let creates = createdContracts transaction.rootEvents
+      expectedState = originalState with baseReserve = 1000.0; quoteReserve = 1000.0
+  length transaction.rootEvents === 1
+  length creates === 1
+  mapOptional (\event -> fromAnyContractId @PoolState event.contractId) creates === [result.stateCid]
+  oldState <- queryContractId parties.venueGovernance pool.stateCid
+  oldState === None
+  states <- queryFilter @PoolState parties.venueGovernance (\state -> state.poolCid == pool.poolCid)
+  states === [(result.stateCid, expectedState)]
+  currentPool <- queryContractId parties.venueGovernance pool.poolCid
+  currentConfig <- queryContractId parties.venueGovernance pool.configCid
+  currentPool === Some originalPool
+  currentConfig === Some originalConfig
+  forA_ [(alice, aliceAccess), (bob, bobAccess), (carol, carolAccess)] $ \(trader, cid) -> do
+    access <- queryContractId trader cid
+    assertMsg "PoolAccess must remain active" (isSome access)
+  debug "One new PoolState; same Pool and config; Bob remains queued."

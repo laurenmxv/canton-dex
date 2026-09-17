@@ -1,0 +1,62 @@
+-- Based on Moonsong Labs' Vault Access pattern (MIT).
+-- Original work: Copyright (c) 2026 Moonsong Labs.
+-- https://github.com/Moonsong-Labs/canton-vaults/tree/main/patterns/01-vault-access
+
+module PoolAccess where
+
+import KycAttestation
+import Pool
+
+template PoolAccess
+  with
+    venueOperator : Party
+    trader : Party
+    poolCid : ContractId Pool
+    attestationCid : ContractId KycAttestation
+  where
+    signatory venueOperator
+    observer trader
+
+    nonconsuming choice PoolAccess_RequestSwap : SwapRequest
+      with
+        direction : SwapDirection
+        amountIn : Decimal
+        minOut : Decimal
+      controller trader
+      do
+        validateAttestation this
+        assertMsg "Invalid swap amounts" (amountIn > 0.0 && minOut >= 0.0)
+        pure SwapRequest with poolCid; trader; direction; amountIn; minOut
+
+    nonconsuming choice PoolAccess_RequestDeposit : DepositRequest
+      with
+        baseAmount : Decimal
+        quoteAmount : Decimal
+        minLpTokens : Decimal
+      controller trader
+      do
+        validateAttestation this
+        assertMsg "Invalid deposit amounts"
+          (baseAmount > 0.0 && quoteAmount > 0.0 && minLpTokens >= 0.0)
+        pure DepositRequest with poolCid; trader; baseAmount; quoteAmount; minLpTokens
+
+    nonconsuming choice PoolAccess_RequestWithdrawal : WithdrawalRequest
+      with
+        lpTokens : Decimal
+        minBase : Decimal
+        minQuote : Decimal
+      controller trader
+      do
+        validateAttestation this
+        assertMsg "Invalid withdrawal amounts"
+          (lpTokens > 0.0 && minBase >= 0.0 && minQuote >= 0.0)
+        pure WithdrawalRequest with poolCid; trader; lpTokens; minBase; minQuote
+
+-- Before accepting a request, check that its KYC attestation is still active,
+-- was issued by this operator, and covers this trader and pool.
+validateAttestation : PoolAccess -> Update ()
+validateAttestation access = do
+  attestation <- fetch access.attestationCid
+  assertMsg "KYC issuer mismatch" (attestation.venueOperator == access.venueOperator)
+  assertMsg "KYC trader mismatch" (attestation.trader == access.trader)
+  assertMsg "KYC does not cover this pool" (access.poolCid `elem` attestation.pools)

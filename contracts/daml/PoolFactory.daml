@@ -1,0 +1,53 @@
+module PoolFactory where
+
+import Pool
+import PoolFactoryApi
+import PoolProposal
+
+template PoolFactory
+  with
+    venueGovernance : Party
+    venueOperator : Party
+  where
+    signatory venueGovernance
+    observer venueOperator
+
+    nonconsuming choice PoolFactory_ProposePool : ContractId PoolProposal
+      with settings : PoolSettings
+      controller venueOperator
+      do
+        assertMsg "Factory governance mismatch" (settings.venueGovernance == venueGovernance)
+        assertMsg "Invalid pool settings" (validSettings settings)
+        create PoolProposal with
+          factoryCid = toInterfaceContractId @PoolFactoryApi self
+          venueOperator
+          settings
+          approvals = []
+
+    interface instance PoolFactoryApi for PoolFactory where
+      view = PoolFactoryView with venueGovernance; venueOperator
+      createPool settings = do
+        poolCid <- create Pool with
+          venueGovernance = settings.venueGovernance
+          lpTokenIssuer = settings.lpTokenIssuer
+          poolHoldings = settings.poolHoldings
+          baseInstrumentId = settings.baseInstrumentId
+          quoteInstrumentId = settings.quoteInstrumentId
+          baseAccount = settings.baseAccount
+          quoteAccount = settings.quoteAccount
+          lpTokenInstrumentId = settings.lpTokenInstrumentId
+        configCid <- create PoolConfig with
+          poolCid
+          venueGovernance = settings.venueGovernance
+          lpTokenIssuer = settings.lpTokenIssuer
+          poolHoldings = settings.poolHoldings
+          feeBps = settings.feeBps
+        stateCid <- create PoolState with
+          poolCid
+          venueGovernance = settings.venueGovernance
+          lpTokenIssuer = settings.lpTokenIssuer
+          poolHoldings = settings.poolHoldings
+          baseReserve = settings.baseReserve
+          quoteReserve = settings.quoteReserve
+          lpTokenSupply = settings.lpTokenSupply
+        pure PoolContracts with poolCid; configCid; stateCid

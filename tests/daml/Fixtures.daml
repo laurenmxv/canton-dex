@@ -1,0 +1,63 @@
+module Fixtures where
+
+import Daml.Script
+import Splice.Api.Token.HoldingV2 (Account(..), InstrumentId(..))
+import KycAttestation
+import Pool
+import PoolAccess
+import PoolFactory
+import PoolFactoryApi
+
+data Parties = Parties with
+    venueGovernance : Party
+    venueOperator : Party
+    lpTokenIssuer : Party
+    poolHoldings : Party
+  deriving (Eq, Show)
+
+allocateParties : () -> Script Parties
+allocateParties () = do
+  venueGovernance <- allocateParty "VENUE_GOVERNANCE"
+  venueOperator <- allocateParty "VENUE_OPERATOR"
+  lpTokenIssuer <- allocateParty "LP_TOKEN_ISSUER"
+  poolHoldings <- allocateParty "POOL_HOLDINGS"
+  pure Parties with ..
+
+settingsFor : Parties -> PoolSettings
+settingsFor parties = PoolSettings with
+  venueGovernance = parties.venueGovernance
+  lpTokenIssuer = parties.lpTokenIssuer
+  poolHoldings = parties.poolHoldings
+  baseInstrumentId = InstrumentId with admin = parties.venueGovernance; id = "BASE"
+  quoteInstrumentId = InstrumentId with admin = parties.venueGovernance; id = "QUOTE"
+  baseAccount = Account with owner = Some parties.poolHoldings; provider = None; id = "base"
+  quoteAccount = Account with owner = Some parties.poolHoldings; provider = None; id = "quote"
+  lpTokenInstrumentId = InstrumentId with admin = parties.lpTokenIssuer; id = "LP"
+  feeBps = 30.0
+  baseReserve = 997.0
+  quoteReserve = 1000.0
+  lpTokenSupply = 1000.0
+
+-- Prepare an existing pool without replaying the proposal workflow.
+poolFixture : Parties -> Script (ContractId PoolFactory, PoolContracts)
+poolFixture parties = do
+  let settings = settingsFor parties
+  factoryCid <- submit parties.venueGovernance $ createCmd PoolFactory with
+    venueGovernance = parties.venueGovernance; venueOperator = parties.venueOperator
+  contracts <- submit (requiredApprovers settings) $
+    exerciseCmd (toInterfaceContractId @PoolFactoryApi factoryCid) PoolFactory_CreatePool with settings
+  pure (factoryCid, contracts)
+
+accessFixture : Party -> Party -> ContractId Pool
+  -> Script (ContractId KycAttestation, ContractId PoolAccess)
+accessFixture venueOperator trader poolCid = do
+  attestationCid <- submit venueOperator $ createCmd KycAttestation with
+    venueOperator; trader; pools = [poolCid]
+  accessCid <- submit venueOperator $ createCmd PoolAccess with
+    venueOperator; trader; poolCid; attestationCid
+  pure (attestationCid, accessCid)
+
+createdContracts : [TreeEvent] -> [Created]
+createdContracts = concatMap $ \event -> case event of
+  CreatedEvent created -> [created]
+  ExercisedEvent exercised -> createdContracts exercised.childEvents

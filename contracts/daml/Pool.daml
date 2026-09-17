@@ -1,7 +1,7 @@
 module Pool where
 
 import Splice.Api.Token.HoldingV2 (Account, InstrumentId)
-import Math
+import Lib.Math
 
 data SwapDirection = BaseToQuote | QuoteToBase
   deriving (Eq, Show)

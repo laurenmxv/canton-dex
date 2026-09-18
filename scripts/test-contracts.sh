@@ -6,7 +6,7 @@ if [[ $# -ne 0 ]]; then
   exit 2
 fi
 
-cd "$(dirname "${BASH_SOURCE[0]}")/.."
+cd "$(dirname "${BASH_SOURCE[0]}")/../contracts"
 unset DAML_PACKAGE
 
 dpm_bin="${DPM_BIN:-}"
@@ -18,9 +18,6 @@ if ! command -v "$dpm_bin" >/dev/null 2>&1; then
   exit 1
 fi
 
-if [[ -z "${JAVA_HOME:-}" && -x /Applications/RustRover.app/Contents/jbr/Contents/Home/bin/java ]]; then
-  export JAVA_HOME=/Applications/RustRover.app/Contents/jbr/Contents/Home
-fi
 java_bin="${JAVA_HOME:+$JAVA_HOME/bin/}java"
 if ! "$java_bin" -version >/dev/null 2>&1; then
   printf 'Java not found. Set JAVA_HOME to a working JDK.\n' >&2

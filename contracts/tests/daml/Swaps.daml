@@ -1,0 +1,150 @@
+module Swaps where
+
+import DA.Assert ((===))
+import DA.Foldable (forA_)
+import DA.Optional (isSome, mapOptional)
+import Daml.Script
+import Fixtures
+import Pool
+import PoolAccess
+import PoolFactory (PoolContracts)
+
+main : Script ()
+main = script do
+  parties <- allocateParties ()
+  (_, pool) <- poolFixture parties
+  alice <- allocateParty "Alice"
+  bob <- allocateParty "Bob"
+  carol <- allocateParty "Carol"
+  (_, aliceAccess) <- accessFixture parties.venueOperator alice pool.poolCid
+  (_, bobAccess) <- accessFixture parties.venueOperator bob pool.poolCid
+  (_, carolAccess) <- accessFixture parties.venueOperator carol pool.poolCid
+  Some originalPool <- queryContractId parties.dvv pool.poolCid
+  Some originalConfig <- queryContractId parties.dvv pool.configCid
+  Some originalState <- queryContractId parties.dvv pool.stateCid
+
+  debug "Alice, Bob and Carol request swaps through their own PoolAccess."
+  aliceSwap <- submit alice $ exerciseCmd aliceAccess PoolAccess_RequestSwap with
+    direction = BaseToQuote; amountIn = 1000.0; minOut = 500.0
+  bobSwap <- submit bob $ exerciseCmd bobAccess PoolAccess_RequestSwap with
+    direction = BaseToQuote; amountIn = 100.0; minOut = 0.0
+  carolSwap <- submit carol $ exerciseCmd carolAccess PoolAccess_RequestSwap with
+    direction = QuoteToBase; amountIn = 500.0; minOut = 997.0
+
+  checkPoolAuthority parties pool alice aliceSwap
+  checkComponents parties pool aliceSwap
+
+  -- Simulate the backend queue; leave Bob pending and preserve arrival order.
+  let backendQueue = [aliceSwap, bobSwap, carolSwap]
+      batch = filter (\request -> request.trader /= bob) backendQueue
+      remainingQueue = filter (\request -> request.trader == bob) backendQueue
+  map (.trader) backendQueue === [alice, bob, carol]
+  map (.trader) batch === [alice, carol]
+  remainingQueue === [bobSwap]
+  beforeSettlement <- queryContractId parties.dvv pool.stateCid
+  beforeSettlement === Some originalState
+
+  debug "DVV applies Alice then Carol in one accounting transaction."
+  (result, transaction) <- submitResultAndTree (actAs parties.dvv) $
+    exerciseCmd pool.poolCid Pool_Swap with
+      configCid = pool.configCid; stateCid = pool.stateCid; requests = batch
+  result.amountsOut === [500.0, 997.0]
+  let creates = createdContracts transaction.rootEvents
+      expectedState = originalState with baseReserve = 1000.0; quoteReserve = 1000.0
+  length transaction.rootEvents === 1
+  length creates === 1
+  mapOptional (\event -> fromAnyContractId @PoolState event.contractId) creates === [result.stateCid]
+  oldState <- queryContractId parties.dvv pool.stateCid
+  oldState === None
+  states <- queryFilter @PoolState parties.dvv (\state -> state.poolCid == pool.poolCid)
+  states === [(result.stateCid, expectedState)]
+  currentPool <- queryContractId parties.dvv pool.poolCid
+  currentConfig <- queryContractId parties.dvv pool.configCid
+  currentPool === Some originalPool
+  currentConfig === Some originalConfig
+  forA_ [(alice, aliceAccess), (bob, bobAccess), (carol, carolAccess)] $ \(trader, cid) -> do
+    access <- queryContractId trader cid
+    assertMsg "PoolAccess must remain active" (isSome access)
+  debug "One new PoolState; same Pool and config; Bob remains queued."
+
+  debug "DVV retains fee, deposit and withdrawal authority."
+  nextConfig <- submit parties.dvv $ exerciseCmd pool.configCid PoolConfig_Update with
+    newFeeBps = 50.0
+  updatedConfig <- queryContractId parties.venueOperator nextConfig
+  updatedConfig === Some (originalConfig with feeBps = 50.0)
+  let deposit = DepositRequest with
+        poolCid = pool.poolCid; trader = alice
+        baseAmount = 100.0; quoteAmount = 100.0; minLpTokens = 100.0
+  deposited <- submit parties.dvv $ exerciseCmd pool.poolCid Pool_AddLiquidity with
+    configCid = nextConfig; stateCid = result.stateCid; request = deposit
+  deposited.lpTokens === 100.0
+  depositState <- queryContractId parties.venueOperator deposited.stateCid
+  depositState === Some (expectedState with
+    baseReserve = 1100.0; quoteReserve = 1100.0; lpTokenSupply = 1100.0)
+  let withdrawal = WithdrawalRequest with
+        poolCid = pool.poolCid; trader = alice
+        lpTokens = 100.0; minBase = 100.0; minQuote = 100.0
+  withdrawn <- submit parties.dvv $ exerciseCmd pool.poolCid Pool_WithdrawLiquidity with
+    configCid = nextConfig; stateCid = deposited.stateCid; request = withdrawal
+  withdrawn.baseAmount === 100.0
+  withdrawn.quoteAmount === 100.0
+  finalState <- queryContractId parties.venueOperator withdrawn.stateCid
+  finalState === Some expectedState
+
+checkPoolAuthority : Parties -> PoolContracts -> Party -> SwapRequest -> Script ()
+checkPoolAuthority parties pool trader swap = do
+  Some state <- queryContractId parties.dvv pool.stateCid
+  Some config <- queryContractId parties.dvv pool.configCid
+  let deposit = DepositRequest with
+        poolCid = pool.poolCid; trader
+        baseAmount = 99.7; quoteAmount = 100.0; minLpTokens = 100.0
+      withdrawal = WithdrawalRequest with
+        poolCid = pool.poolCid; trader
+        lpTokens = 100.0; minBase = 99.7; minQuote = 100.0
+  forA_ [parties.venueOperator, trader] $ \actor -> do
+    -- Supply visibility explicitly, so missing authority is the failing boundary.
+    let options = actAs actor <> readAs parties.dvv
+    submitMustFail options $ exerciseCmd pool.poolCid Pool_Swap with
+      configCid = pool.configCid; stateCid = pool.stateCid; requests = [swap]
+    submitMustFail options $ exerciseCmd pool.poolCid Pool_AddLiquidity with
+      configCid = pool.configCid; stateCid = pool.stateCid; request = deposit
+    submitMustFail options $ exerciseCmd pool.poolCid Pool_WithdrawLiquidity with
+      configCid = pool.configCid; stateCid = pool.stateCid; request = withdrawal
+    submitMustFail options $ exerciseCmd pool.configCid PoolConfig_Update with newFeeBps = 50.0
+    currentState <- queryContractId parties.dvv pool.stateCid
+    currentConfig <- queryContractId parties.dvv pool.configCid
+    currentState === Some state
+    currentConfig === Some config
+
+checkComponents : Parties -> PoolContracts -> SwapRequest -> Script ()
+checkComponents parties pool swap = do
+  Some state <- queryContractId parties.dvv pool.stateCid
+  Some config <- queryContractId parties.dvv pool.configCid
+  (_, otherPool) <- poolFixture parties
+  otherDvv <- allocateParty "OTHER_POOL_DVV"
+  otherOperator <- allocateParty "OTHER_POOL_OPERATOR"
+  wrongAuthorityConfig <- submit otherDvv $ createCmd (config with dvv = otherDvv)
+  wrongAuthorityState <- submit otherDvv $ createCmd (state with dvv = otherDvv)
+  wrongOperatorConfig <- submit parties.dvv $ createCmd (config with venueOperator = otherOperator)
+  wrongOperatorState <- submit parties.dvv $ createCmd (state with venueOperator = otherOperator)
+  forA_
+    [ (otherPool.configCid, pool.stateCid)
+    , (pool.configCid, otherPool.stateCid)
+    , (wrongAuthorityConfig, pool.stateCid)
+    , (pool.configCid, wrongAuthorityState)
+    , (wrongOperatorConfig, pool.stateCid)
+    , (pool.configCid, wrongOperatorState)
+    ] $ \(configCid, stateCid) -> do
+      -- Even a DVV-authorized caller cannot mix components across pools or authorities.
+      submitMustFail (actAs parties.dvv <> readAs otherDvv) $
+        exerciseCmd pool.poolCid Pool_Swap with configCid; stateCid; requests = [swap]
+      currentState <- queryContractId parties.dvv pool.stateCid
+      currentConfig <- queryContractId parties.dvv pool.configCid
+      currentState === Some state
+      currentConfig === Some config
+
+  -- Remove adversarial fixtures before the main scenario checks its active state.
+  submit otherDvv $ archiveCmd wrongAuthorityConfig
+  submit otherDvv $ archiveCmd wrongAuthorityState
+  submit parties.dvv $ archiveCmd wrongOperatorConfig
+  submit parties.dvv $ archiveCmd wrongOperatorState

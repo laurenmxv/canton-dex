@@ -7,7 +7,7 @@ dependencies:
   - daml-stdlib
   - daml-script
 data-dependencies:
-  - ../contracts/.daml/dist/oz-dex-ri-0.0.1.dar
+  - ../.daml/dist/oz-dex-ri-0.0.1.dar
   - ../dars/splice-api-token-holding-v2-1.0.0.dar
 build-options:
   - --target=2.3

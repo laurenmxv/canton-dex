@@ -8,30 +8,28 @@ import PoolAccess
 import PoolFactory
 
 data Parties = Parties with
-    venueGovernance : Party
+    dvv : Party
     venueOperator : Party
-    lpTokenIssuer : Party
-    poolHoldings : Party
+    baseRegistrar : Party
+    quoteRegistrar : Party
   deriving (Eq, Show)
 
 allocateParties : () -> Script Parties
 allocateParties () = do
-  venueGovernance <- allocateParty "VENUE_GOVERNANCE"
+  dvv <- allocateParty "DVV"
   venueOperator <- allocateParty "VENUE_OPERATOR"
-  lpTokenIssuer <- allocateParty "LP_TOKEN_ISSUER"
-  poolHoldings <- allocateParty "POOL_HOLDINGS"
+  baseRegistrar <- allocateParty "BASE_REGISTRAR"
+  quoteRegistrar <- allocateParty "QUOTE_REGISTRAR"
   pure Parties with ..
 
 settingsFor : Parties -> PoolSettings
 settingsFor parties = PoolSettings with
-  venueGovernance = parties.venueGovernance
-  lpTokenIssuer = parties.lpTokenIssuer
-  poolHoldings = parties.poolHoldings
-  baseInstrumentId = InstrumentId with admin = parties.venueGovernance; id = "BASE"
-  quoteInstrumentId = InstrumentId with admin = parties.venueGovernance; id = "QUOTE"
-  baseAccount = Account with owner = Some parties.poolHoldings; provider = None; id = "base"
-  quoteAccount = Account with owner = Some parties.poolHoldings; provider = None; id = "quote"
-  lpTokenInstrumentId = InstrumentId with admin = parties.lpTokenIssuer; id = "LP"
+  dvv = parties.dvv
+  baseInstrumentId = InstrumentId with admin = parties.baseRegistrar; id = "BASE"
+  quoteInstrumentId = InstrumentId with admin = parties.quoteRegistrar; id = "QUOTE"
+  baseAccount = Account with owner = Some parties.dvv; provider = None; id = "base"
+  quoteAccount = Account with owner = Some parties.dvv; provider = None; id = "quote"
+  lpTokenInstrumentId = InstrumentId with admin = parties.dvv; id = "LP"
   feeBps = 30.0
   baseReserve = 997.0
   quoteReserve = 1000.0
@@ -41,9 +39,9 @@ settingsFor parties = PoolSettings with
 poolFixture : Parties -> Script (ContractId PoolFactory, PoolContracts)
 poolFixture parties = do
   let settings = settingsFor parties
-  factoryCid <- submit parties.venueGovernance $ createCmd PoolFactory with
-    venueGovernance = parties.venueGovernance; venueOperator = parties.venueOperator
-  contracts <- submit (requiredApprovers settings) $
+  factoryCid <- submit parties.dvv $ createCmd PoolFactory with
+    dvv = parties.dvv; venueOperator = parties.venueOperator
+  contracts <- submit parties.dvv $
     exerciseCmd factoryCid PoolFactory_CreatePool with settings
   pure (factoryCid, contracts)
 

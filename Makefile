@@ -1,4 +1,4 @@
 .PHONY: test
 
 test:
-	@./scripts/test.sh
+	@./scripts/test-contracts.sh

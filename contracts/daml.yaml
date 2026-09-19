@@ -1,5 +1,5 @@
 sdk-version: 3.5.7
-name: oz-dex-ri
+name: oz-dex-ri-dvv
 version: 0.0.1
 source: daml
 dependencies:

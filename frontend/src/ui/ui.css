@@ -1,0 +1,659 @@
+/* Shared primitive styles. Hairline borders, no shadows, one accent colour. */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: var(--radius-md);
+  border-width: 1px;
+  border-color: transparent;
+  font-weight: 500;
+  font-size: 0.875rem;
+  white-space: nowrap;
+  transition:
+    background-color var(--animation-fast) var(--ease-out),
+    border-color var(--animation-fast) var(--ease-out),
+    color var(--animation-fast) var(--ease-out);
+}
+
+.btn-md {
+  height: 2.25rem;
+  padding: 0 0.875rem;
+}
+
+.btn-sm {
+  height: 1.875rem;
+  padding: 0 0.625rem;
+  font-size: 0.8125rem;
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--primary) 88%, black);
+}
+
+.btn-secondary {
+  background: var(--secondary);
+  color: var(--secondary-foreground);
+  border-color: var(--border);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--secondary) 80%, var(--foreground) 6%);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--foreground);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: var(--muted);
+}
+
+.btn-danger {
+  background: transparent;
+  color: var(--destructive);
+  border-color: var(--border);
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: var(--destructive-soft);
+  border-color: var(--destructive);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+}
+
+.card {
+  background: var(--card);
+  color: var(--card-foreground);
+  border-width: 1px;
+  border-radius: var(--radius-lg);
+}
+
+.card-pad {
+  padding: 1.25rem;
+}
+
+.card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.125rem 1.25rem;
+  border-bottom-width: 1px;
+}
+
+.card-title {
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.card-desc {
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+  margin-top: 0.125rem;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  border-radius: 999px;
+  border-width: 1px;
+  padding: 0.125rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.badge-dot {
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: 999px;
+  background: currentColor;
+  flex: none;
+}
+
+.badge-neutral {
+  background: var(--muted);
+  color: var(--muted-foreground);
+  border-color: var(--border);
+}
+
+.badge-progress {
+  background: var(--primary-soft);
+  color: var(--primary);
+  border-color: var(--primary-border);
+}
+
+.badge-progress .badge-dot {
+  animation: oz-pulse 1.4s var(--ease-in-out) infinite;
+}
+
+.badge-success {
+  background: var(--success-soft);
+  color: var(--success);
+  border-color: color-mix(in oklab, var(--success) 30%, transparent);
+}
+
+.badge-warning {
+  background: var(--warning-soft);
+  color: var(--warning);
+  border-color: color-mix(in oklab, var(--warning) 35%, transparent);
+}
+
+.badge-danger {
+  background: var(--destructive-soft);
+  color: var(--destructive);
+  border-color: color-mix(in oklab, var(--destructive) 30%, transparent);
+}
+
+.callout {
+  display: flex;
+  gap: 0.625rem;
+  border-width: 1px;
+  border-radius: var(--radius-md);
+  padding: 0.75rem 0.875rem;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.callout-title {
+  font-weight: 600;
+  margin-bottom: 0.125rem;
+}
+
+.callout-info {
+  background: var(--info-soft);
+  border-color: color-mix(in oklab, var(--info) 28%, transparent);
+}
+
+.callout-warning {
+  background: var(--warning-soft);
+  border-color: color-mix(in oklab, var(--warning) 34%, transparent);
+}
+
+.callout-danger {
+  background: var(--destructive-soft);
+  border-color: color-mix(in oklab, var(--destructive) 28%, transparent);
+}
+
+.callout-demo {
+  background: var(--primary-soft);
+  border-color: var(--primary-border);
+  color: var(--foreground);
+}
+
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--card);
+}
+
+.stat-value {
+  font-size: 1.5rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.stat-label {
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
+.pool-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+  gap: 0.75rem;
+}
+
+.pool-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--card);
+}
+
+.pool-name {
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.pool-figures {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.pool-figure {
+  display: flex;
+  flex-direction: column;
+}
+
+.pool-figure-label {
+  font-size: 0.6875rem;
+  color: var(--muted-foreground);
+}
+
+.pool-figure-value {
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.proposal-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.proposal-name {
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.chip-row {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.chip {
+  padding: 0.25rem 0.625rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted-foreground);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.chip:hover {
+  color: var(--foreground);
+}
+
+.chip-on {
+  background: var(--primary-soft);
+  border-color: var(--primary-border);
+  color: var(--foreground);
+}
+
+.search-field .control {
+  min-width: 12rem;
+}
+
+@media (max-width: 720px) {
+  .stat-row,
+  .pool-figures {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.disclosure {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: 0.8125rem;
+}
+
+.disclosure-summary {
+  cursor: pointer;
+  padding: 0.5rem 0.75rem;
+  color: var(--muted-foreground);
+  font-weight: 500;
+  list-style-position: inside;
+}
+
+.disclosure-summary:hover {
+  color: var(--foreground);
+}
+
+.disclosure-body {
+  padding: 0 0.75rem 0.75rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.field-label {
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.field-hint {
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
+.field-error {
+  font-size: 0.75rem;
+  color: var(--destructive);
+}
+
+.control {
+  width: 100%;
+  border-width: 1px;
+  border-color: var(--input);
+  border-radius: var(--radius-md);
+  background: var(--background);
+  padding: 0 0.75rem;
+  height: 2.25rem;
+  font-size: 0.875rem;
+  transition: border-color var(--animation-fast) var(--ease-out);
+}
+
+textarea.control {
+  height: auto;
+  padding: 0.5rem 0.75rem;
+  resize: vertical;
+  min-height: 5rem;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+
+select.control {
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position:
+    calc(100% - 1rem) calc(50% + 1px),
+    calc(100% - 0.7rem) calc(50% + 1px);
+  background-size:
+    5px 5px,
+    5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 2rem;
+}
+
+.control:hover:not(:disabled) {
+  border-color: color-mix(in oklab, var(--input) 60%, var(--foreground) 18%);
+}
+
+.control:disabled {
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+
+.control-invalid {
+  border-color: var(--destructive);
+}
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.step {
+  display: grid;
+  grid-template-columns: 1.5rem minmax(0, 1fr);
+  gap: 0.75rem;
+  padding-bottom: 1.25rem;
+  position: relative;
+}
+
+.step:last-child {
+  padding-bottom: 0;
+}
+
+.step:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 0.6875rem;
+  top: 1.75rem;
+  bottom: 0.25rem;
+  width: 1px;
+  background: var(--border);
+}
+
+.step-marker {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 999px;
+  border-width: 1px;
+  display: grid;
+  place-items: center;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  background: var(--background);
+  color: var(--muted-foreground);
+  flex: none;
+  z-index: 1;
+}
+
+.step-current .step-marker {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.step-done .step-marker {
+  border-color: var(--success);
+  background: var(--success);
+  color: var(--background);
+}
+
+.step-title {
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.5rem;
+}
+
+.step-todo .step-title {
+  color: var(--muted-foreground);
+}
+
+.step-body {
+  margin-top: 0.5rem;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.table th {
+  text-align: left;
+  font-weight: 500;
+  font-size: 0.75rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+  padding: 0.625rem 1rem;
+  border-bottom-width: 1px;
+}
+
+.table td {
+  padding: 0.75rem 1rem;
+  border-bottom-width: 1px;
+  vertical-align: middle;
+}
+
+.table tbody tr:last-child td {
+  border-bottom-width: 0;
+}
+
+.table tbody tr:hover:has(.table-link) {
+  background: var(--muted);
+}
+
+.table-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A table too wide for a phone scrolls inside its card instead of being cut. */
+@media (max-width: 560px) {
+  .table {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+
+  .table th,
+  .table td {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+}
+
+.datalist {
+  display: grid;
+  grid-template-columns: minmax(8rem, auto) minmax(0, 1fr);
+  gap: 0.625rem 1.25rem;
+  font-size: 0.875rem;
+}
+
+.datalist dt {
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+}
+
+.datalist dd {
+  word-break: break-word;
+}
+
+.spinner {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 999px;
+  border: 2px solid color-mix(in oklab, currentColor 25%, transparent);
+  border-top-color: currentColor;
+  animation: oz-spin 700ms linear infinite;
+  flex: none;
+}
+
+.skeleton {
+  background: var(--muted);
+  border-radius: var(--radius-sm);
+  animation: oz-pulse 1.6s var(--ease-in-out) infinite;
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.375rem;
+  text-align: center;
+  padding: 2.5rem 1.25rem;
+  color: var(--muted-foreground);
+}
+
+.empty-title {
+  font-weight: 600;
+  color: var(--foreground);
+  font-size: 0.9375rem;
+}
+
+.empty-icon {
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: var(--radius-md);
+  border-width: 1px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 0.25rem;
+  background: var(--muted);
+}
+
+.table-link {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--foreground);
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: var(--border);
+  text-underline-offset: 3px;
+}
+
+.table-link:hover {
+  color: var(--primary);
+  text-decoration-color: currentColor;
+}
+
+/* ------------------------------------------------------- copyable identifiers */
+
+.copy-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.copy-value {
+  margin: 0;
+  padding: 0.5rem 0.625rem;
+  border-width: 1px;
+  border-radius: var(--radius-md);
+  background: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* --------------------------------------------------------- sortable columns */
+
+.column-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.column-sort:hover {
+  color: var(--foreground);
+}
+
+.sort-arrow {
+  font-size: 0.6875rem;
+  line-height: 1;
+}
+
+/* The idle arrow shows the column can sort, without competing with the live one. */
+.sort-arrow-idle {
+  opacity: 0;
+}
+
+.column-sort:hover .sort-arrow-idle,
+.column-sort:focus-visible .sort-arrow-idle {
+  opacity: 0.4;
+}

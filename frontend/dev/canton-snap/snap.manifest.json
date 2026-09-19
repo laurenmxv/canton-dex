@@ -1,0 +1,31 @@
+{
+  "version": "1.0.0",
+  "description": "Canton Network key management and transaction signing for MetaMask",
+  "proposedName": "Canton Snap",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ChainSafe/canton-snap.git",
+    "directory": "packages/snap"
+  },
+  "source": {
+    "shasum": "hTR6sZaSSP474bqU9CKFGs5XtifrSrG2ls/mXN/OBPs=",
+    "location": {
+      "npm": {
+        "filePath": "dist/bundle.js",
+        "iconPath": "images/icon.svg",
+        "packageName": "@chainsafe/canton-snap",
+        "registry": "https://registry.npmjs.org"
+      }
+    }
+  },
+  "initialPermissions": {
+    "snap_getEntropy": {},
+    "snap_dialog": {},
+    "snap_manageState": {},
+    "endowment:rpc": {
+      "dapps": true
+    }
+  },
+  "platformVersion": "11.1.0",
+  "manifestVersion": "0.1"
+}

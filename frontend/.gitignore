@@ -1,0 +1,10 @@
+node_modules
+dist
+*.local
+.vite
+.claude
+
+# The vendored development Snap is source, not build output. Git cannot
+# re-include a file whose directory is excluded, so the directory comes first.
+!dev/canton-snap/dist/
+!dev/canton-snap/dist/bundle.js

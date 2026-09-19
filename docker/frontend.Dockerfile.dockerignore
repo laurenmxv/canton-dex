@@ -1,0 +1,15 @@
+**
+!client/
+!client/**
+!frontend/
+!frontend/**
+**/node_modules
+**/dist
+**/.git
+**/.claude
+**/.vite
+**/.env*
+**/*.local
+!frontend/.env.keycloak
+!frontend/dev/canton-snap/dist/
+!frontend/dev/canton-snap/dist/bundle.js

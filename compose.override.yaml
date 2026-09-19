@@ -1,0 +1,5 @@
+services:
+  keycloak:
+    ports: ['127.0.0.1:18082:8082']
+    volumes:
+      - ./docker/Dex-realm.json:/opt/keycloak/data/import/Dex-realm.json:ro

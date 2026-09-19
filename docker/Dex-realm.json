@@ -1,0 +1,80 @@
+{
+  "realm": "Dex",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": true,
+  "attributes": {
+    "frontendUrl": "http://localhost:18082"
+  },
+  "clients": [
+    {
+      "clientId": "backend-tests",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "backend-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "backend",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "id": "00000000-0000-0000-0000-000000000001",
+      "username": "alice",
+      "enabled": true,
+      "firstName": "alice",
+      "lastName": "Fixture",
+      "email": "alice@example.test",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "test-password",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000002",
+      "username": "bob",
+      "enabled": true,
+      "firstName": "bob",
+      "lastName": "Fixture",
+      "email": "bob@example.test",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "test-password",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000003",
+      "username": "operator",
+      "enabled": true,
+      "firstName": "operator",
+      "lastName": "Fixture",
+      "email": "operator@example.test",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "test-password",
+          "temporary": false
+        }
+      ]
+    }
+  ]
+}

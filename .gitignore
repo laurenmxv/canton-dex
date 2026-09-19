@@ -1,3 +1,7 @@
 .daml/
-.idea
-
+.idea/
+.gradle/
+build/
+__pycache__/
+*.pyc
+.deps/

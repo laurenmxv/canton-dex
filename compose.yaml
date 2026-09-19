@@ -1,0 +1,91 @@
+name: canton-dex
+include:
+  - path:
+      - ./.deps/cn-localnet/infra/compose.yaml
+      - ./docker/participant-onboarding.yaml
+
+x-java: &java
+  image: canton-dex-tools:3.5.7-java21
+  build: ./docker/tools
+  working_dir: /workspace/backend
+  volumes:
+    - ./backend:/workspace/backend
+    - ./contracts:/workspace/contracts
+    - ./contracts/dars:/workspace/contracts/dars:ro
+    - gradle-cache:/root/.gradle
+  env_file: ./docker/backend.env
+
+services:
+  app-db:
+    image: postgres:14
+    environment:
+      POSTGRES_USER: dex
+      POSTGRES_PASSWORD: dex-local
+      POSTGRES_DB: dex
+    volumes:
+      - application-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U dex -d dex']
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  contract-bootstrap:
+    <<: *java
+    env_file: [./docker/backend.env, ./docker/bootstrap.env]
+    environment:
+      GRADLE_USER_HOME: /root/.gradle/bootstrap
+      DEX_BUILD_DIR: build/bootstrap
+    command: ['./gradlew', '--project-cache-dir', '/root/.gradle/bootstrap/project-cache', '--console=plain', 'bootstrap']
+    depends_on:
+      app-db: {condition: service_healthy}
+      application-participant: {condition: service_healthy}
+  backend:
+    <<: *java
+    environment:
+      GRADLE_USER_HOME: /root/.gradle/backend
+    command: ['./gradlew', '--project-cache-dir', '/root/.gradle/backend/project-cache', '--console=plain', 'bootRun']
+    ports: ['127.0.0.1:18080:8080']
+    healthcheck:
+      test: [CMD, curl, -fsS, 'http://localhost:8080/actuator/health/readiness']
+      interval: 5s
+      timeout: 3s
+      retries: 90
+    depends_on:
+      contract-bootstrap: {condition: service_completed_successfully}
+  frontend:
+    image: canton-dex-frontend:local
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+    init: true
+    environment:
+      DEX_API_ORIGIN: http://backend:8080
+      DEX_SNAP_BIND_HOST: 0.0.0.0
+    ports:
+      - '127.0.0.1:5180:5180'
+      - '127.0.0.1:4040:4040'
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "Promise.all(['http://127.0.0.1:5180/', 'http://127.0.0.1:4040/snap.manifest.json', 'http://127.0.0.1:4040/dist/bundle.js'].map(async url => { const r = await fetch(url); if (!r.ok) throw new Error(url); await r.arrayBuffer(); })).catch(() => process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      start_period: 15s
+      retries: 6
+    depends_on:
+      backend: {condition: service_healthy}
+  backend-tests:
+    <<: *java
+    profiles: [test]
+    env_file: [./docker/backend.env, ./docker/bootstrap.env]
+    environment:
+      GRADLE_USER_HOME: /root/.gradle/tests
+      DEX_TEST_BASE_URL: http://backend:8080
+      DEX_BUILD_DIR: build/integration
+      DEX_RESTART_STATE: ${DEX_RESTART_STATE:-/workspace/backend/build/restart-unused}
+    command: ['./gradlew', '--project-cache-dir', '/root/.gradle/tests/project-cache', '--console=plain', 'integrationTest']
+volumes:
+  gradle-cache:
+  application-postgres:

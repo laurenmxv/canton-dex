@@ -1,7 +1,15 @@
 services:
   application-participant:
+    volumes:
+      # Include overrides resolve paths from .deps/cn-localnet/infra/compose.yaml.
+      - ../../../docker/participant-bootstrap.sc:/app/bootstrap.sc:ro
     environment:
       # Canton defaults to zero. This limit applies to ordinary users of this PN,
       # across identity providers; the DEX also enforces one onboarding per account.
       ADDITIONAL_CONFIG_DEX_ONBOARDING: >-
         canton.participants.application.ledger-api.party-management-service.max-self-allocated-parties = 1
+      ADDITIONAL_CONFIG_DEX_TRAFFIC: >-
+        canton.remote-sequencers.dexSequencer {
+          admin-api { address = canton, port = 5009 }
+          public-api { address = canton, port = 5008 }
+        }

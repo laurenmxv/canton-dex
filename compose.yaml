@@ -43,6 +43,7 @@ services:
     <<: *java
     environment:
       GRADLE_USER_HOME: /root/.gradle/backend
+      DEX_DEVELOPMENT_TOKENS_ENABLED: "true"
     command: ['./gradlew', '--project-cache-dir', '/root/.gradle/backend/project-cache', '--console=plain', 'bootRun']
     ports: ['127.0.0.1:18080:8080']
     healthcheck:
@@ -83,6 +84,8 @@ services:
     environment:
       GRADLE_USER_HOME: /root/.gradle/tests
       DEX_TEST_BASE_URL: http://backend:8080
+      DEX_SETTLEMENT_TEST_DATABASE_URL: jdbc:postgresql://app-db:5432/dex?user=dex&password=dex-local
+      DEX_TOKEN_TEST_DATABASE_URL: jdbc:postgresql://app-db:5432/dex?user=dex&password=dex-local
       DEX_BUILD_DIR: build/integration
       DEX_RESTART_STATE: ${DEX_RESTART_STATE:-/workspace/backend/build/restart-unused}
     command: ['./gradlew', '--project-cache-dir', '/root/.gradle/tests/project-cache', '--console=plain', 'integrationTest']

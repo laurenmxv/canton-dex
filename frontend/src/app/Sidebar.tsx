@@ -10,6 +10,66 @@ interface SidebarProps<Id extends string> {
   footer: ReactNode;
 }
 
+/**
+ * A glyph per section, so a reader finds a row by its shape before reading it.
+ * It repeats the label beside it and is hidden from assistive technology.
+ */
+function SectionIcon({ id }: { id: string }) {
+  const paths: Record<string, ReactNode> = {
+    'trader-dashboard': (
+      <>
+        <rect x="3" y="3" width="7" height="8" rx="1.5" />
+        <rect x="14" y="3" width="7" height="5" rx="1.5" />
+        <rect x="3" y="14" width="7" height="7" rx="1.5" />
+        <rect x="14" y="11" width="7" height="10" rx="1.5" />
+      </>
+    ),
+    'trader-swap': (
+      <>
+        <path d="M7 4v13M7 17l-3-3M7 17l3-3" />
+        <path d="M17 20V7M17 7l-3 3M17 7l3 3" />
+      </>
+    ),
+    'trader-onboarding': (
+      <>
+        <path d="M20 6 9 17l-5-5" />
+      </>
+    ),
+    'operator-onboardings': (
+      <>
+        <rect x="4" y="3" width="16" height="18" rx="2" />
+        <path d="M8 8h8M8 12h8M8 16h5" />
+      </>
+    ),
+    'operator-pools': (
+      <>
+        <circle cx="9" cy="12" r="6" />
+        <circle cx="15" cy="12" r="6" />
+      </>
+    ),
+    'operator-settlement': (
+      <>
+        <path d="M3 17l6-6 4 4 7-8" />
+        <path d="M14 7h6v6" />
+      </>
+    ),
+  };
+  return (
+    <svg
+      className="sidebar-icon"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {paths[id] ?? <circle cx="12" cy="12" r="7" />}
+    </svg>
+  );
+}
+
 const FOCUSABLE = [
   'button:not([disabled])',
   'a[href]',
@@ -102,6 +162,7 @@ export function Sidebar<Id extends string>({
               if (compact) close();
             }}
           >
+            <SectionIcon id={item.id} />
             {item.label}
           </button>
         ))}

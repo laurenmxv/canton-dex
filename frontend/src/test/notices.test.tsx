@@ -207,7 +207,7 @@ describe('what the trader is shown while they wait', () => {
     const session: Session = { mode: 'keycloak', current: DAVID, loading: false };
     render(
       <DexProvider client={client} session={session}>
-        <TraderOnboarding onGoToSwap={() => {}} />
+        <TraderOnboarding />
       </DexProvider>,
     );
     const user = userEvent.setup();

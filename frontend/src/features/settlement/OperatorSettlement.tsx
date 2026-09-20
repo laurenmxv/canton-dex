@@ -4,6 +4,7 @@ import { useAsync } from '../../app/useAsync';
 import { Card } from '../../ui/Card';
 import { SelectField } from '../../ui/Field';
 import { EmptyState, ErrorState, Loading, RefreshFailure } from '../../ui/States';
+import { PageHeader } from '../../ui/PageHeader';
 import { PoolSettlement } from './PoolSettlement';
 
 /**
@@ -30,9 +31,10 @@ export function OperatorSettlement() {
 
   return (
     <div className="stack-lg fade-in">
-      <header className="page-head">
-        <h1 className="page-title">Settlement</h1>
-      </header>
+      <PageHeader
+        title="Settlement"
+        description="One pool at a time: its queue, its state, and the batches it has run."
+      />
 
       {pools.error ? <RefreshFailure error={pools.error} onRetry={pools.reload} /> : null}
 

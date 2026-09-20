@@ -266,17 +266,18 @@ describe('the onboarding screen a trader waits on', () => {
     const session: Session = { mode: 'keycloak', current: DAVID, loading: false };
     render(
       <DexProvider client={client} session={session} demo={demo} wallet={wallet}>
-        <TraderOnboarding onGoToSwap={() => {}} />
+        <TraderOnboarding />
       </DexProvider>,
     );
     return userEvent.setup();
   }
 
-  it('sends a completed trader to the swap screen, which real mode now serves', async () => {
+  it('reports a completed onboarding as a record, and offers no shortcut of its own', async () => {
     renderOnboarding(onboardingWith([CONFIRMED_ATTESTATION], 'COMPLETED'));
 
-    expect(await screen.findByText('Onboarding complete')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Request a swap' })).toBeInTheDocument();
+    expect(await screen.findByText('Completed')).toBeInTheDocument();
+    // Reaching the swap screen is the sidebar's job, and the dashboard's.
+    expect(screen.queryByRole('button', { name: 'Request a swap' })).not.toBeInTheDocument();
   });
 
   it('carries the receipt on the page the reader is already on', async () => {
@@ -301,7 +302,7 @@ describe('the onboarding screen a trader waits on', () => {
   it('runs the steps in the order the venue enforces', async () => {
     renderOnboarding(onboardingWith([CONFIRMED_ATTESTATION], 'COMPLETED'));
 
-    await screen.findByText('Onboarding complete');
+    await screen.findByText('Completed');
     const titles = Array.from(document.querySelectorAll('.step-title')).map(
       (node) => node.firstChild?.textContent,
     );
@@ -331,7 +332,7 @@ describe('the onboarding screen a trader waits on', () => {
     const session: Session = { mode: 'keycloak', current: DAVID, loading: false };
     render(
       <DexProvider client={client} session={session}>
-        <TraderOnboarding onGoToSwap={() => {}} />
+        <TraderOnboarding />
       </DexProvider>,
     );
     const user = userEvent.setup();

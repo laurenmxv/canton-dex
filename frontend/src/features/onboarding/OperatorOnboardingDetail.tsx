@@ -22,6 +22,7 @@ import { Card, CardHeader, DataList } from '../../ui/Card';
 import { TextField } from '../../ui/Field';
 import { SimulatedLedgerNotice } from '../../ui/SimulatedLedger';
 import { EmptyState, ErrorState, Loading, RefreshFailure } from '../../ui/States';
+import { PageHeader } from '../../ui/PageHeader';
 import { DocumentList } from './DocumentList';
 import { isSettling, isWorking } from './progress';
 
@@ -70,17 +71,16 @@ export function OperatorOnboardingDetail({
         <RefreshFailure error={queue.error} onRetry={queue.reload} />
       ) : null}
 
-      <div>
-        <button type="button" className="back-link" onClick={onBack}>
-          ← All requests
-        </button>
-        <div className="row-between">
-          <h1 className="page-title">{request.application.legalName}</h1>
+      <PageHeader
+        title={request.application.legalName}
+        eyebrow="Onboarding request"
+        back={{ label: 'All requests', onClick: onBack }}
+        actions={
           <Badge tone={onboardingStatusTones[request.status]} dot={isWorking(request)}>
             {onboardingStatusLabels[request.status]}
           </Badge>
-        </div>
-      </div>
+        }
+      />
 
       <div className="grid-2">
         <Card>

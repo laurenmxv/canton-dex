@@ -31,7 +31,9 @@ export function nextStep(
     return {
       headline: 'Start your onboarding',
       detail: null,
-      primary: false,
+      // Applying is the trader's own act, like registering a party. Only a
+      // wait on someone else is offered quietly.
+      primary: true,
       action: { label: 'Start onboarding', target: 'onboarding' },
     };
   }

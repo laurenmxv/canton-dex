@@ -9,6 +9,7 @@ import {
 import { Badge } from '../../ui/Badge';
 import { Card, CardHeader } from '../../ui/Card';
 import { AsyncSection, EmptyState } from '../../ui/States';
+import { PageHeader } from '../../ui/PageHeader';
 import { isWorking } from './progress';
 import {
   DEFAULT_ORDER,
@@ -37,9 +38,10 @@ export function OperatorOnboardingList({ onOpen }: { onOpen: (onboardingId: stri
 
   return (
     <div className="stack-lg fade-in">
-      <header className="page-head">
-        <h1 className="page-title">Onboarding requests</h1>
-      </header>
+      <PageHeader
+        title="Onboarding requests"
+        description="Review each application, then grant the pool access the ledger will carry."
+      />
 
       <Card>
         <CardHeader

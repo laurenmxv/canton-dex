@@ -12,12 +12,13 @@ import type {
   TokenBalances,
 } from '../../lib/api/types';
 import { formatDecimal, formatExact } from '../../lib/decimal';
-import { directionLabel, formatCountdown, formatDateTime, formatFeeBps } from '../../lib/labels';
+import { formatCountdown, formatDateTime, formatFeeBps } from '../../lib/labels';
 import { Callout } from '../../ui/Badge';
 import { Button } from '../../ui/Button';
 import { Card, CardHeader, DataList } from '../../ui/Card';
 import { SelectField, TextField } from '../../ui/Field';
 import { ErrorState, Loading } from '../../ui/States';
+import { TokenLogo } from '../../ui/TokenLogo';
 import { walletMessage, type WalletSigner } from '../wallet/signing';
 import { amountProblem, balanceOf, instrumentLabel, sidesOf, slippageProblem } from './terms';
 
@@ -71,8 +72,6 @@ export function SwapTicket({
   const unresolved = unresolvedSwapId;
 
   const held = balances.data?.balances ?? [];
-  const baseSymbol = pool.data ? instrumentLabel(held, pool.data.settings.baseInstrumentId) : '';
-  const quoteSymbol = pool.data ? instrumentLabel(held, pool.data.settings.quoteInstrumentId) : '';
   const sides = pool.data ? sidesOf(pool.data, direction) : undefined;
   const inSymbol = sides ? instrumentLabel(held, sides.input) : '';
   const outSymbol = sides ? instrumentLabel(held, sides.output) : '';
@@ -153,18 +152,12 @@ export function SwapTicket({
     <Card>
       <CardHeader
         title="Request a swap"
-        description={
-          pool.data ? `${pool.data.name} · ${formatFeeBps(pool.data.settings.feeBps)}` : undefined
-        }
-      />
-      <div className="card-pad stack">
-        {pool.error && !pool.data ? (
-          <ErrorState error={pool.error} onRetry={pool.reload} />
-        ) : null}
-
-        <div className="grid-2">
+        description={pool.data ? formatFeeBps(pool.data.settings.feeBps) : undefined}
+        actions={
           <SelectField
             label="Pool"
+            hideLabel
+            controlClassName="header-select"
             value={poolId}
             disabled={busy}
             onChange={(event) => {
@@ -178,42 +171,91 @@ export function SwapTicket({
               </option>
             ))}
           </SelectField>
-          <SelectField
-            label="Direction"
-            value={direction}
-            disabled={busy}
-            onChange={(event) => {
-              retireQuote();
-              setDirection(event.target.value as SwapDirection);
-            }}
-          >
-            <option value="BaseToQuote">
-              {directionLabel('BaseToQuote', baseSymbol, quoteSymbol)}
-            </option>
-            <option value="QuoteToBase">
-              {directionLabel('QuoteToBase', baseSymbol, quoteSymbol)}
-            </option>
-          </SelectField>
+        }
+      />
+      <div className="card-pad stack">
+        {pool.error && !pool.data ? (
+          <ErrorState error={pool.error} onRetry={pool.reload} />
+        ) : null}
+
+        <div>
+          <div className="swap-panel">
+            <div className="swap-panel-head">
+              <span className="swap-panel-label">You pay</span>
+              {inputBalance ? (
+                <button
+                  type="button"
+                  className="swap-max"
+                  disabled={busy}
+                  onClick={() => {
+                    retireQuote();
+                    setAmountIn(inputBalance.available);
+                  }}
+                >
+                  Max
+                </button>
+              ) : null}
+            </div>
+            <div className="swap-panel-row">
+              <div className="swap-field">
+                <TextField
+                  label={`Amount in${inSymbol ? ` (${inSymbol})` : ''}`}
+                  hideLabel
+                  value={amountIn}
+                  inputMode="decimal"
+                  placeholder="0.00"
+                  disabled={busy}
+                  error={touched ? amountError : undefined}
+                  onChange={(event) => {
+                    retireQuote();
+                    setAmountIn(event.target.value);
+                  }}
+                />
+              </div>
+              <TokenPillLabel symbol={inSymbol} />
+            </div>
+            {inputBalance ? (
+              <p className="muted text-xs tabular">
+                {`${formatExact(inputBalance.available, inputBalance.decimals)} ${inputBalance.symbol} available`}
+              </p>
+            ) : null}
+          </div>
+
+          <div className="swap-seam">
+            <button
+              type="button"
+              className="swap-switch"
+              disabled={busy}
+              aria-label={`Swap direction to ${outSymbol || 'the other side'} for ${inSymbol || 'this one'}`}
+              onClick={() => {
+                retireQuote();
+                setDirection((current) =>
+                  current === 'BaseToQuote' ? 'QuoteToBase' : 'BaseToQuote',
+                );
+              }}
+            >
+              <span aria-hidden="true">↓</span>
+            </button>
+          </div>
+
+          <div className="swap-panel">
+            <div className="swap-panel-head">
+              <span className="swap-panel-label">You receive</span>
+              <span>{quote ? 'Estimated' : 'Quoted by the venue'}</span>
+            </div>
+            <div className="swap-panel-row">
+              {/* The pill beside it names the token, so the figure is bare. */}
+              {quote ? (
+                <span className="swap-quoted">{formatExact(quote.expectedOut)}</span>
+              ) : (
+                <span className="swap-quoted swap-quoted-none">0.00</span>
+              )}
+              <TokenPillLabel symbol={outSymbol} />
+            </div>
+          </div>
         </div>
 
-        <div className="grid-2">
-          <TextField
-            label={`Amount in${inSymbol ? ` (${inSymbol})` : ''}`}
-            value={amountIn}
-            inputMode="decimal"
-            placeholder="0.01"
-            disabled={busy}
-            hint={
-              inputBalance
-                ? `${formatExact(inputBalance.available, inputBalance.decimals)} ${inputBalance.symbol} available`
-                : undefined
-            }
-            error={touched ? amountError : undefined}
-            onChange={(event) => {
-              retireQuote();
-              setAmountIn(event.target.value);
-            }}
-          />
+        <div className="inline-field">
           <TextField
             label="Maximum slippage (bps)"
             value={slippageBps}
@@ -231,26 +273,26 @@ export function SwapTicket({
           <Callout tone="danger">{requestQuote.error.message}</Callout>
         ) : null}
 
-        <div className="row">
-          <Button
-            loading={requestQuote.pending}
-            disabled={busy || pools.length === 0}
-            onClick={async () => {
-              setTouched(true);
-              if (amountError || slippageError) return;
-              const result = await requestQuote.perform();
-              if (result) {
-                // A new quote is a new preparation, so the venue's refusal to
-                // prepare the old one no longer applies.
-                setStale(false);
-                setSubmitted(undefined);
-                setQuote(result);
-              }
-            }}
-          >
-            {quote ? 'Refresh quote' : 'Get a quote'}
-          </Button>
-        </div>
+        <Button
+          className="btn-block"
+          loading={requestQuote.pending}
+          disabled={busy || pools.length === 0}
+          variant={quote ? 'secondary' : 'primary'}
+          onClick={async () => {
+            setTouched(true);
+            if (amountError || slippageError) return;
+            const result = await requestQuote.perform();
+            if (result) {
+              // A new quote is a new preparation, so the venue's refusal to
+              // prepare the old one no longer applies.
+              setStale(false);
+              setSubmitted(undefined);
+              setQuote(result);
+            }
+          }}
+        >
+          {quote ? 'Refresh quote' : 'Get a quote'}
+        </Button>
 
         {quote ? (
           <QuotedTerms
@@ -321,57 +363,54 @@ function QuotedTerms({
 
   return (
     <div className="stack-sm">
-      <DataList
-        items={[
-          {
-            label: 'You pay',
-            value: (
-              <span className="tabular">
-                {formatExact(quote.amountIn)} {inSymbol}
-              </span>
-            ),
-          },
-          {
-            label: 'Estimated output',
-            value: (
-              <span className="tabular">
-                {formatExact(quote.expectedOut)} {outSymbol}
-              </span>
-            ),
-          },
-          {
-            label: 'Minimum output',
-            value: (
-              <span className="tabular">
-                {formatExact(quote.minOut)} {outSymbol} · {quote.slippageBps} bps
-              </span>
-            ),
-          },
-          {
-            label: 'Fee',
-            value: (
-              // The venue reports the fee at a finer precision than an amount
-              // carries, because it is informational and never transferred on
-              // its own. It is shown as sent rather than rounded here.
-              <span className="tabular">
-                {formatDecimal(quote.feeAmount, { maxFractionDigits: 14 })} {inSymbol}
-              </span>
-            ),
-          },
-          {
-            label: 'Settles by',
-            value: formatDateTime(quote.settlementDeadline),
-          },
-          {
-            label: 'Quote expires',
-            value: (
-              <span aria-live="polite">
-                {expired ? 'Expired' : `in ${formatCountdown(quote.quoteExpiresAt, now)}`}
-              </span>
-            ),
-          },
-        ]}
-      />
+      {/* The terms of the quote, written out. The panels above carry the two
+          figures a trader reads first; this is what they approve. */}
+      <div className="swap-summary">
+        <DataList
+          variant="summary"
+          items={[
+            {
+              label: 'Expected output',
+              value: (
+                <span>
+                  {formatExact(quote.expectedOut)} {outSymbol}
+                </span>
+              ),
+            },
+            {
+              label: 'Minimum output',
+              value: (
+                <span>
+                  {formatExact(quote.minOut)} {outSymbol} · {quote.slippageBps} bps
+                </span>
+              ),
+            },
+            {
+              label: 'Fee',
+              value: (
+                // The venue reports the fee at a finer precision than an amount
+                // carries, because it is informational and never transferred on
+                // its own. It is shown as sent rather than rounded here.
+                <span>
+                  {formatDecimal(quote.feeAmount, { maxFractionDigits: 14 })} {inSymbol}
+                </span>
+              ),
+            },
+            {
+              label: 'Settles by',
+              value: formatDateTime(quote.settlementDeadline),
+            },
+            {
+              label: 'Quote expires',
+              value: (
+                <span aria-live="polite">
+                  {expired ? 'Expired' : `in ${formatCountdown(quote.quoteExpiresAt, now)}`}
+                </span>
+              ),
+            },
+          ]}
+        />
+      </div>
 
       {error ? (
         <Callout tone="danger" title={quoteExpired ? 'Quote expired' : undefined}>
@@ -379,11 +418,25 @@ function QuotedTerms({
         </Callout>
       ) : null}
 
-      <div className="row">
-        <Button loading={pending} disabled={expired || blocked} onClick={onRequest}>
-          Request swap
-        </Button>
-      </div>
+      <Button
+        className="btn-block"
+        loading={pending}
+        disabled={expired || blocked}
+        onClick={onRequest}
+      >
+        Request swap
+      </Button>
     </div>
+  );
+}
+
+/** The token a panel is denominated in, as a pill beside its amount. */
+function TokenPillLabel({ symbol }: { symbol: string }) {
+  if (!symbol) return null;
+  return (
+    <span className="token-pill">
+      <TokenLogo symbol={symbol} size="sm" />
+      {symbol}
+    </span>
   );
 }

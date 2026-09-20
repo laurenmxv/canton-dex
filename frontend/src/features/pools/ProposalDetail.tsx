@@ -15,6 +15,7 @@ import { Badge, Callout } from '../../ui/Badge';
 import { Button } from '../../ui/Button';
 import { Card, CardHeader, DataList } from '../../ui/Card';
 import { ErrorState, Loading } from '../../ui/States';
+import { PageHeader } from '../../ui/PageHeader';
 import { approvalCount } from './approvals';
 
 export function ProposalDetail({
@@ -53,17 +54,16 @@ export function ProposalDetail({
 
   return (
     <div className="stack-lg fade-in">
-      <div>
-        <button type="button" className="back-link" onClick={onBack}>
-          ← All pools
-        </button>
-        <div className="row-between">
-          <h1 className="page-title">{data.name}</h1>
+      <PageHeader
+        title={data.name}
+        eyebrow="Pool proposal"
+        back={{ label: 'All pools', onClick: onBack }}
+        actions={
           <Badge tone={proposalStatusTones[data.status]}>
             {proposalStatusLabels[data.status]}
           </Badge>
-        </div>
-      </div>
+        }
+      />
 
       <div className="grid-2">
         <Card>

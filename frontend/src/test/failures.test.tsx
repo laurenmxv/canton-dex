@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { App } from '../App';
@@ -120,8 +120,10 @@ describe('when the venue is unreachable', () => {
       }),
     );
 
-    expect(await screen.findByText('Something went wrong')).toBeInTheDocument();
-    expect(screen.getByText('Pools open to you')).toBeInTheDocument();
-    expect(screen.queryByText('No pools yet')).not.toBeInTheDocument();
+    // Every read on this screen is refused, so the assertion names the card it
+    // is about rather than whichever failure rendered first.
+    const pools = (await screen.findByText('Pools open to you')).closest('section')!;
+    expect(await within(pools).findByText('Something went wrong')).toBeInTheDocument();
+    expect(within(pools).queryByText('No pools yet')).not.toBeInTheDocument();
   });
 });

@@ -18,6 +18,8 @@ import { Card, CardHeader, DataList } from '../../ui/Card';
 import { SelectField, TextField } from '../../ui/Field';
 import { AsyncSection, EmptyState, ErrorState, Loading } from '../../ui/States';
 import { Steps, type StepItem } from '../../ui/Steps';
+import { TokenLogo } from '../../ui/TokenLogo';
+import { PageHeader } from '../../ui/PageHeader';
 
 type Stage = 'compose' | 'review' | 'approve' | 'submitted';
 
@@ -30,7 +32,14 @@ interface AttemptGuard {
   beginAttempt: () => () => boolean;
 }
 
-export function SwapRequestFlow({ onGoToOnboarding }: { onGoToOnboarding: () => void }) {
+export function SwapRequestFlow({
+  onGoToOnboarding,
+  initialPoolId,
+}: {
+  onGoToOnboarding: () => void;
+  /** The pool the trader arrived for, from the dashboard. */
+  initialPoolId?: string;
+}) {
   const demo = requireDemoApi();
   const pools = useAsync(() => demo.swaps.eligiblePools(), [demo]);
   const requests = useAsync(() => demo.swaps.listRequests(), [demo]);
@@ -42,10 +51,11 @@ export function SwapRequestFlow({ onGoToOnboarding }: { onGoToOnboarding: () => 
   const symbol = (instrumentId: string) => symbolOf(instruments.data ?? [], instrumentId);
 
   return (
-    <div className="stack-lg fade-in">
-      <header className="page-head">
-        <h1 className="page-title">Request a swap</h1>
-      </header>
+    <div className="stack-lg fade-in page-narrow">
+      <PageHeader
+        title="Request a swap"
+        description="Price the trade, approve it, and wait for the pool to settle it."
+      />
 
       {instruments.error ? (
         <Callout tone="warning" title="Instrument names unavailable">
@@ -54,7 +64,12 @@ export function SwapRequestFlow({ onGoToOnboarding }: { onGoToOnboarding: () => 
       ) : null}
 
       {pools.data && pools.data.length > 0 ? (
-        <SwapComposer pools={pools.data} symbol={symbol} onSubmitted={requests.reload} />
+        <SwapComposer
+          pools={pools.data}
+          symbol={symbol}
+          initialPoolId={initialPoolId}
+          onSubmitted={requests.reload}
+        />
       ) : (
         <Card>
           <EmptyState
@@ -113,15 +128,19 @@ export function SwapRequestFlow({ onGoToOnboarding }: { onGoToOnboarding: () => 
 function SwapComposer({
   pools,
   symbol,
+  initialPoolId,
   onSubmitted,
 }: {
   pools: Pool[];
   symbol: (instrumentId: string) => string;
+  initialPoolId: string | undefined;
   onSubmitted: () => void;
 }) {
   const demo = requireDemoApi();
   const [stage, setStage] = useState<Stage>('compose');
-  const [poolId, setPoolId] = useState(pools[0]?.poolId ?? '');
+  // A pool this trader cannot reach falls through to the first one they can,
+  // the same way an unknown one does.
+  const [poolId, setPoolId] = useState(initialPoolId ?? pools[0]?.poolId ?? '');
   const [direction, setDirection] = useState<SwapDirection>('BaseToQuote');
   const [quote, setQuote] = useState<SwapQuote>();
   const [preparation, setPreparation] = useState<SwapPreparation>();
@@ -344,16 +363,38 @@ function ComposeStage({
           <option value="QuoteToBase">{directionLabel('QuoteToBase', base, quote)}</option>
         </SelectField>
       </div>
-      <div className="grid-2">
-        <TextField
-          label={`Amount in${inSymbol ? ` (${inSymbol})` : ''}`}
-          value={amountIn}
-          inputMode="decimal"
-          placeholder="25000"
-          disabled={locked}
-          error={touched ? amountError : undefined}
-          onChange={(event) => setAmountIn(event.target.value)}
-        />
+
+      {/* The amount is what the trader is deciding, so it is set as a figure
+          and the pair it is paid in sits beside it. */}
+      <div className="swap-panel">
+        <div className="swap-panel-head">
+          <span className="swap-panel-label">You pay</span>
+        </div>
+        <div className="swap-panel-row">
+          <div className="swap-field">
+            <TextField
+              label={`Amount in${inSymbol ? ` (${inSymbol})` : ''}`}
+              hideLabel
+              value={amountIn}
+              inputMode="decimal"
+              // Set as a figure, a placeholder of a plausible amount reads as
+              // one the trader entered.
+              placeholder="0.00"
+              disabled={locked}
+              error={touched ? amountError : undefined}
+              onChange={(event) => setAmountIn(event.target.value)}
+            />
+          </div>
+          {inSymbol ? (
+            <span className="token-pill">
+              <TokenLogo symbol={inSymbol} size="sm" />
+              {inSymbol}
+            </span>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="inline-field">
         <TextField
           label="Maximum slippage"
           value={slippageBps}
@@ -363,21 +404,21 @@ function ComposeStage({
           onChange={(event) => setSlippageBps(event.target.value)}
         />
       </div>
+
       {requestQuote.error ? <Callout tone="danger">{requestQuote.error.message}</Callout> : null}
-      <div>
-        <Button
-          loading={requestQuote.pending}
-          onClick={async () => {
-            setTouched(true);
-            if (amountError || slippageError) return;
-            const stillCurrent = beginAttempt();
-            const result = await requestQuote.perform();
-            if (result && stillCurrent()) onQuoted(result);
-          }}
-        >
-          Request quote
-        </Button>
-      </div>
+      <Button
+        className="btn-block"
+        loading={requestQuote.pending}
+        onClick={async () => {
+          setTouched(true);
+          if (amountError || slippageError) return;
+          const stillCurrent = beginAttempt();
+          const result = await requestQuote.perform();
+          if (result && stillCurrent()) onQuoted(result);
+        }}
+      >
+        Request quote
+      </Button>
     </div>
   );
 }

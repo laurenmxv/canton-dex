@@ -15,6 +15,7 @@ import { Button } from '../../ui/Button';
 import { Card, CardHeader } from '../../ui/Card';
 import { SelectField, TextField } from '../../ui/Field';
 import { AsyncSection, EmptyState } from '../../ui/States';
+import { PageHeader } from '../../ui/PageHeader';
 import { approvalCount } from './approvals';
 
 export function OperatorPools({
@@ -37,9 +38,10 @@ export function OperatorPools({
 
   return (
     <div className="stack-lg fade-in">
-      <header className="page-head">
-        <h1 className="page-title">Pools</h1>
-      </header>
+      <PageHeader
+        title="Pools"
+        description="Propose a pool, collect its approvals, and create it."
+      />
 
       <Card>
         <CardHeader

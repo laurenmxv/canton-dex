@@ -22,7 +22,8 @@ import { EmptyState, Loading } from './ui/States';
 
 type View =
   | { name: 'trader-dashboard' }
-  | { name: 'trader-swap' }
+  /** `poolId` is the pool the trader asked for, where they named one. */
+  | { name: 'trader-swap'; poolId?: string }
   | { name: 'trader-onboarding' }
   | { name: 'operator-onboardings' }
   | { name: 'operator-onboarding'; onboardingId: string }
@@ -298,20 +299,26 @@ function ViewContent({
 }): ReactElement {
   // Only the demo serves swaps and its own pool proposals.
   const demo = useDemoApi();
-  const goTrader = (target: NextStepTarget) =>
-    navigate(target === 'swap' ? { name: 'trader-swap' } : { name: 'trader-onboarding' });
+  const goTrader = (target: NextStepTarget, poolId?: string) =>
+    navigate(target === 'swap' ? { name: 'trader-swap', poolId } : { name: 'trader-onboarding' });
 
   switch (view.name) {
     case 'trader-dashboard':
       return <TraderDashboard onGo={goTrader} />;
     case 'trader-onboarding':
-      return <TraderOnboarding onGoToSwap={() => navigate({ name: 'trader-swap' })} />;
+      return <TraderOnboarding />;
     case 'trader-swap':
       // The demo runs its own simulated flow; the venue's is the real one.
       return demo ? (
-        <SwapRequestFlow onGoToOnboarding={() => navigate({ name: 'trader-onboarding' })} />
+        <SwapRequestFlow
+          initialPoolId={view.poolId}
+          onGoToOnboarding={() => navigate({ name: 'trader-onboarding' })}
+        />
       ) : (
-        <SwapDesk onGoToOnboarding={() => navigate({ name: 'trader-onboarding' })} />
+        <SwapDesk
+          initialPoolId={view.poolId}
+          onGoToOnboarding={() => navigate({ name: 'trader-onboarding' })}
+        />
       );
     case 'operator-onboardings':
       return (

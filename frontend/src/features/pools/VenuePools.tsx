@@ -12,6 +12,7 @@ import {
   formatFeeBps,
   poolProposalStatusLabels,
   poolProposalStatusTones,
+  pairSymbols,
   trimDecimal,
 } from '../../lib/labels';
 import { Badge, Callout } from '../../ui/Badge';
@@ -21,6 +22,8 @@ import { CopyField } from '../../ui/CopyField';
 import { Disclosure } from '../../ui/Disclosure';
 import { NoticeBoard } from '../../ui/NoticeBoard';
 import { AsyncSection, EmptyState, ErrorState } from '../../ui/States';
+import { PageHeader } from '../../ui/PageHeader';
+import { TokenPair } from '../../ui/TokenLogo';
 import { PoolProposalForm } from './PoolProposalForm';
 import { usePoolNotices } from './poolNotices';
 
@@ -87,9 +90,10 @@ export function VenuePools() {
   if (proposals.error && !proposals.data) {
     return (
       <div className="stack-lg fade-in">
-        <header className="page-head">
-          <h1 className="page-title">Pools</h1>
-        </header>
+        <PageHeader
+          title="Pools"
+          description="The venue catalogue, and the proposals waiting on the dvo."
+        />
         <Card padded>
           <ErrorState error={proposals.error} onRetry={proposals.reload} />
         </Card>
@@ -102,10 +106,11 @@ export function VenuePools() {
 
   return (
     <div className="stack-lg fade-in">
-      <header className="page-head row-between">
-        <h1 className="page-title">Pools</h1>
-        {creating ? null : <Button onClick={() => setCreating(true)}>New pool</Button>}
-      </header>
+      <PageHeader
+        title="Pools"
+        description="The venue catalogue, and the proposals waiting on the dvo."
+        actions={creating ? null : <Button onClick={() => setCreating(true)}>New pool</Button>}
+      />
 
       <NoticeBoard notices={updates.notices} onDismiss={updates.dismiss} />
 
@@ -245,9 +250,14 @@ function PoolGrid({ pools }: { pools: PoolDetail[] }) {
       {pools.map((pool) => (
         <article key={pool.poolId} className="pool-card">
           <div className="row-between">
-            <div>
-              <h3 className="pool-name">{pool.name}</h3>
-              <Pair terms={pool.settings} name={pool.name} />
+            <div className="access-head">
+              {/* The marks sit beside the heading, never inside it: a name a
+                  reader hears must be the pool's own. */}
+              <TokenPair tokens={pairSymbols(pool.name).map((symbol) => ({ symbol }))} size="sm" />
+              <div className="access-name">
+                <h3 className="pool-name">{pool.name}</h3>
+                <Pair terms={pool.settings} name={pool.name} />
+              </div>
             </div>
             <Badge tone="success">{formatFeeBps(pool.settings.feeBps)}</Badge>
           </div>

@@ -88,7 +88,8 @@ public final class KeycloakFixtures implements AutoCloseable {
         "Dex",
         "client_id=backend-tests&grant_type=password&username="
             + encode(name)
-            + "&password=test-password");
+            + "&password="
+            + encode(name.equals("operator") ? "operator" : "test-password"));
   }
 
   private String token(String realm, String form) {

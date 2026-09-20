@@ -32,7 +32,6 @@ describe('onboarding', () => {
     await registerParty(user);
 
     expect(await screen.findByText('Completed', {}, LEDGER_WAIT)).toBeInTheDocument();
-    expect(await screen.findByText('Onboarding complete')).toBeInTheDocument();
   });
 
   it('opens party registration only once the venue has named the party', async () => {

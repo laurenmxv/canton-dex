@@ -14,7 +14,6 @@ import { ReserveChart } from './ReserveChart';
 import {
   invariantMatchesReserves,
   observationAgeSeconds,
-  reserveDelta,
   STALE_OBSERVATION_SECONDS,
 } from './reserves';
 
@@ -55,7 +54,6 @@ export function PoolState({
   const age = observationAgeSeconds(snapshot.observedAt, now);
   const stale = age === null || age > STALE_OBSERVATION_SECONDS;
   const invariantHolds = invariantMatchesReserves(snapshot.reserves);
-  const delta = reserveDelta(lastConfirmed?.before ?? null, lastConfirmed?.after ?? null);
 
   return (
     <Card>
@@ -124,35 +122,25 @@ export function PoolState({
           ]}
         />
 
-        {delta && lastConfirmed?.before && lastConfirmed.after ? (
-          <>
-            <DataList
-              items={[
-                {
-                  label: `${baseLabel} change, last confirmed batch`,
-                  value: <span className="tabular">{signed(delta.base)}</span>,
-                },
-                {
-                  label: `${quoteLabel} change, last confirmed batch`,
-                  value: <span className="tabular">{signed(delta.quote)}</span>,
-                },
-              ]}
-            />
-            <ReserveChart
-              before={lastConfirmed.before}
-              after={lastConfirmed.after}
-              baseLabel={baseLabel}
-              quoteLabel={quoteLabel}
-            />
-          </>
-        ) : null}
+        {lastConfirmed && lastConfirmed.before && lastConfirmed.after ? (
+          <ReserveChart
+            settlement={lastConfirmed}
+            before={lastConfirmed.before}
+            after={lastConfirmed.after}
+            baseLabel={baseLabel}
+            quoteLabel={quoteLabel}
+            currentStateId={snapshot.reserves.stateId}
+            now={now}
+          />
+        ) : (
+          // Saying nothing here would leave the figures above looking like a
+          // comparison. There is nothing to compare them with yet.
+          <Callout tone="info" title="No confirmed batch to compare with">
+            The reserves above are one observation, not a change. A chart of the move appears once
+            the ledger confirms a batch for this pool.
+          </Callout>
+        )}
       </div>
     </Card>
   );
-}
-
-/** Keeps the sign a delta carries, because which way it moved is the point. */
-function signed(value: string): string {
-  const shown = formatExact(value);
-  return value.startsWith('-') ? shown : `+${shown}`;
 }

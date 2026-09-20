@@ -1,7 +1,16 @@
 import type { ReactNode } from 'react';
 
-export function Card({ children, padded = false }: { children: ReactNode; padded?: boolean }) {
-  return <section className={`card ${padded ? 'card-pad' : ''}`.trim()}>{children}</section>;
+export function Card({
+  children,
+  padded = false,
+  className,
+}: {
+  children: ReactNode;
+  padded?: boolean;
+  className?: string;
+}) {
+  const classes = ['card', padded ? 'card-pad' : '', className ?? ''].filter(Boolean).join(' ');
+  return <section className={classes}>{children}</section>;
 }
 
 export function CardHeader({
@@ -29,9 +38,16 @@ interface DataListItem {
   value: ReactNode;
 }
 
-export function DataList({ items }: { items: DataListItem[] }) {
+export function DataList({
+  items,
+  variant = 'default',
+}: {
+  items: DataListItem[];
+  /** `summary` reads down the right edge, for a quote or a receipt. */
+  variant?: 'default' | 'summary';
+}) {
   return (
-    <dl className="datalist">
+    <dl className={variant === 'summary' ? 'datalist datalist-summary' : 'datalist'}>
       {items.map((item) => (
         <div key={item.label} style={{ display: 'contents' }}>
           <dt>{item.label}</dt>

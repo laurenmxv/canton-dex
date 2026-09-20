@@ -1,18 +1,21 @@
 import type { Onboarding, PoolSummary } from '../../lib/api/types';
-import { poolNameOf } from '../../lib/labels';
+import { poolNameOf, shortContract } from '../../lib/labels';
 import { Badge } from '../../ui/Badge';
 import { Card, CardHeader, DataList } from '../../ui/Card';
 import { CopyField } from '../../ui/CopyField';
-import { Disclosure } from '../../ui/Disclosure';
 import { SimulatedLedgerNotice } from '../../ui/SimulatedLedger';
 import { confirmedAttestation, confirmedPoolIds } from '../onboarding/progress';
 
 /**
  * Proof that the venue attested this trader.
  *
- * It appears as soon as the attestation confirms, even while a pool access step
- * is still working, and it never implies access: the pools it lists as
+ * It appears as soon as the attestation confirms, even while a pool access
+ * step is still working, and it never implies access: the pools it lists as
  * confirmed are the only ones the ledger has granted.
+ *
+ * The proof is evidence, not a step to take, so the card opens folded: the
+ * confirmation and the contract it rests on stay in view, and every
+ * identifier is one disclosure away.
  */
 export function AttestationReceipt({
   onboarding,
@@ -32,53 +35,52 @@ export function AttestationReceipt({
   const unresolved = onboarding.ledgerSteps.some((step) => step.status === 'UNRESOLVED');
   return (
     <Card>
-      <CardHeader
-        title="KYC attestation"
-        actions={<Badge tone="success">Confirmed</Badge>}
-      />
-      <div className="card-pad stack">
-        {simulated ? <SimulatedLedgerNotice /> : null}
-        <CopyField label="Contract ID" value={attestation.contractId} />
-        <DataList
-          items={[
-            {
-              label: 'Issued by',
-              value: <span className="mono">{attestation.issuer ?? 'Unknown'}</span>,
-            },
-            {
-              label: 'Your party',
-              value: <span className="mono">{onboarding.party?.partyId ?? 'Unknown'}</span>,
-            },
-            {
-              label: 'Pools approved',
-              value:
-                approved.length === 0
-                  ? 'None'
-                  : approved.map((poolId) => poolNameOf(pools, poolId)).join(', '),
-            },
-            {
-              label: 'Access confirmed',
-              value: granted.length > 0
-                ? granted.map((poolId) => poolNameOf(pools, poolId)).join(', ')
-                : unresolved
-                  ? 'Checking confirmation'
-                  : 'Awaiting confirmation',
-            },
-          ]}
-        />
-        {attestation.updateId ? (
-          <Disclosure summary="Details">
-            <DataList
-              items={[
-                {
-                  label: 'Ledger update',
-                  value: <span className="mono">{attestation.updateId}</span>,
-                },
-              ]}
-            />
-          </Disclosure>
-        ) : null}
-      </div>
+      <CardHeader title="KYC attestation" actions={<Badge tone="success">Confirmed</Badge>} />
+      <details className="receipt">
+        <summary className="receipt-summary">
+          <span className="receipt-summary-label">Proof and details</span>
+          <span className="muted text-xs mono">{shortContract(attestation.contractId)}</span>
+        </summary>
+        <div className="card-pad stack">
+          {simulated ? <SimulatedLedgerNotice /> : null}
+          <CopyField label="Contract ID" value={attestation.contractId} />
+          <DataList
+            items={[
+              {
+                label: 'Issued by',
+                value: <span className="mono">{attestation.issuer ?? 'Unknown'}</span>,
+              },
+              {
+                label: 'Your party',
+                value: <span className="mono">{onboarding.party?.partyId ?? 'Unknown'}</span>,
+              },
+              {
+                label: 'Pools approved',
+                value:
+                  approved.length === 0
+                    ? 'None'
+                    : approved.map((poolId) => poolNameOf(pools, poolId)).join(', '),
+              },
+              {
+                label: 'Access confirmed',
+                value: granted.length > 0
+                  ? granted.map((poolId) => poolNameOf(pools, poolId)).join(', ')
+                  : unresolved
+                    ? 'Checking confirmation'
+                    : 'Awaiting confirmation',
+              },
+              ...(attestation.updateId
+                ? [
+                    {
+                      label: 'Ledger update',
+                      value: <span className="mono">{attestation.updateId}</span>,
+                    },
+                  ]
+                : []),
+            ]}
+          />
+        </div>
+      </details>
     </Card>
   );
 }

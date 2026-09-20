@@ -21,12 +21,13 @@ import { Steps, type StepItem } from '../../ui/Steps';
 import { AttestationReceipt } from '../dashboard/AttestationReceipt';
 import { DocumentList } from './DocumentList';
 import { NoticeBoard } from '../../ui/NoticeBoard';
+import { PageHeader } from '../../ui/PageHeader';
 import { useOnboardingNotices } from './notices';
 import { documentTemplates, formatSize, toDocument } from './documents';
 import { PartyRegistration } from './PartyRegistration';
 import { isSettling, isWorking } from './progress';
 
-export function TraderOnboarding({ onGoToSwap }: { onGoToSwap: () => void }) {
+export function TraderOnboarding() {
   const client = useDexClient();
   const onboarding = useAsync((signal) => client.onboarding.mine({ signal }), [client], {
     pollWhile: isSettling,
@@ -42,9 +43,10 @@ export function TraderOnboarding({ onGoToSwap }: { onGoToSwap: () => void }) {
 
   return (
     <div className="stack-lg fade-in">
-      <header className="page-head">
-        <h1 className="page-title">Onboarding</h1>
-      </header>
+      <PageHeader
+        title="Onboarding"
+        description="Apply, wait for the review, register your party, and let the ledger confirm."
+      />
 
       {onboarding.error && onboarding.data !== undefined ? (
         <RefreshFailure error={onboarding.error} onRetry={onboarding.reload} />
@@ -55,7 +57,6 @@ export function TraderOnboarding({ onGoToSwap }: { onGoToSwap: () => void }) {
           onboarding={onboarding.data}
           pools={pools.data ?? []}
           onChanged={onboarding.reload}
-          onGoToSwap={onGoToSwap}
         />
       ) : (
         <ApplicationForm onSubmitted={onboarding.reload} />
@@ -133,14 +134,14 @@ function ApplicationForm({ onSubmitted }: { onSubmitted: () => void }) {
           </legend>
           <Callout tone="demo">Test documents: no files are uploaded</Callout>
           {documentTemplates.map((template) => (
-            <label key={template.key} className="row text-sm">
+            <label key={template.key} className="doc-option">
               <input
                 type="checkbox"
                 checked={chosen.includes(template.key)}
                 onChange={() => toggle(template.key)}
               />
-              <span>{template.fileName}</span>
-              <span className="muted">
+              <span className="doc-name">{template.fileName}</span>
+              <span className="muted text-xs">
                 {documentCategoryLabels[template.category]} · {formatSize(template.sizeBytes)}
               </span>
             </label>
@@ -167,12 +168,10 @@ function OnboardingProgress({
   onboarding,
   pools,
   onChanged,
-  onGoToSwap,
 }: {
   onboarding: Onboarding;
   pools: PoolSummary[];
   onChanged: () => void;
-  onGoToSwap: () => void;
 }) {
   // Only the demo produces its own identifiers; the venue's are real.
   const demo = useDemoApi();
@@ -208,9 +207,13 @@ function OnboardingProgress({
       state: review ? 'done' : 'current',
       body: review ? (
         <div className="stack-sm">
-          <Badge tone={rejected ? 'danger' : 'success'}>
-            {rejected ? 'Rejected' : 'Approved'}
-          </Badge>
+          {/* A badge states one thing, so it hugs its own words rather than
+              stretching across the step. */}
+          <div className="row">
+            <Badge tone={rejected ? 'danger' : 'success'}>
+              {rejected ? 'Rejected' : 'Approved'}
+            </Badge>
+          </div>
           <p className="muted text-xs">
             {rejected ? 'No pool access granted' : `Approved for ${approvedNames.join(', ')}`}
           </p>
@@ -286,18 +289,6 @@ function OnboardingProgress({
           <Steps steps={steps} />
         </div>
       </Card>
-
-      {onboarding.status === 'COMPLETED' ? (
-        <Card padded>
-          <div className="row-between">
-            <div>
-              <h2 className="card-title">Onboarding complete</h2>
-              <p className="card-desc">{approvedNames.join(', ')}</p>
-            </div>
-            <Button onClick={onGoToSwap}>Request a swap</Button>
-          </div>
-        </Card>
-      ) : null}
 
       {/* The receipt belongs where the reader is waiting, not one screen away. */}
       <AttestationReceipt onboarding={onboarding} pools={pools} simulated={simulated} />

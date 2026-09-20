@@ -120,7 +120,7 @@ function renderWallet(
   const demo = mode === 'demo' ? unusedDemoApi() : null;
   render(
     <DexProvider client={full} session={session} wallet={wallet} demo={demo}>
-      <TraderOnboarding onGoToSwap={() => {}} />
+      <TraderOnboarding />
     </DexProvider>,
   );
   return userEvent.setup();

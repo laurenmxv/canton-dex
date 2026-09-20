@@ -58,6 +58,27 @@ describe('the trader dashboard', () => {
     expect(screen.getByRole('button', { name: 'Request swap' })).toBeInTheDocument();
   });
 
+  it('opens the swap screen on the pool the trader picked, not on the first one', async () => {
+    const { user, actAs } = renderApp();
+
+    await submitApplication(user);
+    await actAs('Venue Operations');
+    await openRow(user, 'Acme Trading Ltd');
+    await user.click(await screen.findByRole('checkbox', { name: /USDC \/ EURC/ }));
+    await user.click(screen.getByRole('checkbox', { name: /CC \/ USDC/ }));
+    await user.click(screen.getByRole('button', { name: 'Accept with 2 pools' }));
+    await actAs('Alice Carter');
+    await goTo(user, 'Onboarding');
+    await registerParty(user);
+    await screen.findByText('Completed', {}, LEDGER_WAIT);
+    await goTo(user, 'Dashboard');
+
+    // The second card, so landing on the first pool would prove nothing.
+    await user.click(await screen.findByRole('button', { name: 'Trade CC / USDC' }, LEDGER_WAIT));
+
+    expect(await screen.findByLabelText('Pool')).toHaveValue('pool-cc-usdc');
+  });
+
   it('shows a swap submitted elsewhere as soon as the trader returns', async () => {
     const { user, actAs } = renderApp();
     await onboardAlice(user, actAs);

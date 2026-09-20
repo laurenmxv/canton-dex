@@ -222,6 +222,21 @@ export function poolNameOf(pools: readonly PoolSummary[], poolId: string): strin
   return pools.find((pool) => pool.poolId === poolId)?.name ?? poolId;
 }
 
+/**
+ * The two sides of a pool's name, as the venue wrote it.
+ *
+ * A name the venue did not write as a pair comes back whole, so nothing is
+ * split that was never two things. These are labels, not instruments: what a
+ * pool actually holds is in its own terms.
+ */
+export function pairSymbols(poolName: string): string[] {
+  const sides = poolName
+    .split('/')
+    .map((side) => side.trim())
+    .filter((side) => side !== '');
+  return sides.length === 2 ? sides : [poolName];
+}
+
 /** The instrument a request pays in, or blank when its pool is unknown here. */
 export function inputSymbolOf(
   request: SwapRequest,

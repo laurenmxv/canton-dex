@@ -78,6 +78,18 @@ export interface CurveGeometry {
   afterPoint: CurvePoint;
   /** The largest coordinate either axis has to show, so both points fit. */
   viewMax: number;
+  /**
+   * What each axis was divided by: the larger of the two observed reserves on
+   * that axis.
+   *
+   * The axes are scaled independently, because a pair can hold five of one
+   * instrument against three hundred thousand of the other and one shared
+   * scale would flatten the smaller side onto its axis. A coordinate times
+   * this scale is the reserve it stands for, which is how the chart labels
+   * its ticks. Nothing here compares the two axes to each other.
+   */
+  baseScale: string;
+  quoteScale: string;
 }
 
 /**
@@ -141,5 +153,7 @@ export function curveGeometry(
     beforePoint: { x: bx!, y: by! },
     afterPoint: { x: ax!, y: ay! },
     viewMax: Math.max(to, by!, ay!) * 1.05,
+    baseScale: decimalText(largestBase),
+    quoteScale: decimalText(largestQuote),
   };
 }

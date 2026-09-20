@@ -4,13 +4,20 @@
  * webapp carries no extra dependency or license obligation.
  *
  * Brand violet oklch(55.43% 0.238 273.87) equals #4F56FA in the OZ brand kit.
+ *
+ * Surfaces, elevation and radii are the app's own: a trading screen stacks
+ * panels inside cards, and a flat sheet of hairlines gives a reader no way to
+ * tell which level they are reading.
  */
 
 :root {
-  --background: oklch(1 0 0);
+  --background: oklch(0.985 0.003 273.87);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
+  /* A panel inside a card: an input group, a summary, a chart frame. */
+  --surface: oklch(0.973 0.004 273.87);
+  --surface-strong: oklch(0.955 0.005 273.87);
 
   --primary: oklch(55.43% 0.238 273.87);
   --primary-foreground: oklch(0.985 0 0);
@@ -31,15 +38,21 @@
   --info: oklch(0.5 0.2 200);
   --info-soft: oklch(0.96 0.03 200);
 
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
+  --border: oklch(0.922 0.003 273.87);
+  --input: oklch(0.922 0.003 273.87);
   --ring: var(--primary);
-  --sidebar: oklch(0.985 0 0);
+  --sidebar: oklch(0.985 0.003 273.87);
 
-  --radius: 0.625rem;
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
+  --radius: 0.875rem;
+  --radius-sm: calc(var(--radius) - 6px);
+  --radius-md: calc(var(--radius) - 3px);
   --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  /* Two steps only: a card sits above the page, and anything that floats
+     above a card sits above that. */
+  --shadow-sm: 0 1px 2px oklch(0.2 0.03 273.87 / 0.05), 0 1px 3px oklch(0.2 0.03 273.87 / 0.04);
+  --shadow-md: 0 6px 24px oklch(0.2 0.03 273.87 / 0.08), 0 2px 6px oklch(0.2 0.03 273.87 / 0.04);
 
   --animation-fast: 150ms;
   --animation-slow: 500ms;
@@ -55,10 +68,12 @@
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
+  --background: oklch(0.145 0.006 273.87);
   --foreground: oklch(0.985 0 0);
-  --card: oklch(0.185 0 0);
+  --card: oklch(0.192 0.007 273.87);
   --card-foreground: oklch(0.985 0 0);
+  --surface: oklch(0.225 0.008 273.87);
+  --surface-strong: oklch(0.255 0.009 273.87);
 
   --primary: oklch(0.72 0.18 273.87);
   --primary-foreground: oklch(0.145 0 0);
@@ -79,7 +94,10 @@
   --info: oklch(0.72 0.14 200);
   --info-soft: oklch(0.27 0.06 200);
 
-  --border: oklch(0.32 0 0);
-  --input: oklch(0.32 0 0);
-  --sidebar: oklch(0.205 0 0);
+  --border: oklch(0.295 0.008 273.87);
+  --input: oklch(0.31 0.008 273.87);
+  --sidebar: oklch(0.168 0.007 273.87);
+
+  --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.4);
+  --shadow-md: 0 8px 28px oklch(0 0 0 / 0.45), 0 2px 8px oklch(0 0 0 / 0.3);
 }

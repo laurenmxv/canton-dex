@@ -9,6 +9,7 @@ import { Card, CardHeader, DataList } from '../../ui/Card';
 import { Disclosure } from '../../ui/Disclosure';
 import { TextField } from '../../ui/Field';
 import { EmptyState, ErrorState, Loading, RefreshFailure } from '../../ui/States';
+import { PageHeader } from '../../ui/PageHeader';
 import { confirmedPoolIds } from '../onboarding/progress';
 import { TestTokens } from '../tokens/TestTokens';
 import { useWalletSigner } from '../wallet/signing';
@@ -43,10 +44,20 @@ function lifecycle(page: SwapActivityPage | undefined): string | undefined {
  * confirmed pool access on the ledger, balances are read holdings, and every
  * request is one the trader's own wallet signed.
  */
-export function SwapDesk({ onGoToOnboarding }: { onGoToOnboarding: () => void }) {
+export function SwapDesk({
+  onGoToOnboarding,
+  initialPoolId,
+}: {
+  onGoToOnboarding: () => void;
+  /**
+   * The pool the trader arrived for, from the dashboard. A pool the ledger
+   * has not opened to them is ignored, exactly as an unknown one is.
+   */
+  initialPoolId?: string;
+}) {
   const client = useDexClient();
   const wallet = useWallet();
-  const [poolId, setPoolId] = useState('');
+  const [poolId, setPoolId] = useState(initialPoolId ?? '');
   /**
    * The cursor that produced each page after the first.
    *
@@ -105,10 +116,11 @@ export function SwapDesk({ onGoToOnboarding }: { onGoToOnboarding: () => void })
   }
 
   return (
-    <div className="stack-lg fade-in">
-      <header className="page-head">
-        <h1 className="page-title">Swap</h1>
-      </header>
+    <div className="stack-lg fade-in page-narrow">
+      <PageHeader
+        title="Swap"
+        description="The venue prices it, your wallet signs it, and the pool settles it in a batch."
+      />
 
       {wallet === null ? (
         <Callout tone="warning">No wallet configured</Callout>

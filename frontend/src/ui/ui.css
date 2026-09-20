@@ -566,6 +566,15 @@ select.control {
   font-variant-numeric: tabular-nums;
 }
 
+/*
+ * A numeric heading sits over its own figures. `.table th` sets every heading
+ * to the left and outranks a bare class, so the numeric one has to say so
+ * again with the element in the selector.
+ */
+.table th.table-num {
+  text-align: right;
+}
+
 /* A table too wide for a phone scrolls inside its card instead of being cut. */
 @media (max-width: 560px) {
   .table {

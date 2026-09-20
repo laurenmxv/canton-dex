@@ -25,7 +25,7 @@ Extracts the bundled [LocalNet release](docker/artifacts/README.md), starts the 
 | --- | --- | --- |
 | [localhost:5180](http://localhost:5180/) | [localhost:18080](http://localhost:18080/) | [localhost:18082](http://localhost:18082/) |
 
-- **Operator login:** `operator` / `test-password`
+- **Operator login:** `operator` / `operator`
 - **Stop, keeping data:** `make docker-stop`
 
 ## Onboarding

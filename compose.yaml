@@ -59,9 +59,16 @@ services:
       context: .
       dockerfile: docker/frontend.Dockerfile
     init: true
+    volumes:
+      - ./frontend:/app/frontend
+      - ./client:/app/client
+      - frontend-node-modules:/app/frontend/node_modules
+      - client-node-modules:/app/client/node_modules
     environment:
       DEX_API_ORIGIN: http://backend:8080
       DEX_SNAP_BIND_HOST: 0.0.0.0
+      CHOKIDAR_USEPOLLING: "true"
+      CHOKIDAR_INTERVAL: "300"
     ports:
       - '127.0.0.1:5180:5180'
       - '127.0.0.1:4040:4040'
@@ -73,7 +80,7 @@ services:
         - "Promise.all(['http://127.0.0.1:5180/', 'http://127.0.0.1:4040/snap.manifest.json', 'http://127.0.0.1:4040/dist/bundle.js'].map(async url => { const r = await fetch(url); if (!r.ok) throw new Error(url); await r.arrayBuffer(); })).catch(() => process.exit(1))"
       interval: 10s
       timeout: 5s
-      start_period: 15s
+      start_period: 120s
       retries: 6
     depends_on:
       backend: {condition: service_healthy}
@@ -92,3 +99,5 @@ services:
 volumes:
   gradle-cache:
   application-postgres:
+  frontend-node-modules:
+  client-node-modules:

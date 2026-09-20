@@ -70,9 +70,13 @@ See [token integration](docs/tokens.md) for the standard interfaces, package bou
 
 ## Development
 
+Docker mounts `frontend/`, `client/`, `backend/`, and `contracts/` from this checkout.
+Frontend and client source edits update through Vite automatically. Java changes
+are compiled when the backend restarts. Node dependencies stay in Docker volumes.
+
 | Task | Command |
 | --- | --- |
-| Rebuild frontend / SDK | `make docker-run` |
+| Refresh frontend / SDK dependencies after changing a lockfile | `docker compose restart frontend` |
 | Restart backend | `docker compose restart backend` |
 | Clear ledger and databases; keep containers stopped | `./scripts/dex-reset.sh` |
 | Backend integration tests | `make test-backend` |

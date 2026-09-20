@@ -1,4 +1,5 @@
 /// <reference types="vitest/config" />
+import { fileURLToPath } from 'node:url';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 import { cantonSnapServer } from './dev/cantonSnap';
@@ -19,7 +20,23 @@ const apiProxy = {
 
 export default defineConfig({
   plugins: [react(), cantonSnapServer()],
-  server: { port: 5180, strictPort: true, proxy: apiProxy },
+  // Treat the SDK as source so edits participate in Vite's normal HMR graph.
+  resolve: {
+    alias: {
+      '@canton-dex/client': fileURLToPath(new URL('../client/src/index.ts', import.meta.url)),
+    },
+  },
+  server: {
+    port: 5180,
+    strictPort: true,
+    proxy: apiProxy,
+    fs: {
+      allow: [
+        fileURLToPath(new URL('.', import.meta.url)),
+        fileURLToPath(new URL('../client', import.meta.url)),
+      ],
+    },
+  },
   test: {
     environment: 'jsdom',
     // An origin is what gives jsdom a working localStorage.

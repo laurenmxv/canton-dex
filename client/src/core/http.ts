@@ -2,9 +2,14 @@ import { DexClientError, readProblem, type ProblemDetails } from '../errors.js';
 import type { DexClientConfig, RequestOptions } from '../types/common.js';
 
 export interface HttpRequest {
-  method: 'GET' | 'POST';
+  method: 'GET' | 'POST' | 'PUT';
   /** An API path with every dynamic segment already encoded. */
   path: string;
+  /**
+   * Appended as a query string. A parameter whose value is undefined is left
+   * out, so the route applies its own default rather than being sent a blank.
+   */
+  query?: Readonly<Record<string, string | number | undefined>>;
   /** Serialized only when present, so a bodyless request stays bodyless. */
   body?: unknown;
   /**
@@ -23,6 +28,17 @@ const ACCEPT = 'application/json, application/problem+json';
 /** Encodes one dynamic segment. Every identifier in a path goes through this. */
 export function segment(value: string): string {
   return encodeURIComponent(value);
+}
+
+/** The one place a query is encoded, so no caller builds a string by hand. */
+function queryString(query: HttpRequest['query']): string {
+  if (query === undefined) return '';
+  const params = new URLSearchParams();
+  for (const [name, value] of Object.entries(query)) {
+    if (value !== undefined) params.set(name, String(value));
+  }
+  const encoded = params.toString();
+  return encoded === '' ? '' : `?${encoded}`;
 }
 
 const BASE_URL_RULE =
@@ -141,7 +157,7 @@ export function createSend(config: DexClientConfig): Send {
 
     let response: Response;
     try {
-      response = await doFetch(`${base}${request.path}`, {
+      response = await doFetch(`${base}${request.path}${queryString(request.query)}`, {
         method: request.method,
         headers,
         body: hasBody ? JSON.stringify(request.body) : undefined,

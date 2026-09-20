@@ -11,7 +11,14 @@ describe('the client surface', () => {
       fetchImpl: recordFetch(() => jsonResponse(200, COMPLETED_ONBOARDING)).fetchImpl,
     });
 
-    expect(Object.keys(client).sort()).toEqual(['admin', 'me', 'onboarding', 'pools']);
+    expect(Object.keys(client).sort()).toEqual([
+      'admin',
+      'me',
+      'onboarding',
+      'pools',
+      'swaps',
+      'tokens',
+    ]);
     expect(Object.keys(client.onboarding).sort()).toEqual([
       'confirmParty',
       'get',
@@ -20,6 +27,21 @@ describe('the client surface', () => {
       'submitApplication',
     ]);
     expect(Object.keys(client.pools).sort()).toEqual(['get', 'list']);
+    expect(Object.keys(client.swaps).sort()).toEqual([
+      'activity',
+      'get',
+      'prepare',
+      'prepareCancellation',
+      'quote',
+      'submit',
+      'submitCancellation',
+    ]);
+    expect(Object.keys(client.tokens).sort()).toEqual([
+      'balances',
+      'faucetStatus',
+      'prepareFaucetClaim',
+      'submitFaucetClaim',
+    ]);
     expect(Object.keys(client.admin).sort()).toEqual([
       'createPoolProposal',
       'getPoolProposal',
@@ -28,17 +50,27 @@ describe('the client surface', () => {
       'listPools',
       'poolCreationOptions',
       'reviewOnboarding',
+      'settlements',
       'withdrawPoolProposal',
+    ]);
+    expect(Object.keys(client.admin.settlements).sort()).toEqual([
+      'get',
+      'list',
+      'monitoring',
+      'policy',
+      'requests',
+      'run',
+      'updatePolicy',
     ]);
   });
 
-  it('exposes no swap, proposal or notification operation, because no route serves one', () => {
+  it('exposes no operation the backend does not serve', () => {
     const client = createDexClient({
       baseUrl: '/api',
       getAccessToken: () => 'token',
     }) as unknown as Record<string, unknown>;
 
-    for (const absent of ['swaps', 'instruments', 'proposals', 'notifications', 'quotes']) {
+    for (const absent of ['instruments', 'proposals', 'notifications', 'quotes', 'lp']) {
       expect(client[absent]).toBeUndefined();
     }
     const onboarding = client['onboarding'] as Record<string, unknown>;
@@ -47,7 +79,13 @@ describe('the client surface', () => {
     for (const absent of ['create', 'createProposal', 'listProposals', 'listInstruments']) {
       expect(pools[absent]).toBeUndefined();
     }
-    // Pools are created through a proposal the dvv accepts, so no route here
+    // Signing belongs to the trader's wallet, and settling to the operator, so
+    // the swap surface offers neither.
+    const swaps = client['swaps'] as Record<string, unknown>;
+    for (const absent of ['sign', 'execute', 'settle', 'cancel']) {
+      expect(swaps[absent]).toBeUndefined();
+    }
+    // Pools are created through a proposal the dvo accepts, so no route here
     // creates one, approves one, or acts as anybody.
     const admin = client['admin'] as Record<string, unknown>;
     for (const absent of ['createPool', 'acceptPoolProposal', 'approvePoolProposal']) {

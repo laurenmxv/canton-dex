@@ -15,6 +15,12 @@ export interface ProblemDetails {
   status?: number;
   detail?: string;
   instance?: string;
+  /**
+   * The venue's own name for the rule that refused, such as `QUOTE_EXPIRED` or
+   * `LEDGER_UNAVAILABLE`. It is an extension member the backend adds to the
+   * swap, settlement and availability problems, and is absent from the rest.
+   */
+  code?: string;
 }
 
 export interface DexClientErrorOptions {
@@ -51,7 +57,7 @@ export function readProblem(body: unknown): ProblemDetails | undefined {
   if (typeof body !== 'object' || body === null) return undefined;
   const source = body as Record<string, unknown>;
   const problem: ProblemDetails = {};
-  for (const key of ['type', 'title', 'detail', 'instance'] as const) {
+  for (const key of ['type', 'title', 'detail', 'instance', 'code'] as const) {
     const value = source[key];
     if (typeof value === 'string') problem[key] = value;
   }

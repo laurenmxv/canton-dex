@@ -6,8 +6,12 @@ import type {
   PoolDetail,
   PoolProposal,
 } from '../../types/pool.js';
+import type { SettlementsApi } from './settlements/index.js';
 
-/** What an operator can do with the onboarding queue and the pool catalogue. */
+/**
+ * What an operator can do with the onboarding queue, the pool catalogue and
+ * each pool's settlement queue.
+ */
 export interface AdminApi {
   listOnboardings(options?: RequestOptions): Promise<Onboarding[]>;
   reviewOnboarding(
@@ -21,4 +25,6 @@ export interface AdminApi {
   getPoolProposal(proposalId: string, options?: RequestOptions): Promise<PoolProposal>;
   withdrawPoolProposal(proposalId: string, options?: RequestOptions): Promise<PoolProposal>;
   listPools(options?: RequestOptions): Promise<PoolDetail[]>;
+  /** Everything that is scoped to one pool's queue rather than to the venue. */
+  readonly settlements: SettlementsApi;
 }

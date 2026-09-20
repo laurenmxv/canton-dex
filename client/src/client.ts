@@ -3,20 +3,25 @@ import { getProfile } from './me.js';
 import { createAdminApi, type AdminApi } from './modules/admin/index.js';
 import { createOnboardingApi, type OnboardingApi } from './modules/onboarding/index.js';
 import { createPoolsApi, type PoolsApi } from './modules/pools/index.js';
+import { createSwapsApi, type SwapsApi } from './modules/swaps/index.js';
+import { createTokensApi, type TokensApi } from './modules/tokens/index.js';
 import type { DexClientConfig, RequestOptions } from './types/common.js';
 import type { Profile } from './types/profile.js';
 
 /**
  * The typed surface of the Canton DEX API.
  *
- * It covers the routes the backend serves. There is no swap, proposal,
- * instrument or notification route, so this client exposes none.
+ * It covers the routes the backend serves and nothing else. No method here
+ * prices, signs or settles anything itself: the venue quotes, the trader's
+ * wallet signs, and the ledger decides.
  */
 export interface DexClient {
   /** Who the venue says the caller is. Roles live in its database, not in a token. */
   me(options?: RequestOptions): Promise<Profile>;
   readonly onboarding: OnboardingApi;
   readonly pools: PoolsApi;
+  readonly swaps: SwapsApi;
+  readonly tokens: TokensApi;
   readonly admin: AdminApi;
 }
 
@@ -33,6 +38,8 @@ export function createDexClient(config: DexClientConfig): DexClient {
     me: (options) => getProfile(send, options),
     onboarding: createOnboardingApi(send),
     pools: createPoolsApi(send),
+    swaps: createSwapsApi(send),
+    tokens: createTokensApi(send),
     admin: createAdminApi(send),
   };
 }

@@ -60,7 +60,7 @@ describe('the pool proposal queue', () => {
   it('asks for the parties a proposal is built against, from the static route', async () => {
     const options = {
       factoryId: '00factory0001',
-      dvv: 'dvv::1220dvv',
+      dvo: 'dvo::1220dvo',
       venueOperator: 'venue-operator::1220beef',
       instrumentAdmins: [{ partyId: 'issuer-usdc::1220usdc', label: 'USDC issuer' }],
     };
@@ -80,7 +80,7 @@ describe('the pool proposal queue', () => {
     expect(JSON.parse(calls[0]!.body!)).toEqual(PROPOSED);
     // Amounts stay strings on the wire: a Decimal does not fit a double.
     expect(JSON.parse(calls[0]!.body!).baseReserve).toBe('1000000');
-    expect(calls[0]!.body).not.toMatch(/"(dvv|factoryId|proposedBy|actAs)"/);
+    expect(calls[0]!.body).not.toMatch(/"(dvo|factoryId|proposedBy|actAs)"/);
     expect(created).toEqual(PENDING_PROPOSAL);
   });
 

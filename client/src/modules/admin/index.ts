@@ -6,6 +6,7 @@ import { listPoolProposals } from './list-pool-proposals.js';
 import { listPoolDetails } from './list-pools.js';
 import { poolCreationOptions } from './pool-creation-options.js';
 import { reviewOnboarding } from './review-onboarding.js';
+import { createSettlementsApi } from './settlements/index.js';
 import { withdrawPoolProposal } from './withdraw-pool-proposal.js';
 import type { AdminApi } from './types.js';
 
@@ -20,7 +21,9 @@ export function createAdminApi(send: Send): AdminApi {
     getPoolProposal: (proposalId, options) => getPoolProposal(send, proposalId, options),
     withdrawPoolProposal: (proposalId, options) => withdrawPoolProposal(send, proposalId, options),
     listPools: (options) => listPoolDetails(send, options),
+    settlements: createSettlementsApi(send),
   };
 }
 
 export type { AdminApi } from './types.js';
+export type { SettlementsApi } from './settlements/index.js';

@@ -86,6 +86,40 @@ describe('where the request goes', () => {
       '7f1c3d9e-0000-4000-8000-000000000001',
     );
   });
+
+  it('encodes a query value rather than letting it add a parameter of its own', async () => {
+    const { send, recorder } = sendWith(() => jsonResponse(200, []));
+
+    await send({
+      method: 'GET',
+      path: '/v1/admin/settlement-requests',
+      query: { poolId: 'pool&status=active' },
+    });
+
+    expect(recorder.calls[0]?.url).toBe(
+      'https://venue.example.com/v1/admin/settlement-requests?poolId=pool%26status%3Dactive',
+    );
+  });
+
+  it('leaves out a parameter with no value, so the route applies its own default', async () => {
+    const { send, recorder } = sendWith(() => jsonResponse(200, []));
+
+    await send({
+      method: 'GET',
+      path: '/v1/activity',
+      query: { type: 'swap', status: undefined, limit: 25 },
+    });
+
+    expect(recorder.calls[0]?.url).toBe('https://venue.example.com/v1/activity?type=swap&limit=25');
+  });
+
+  it('appends nothing when a request carries no query at all', async () => {
+    const { send, recorder } = sendWith(() => jsonResponse(200, []));
+
+    await send({ method: 'GET', path: '/v1/admin/settlements', query: {} });
+
+    expect(recorder.calls[0]?.url).toBe('https://venue.example.com/v1/admin/settlements');
+  });
 });
 
 describe('what the request carries', () => {

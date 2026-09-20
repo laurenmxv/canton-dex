@@ -31,7 +31,7 @@ export interface PoolAccount {
  * 28 integer and 10 fractional digits, which a double cannot hold.
  */
 export interface PoolTerms {
-  dvv: string;
+  dvo: string;
   baseInstrumentId: InstrumentId;
   quoteInstrumentId: InstrumentId;
   baseAccount: PoolAccount;
@@ -113,7 +113,7 @@ export interface InstrumentAdmin {
 /** The parties a proposal is built against. The caller chooses none of them. */
 export interface PoolCreationOptions {
   factoryId: string;
-  dvv: string;
+  dvo: string;
   venueOperator: string;
   instrumentAdmins: readonly InstrumentAdmin[];
 }

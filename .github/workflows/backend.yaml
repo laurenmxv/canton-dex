@@ -1,0 +1,17 @@
+name: Backend
+
+on: [push, pull_request, workflow_dispatch]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build Java and Daml tools
+        run: docker build -t dex-tools docker/tools
+      - name: Build and run unit tests
+        run: docker run --rm -v "$PWD:/workspace" dex-tools ./gradlew --console=plain test

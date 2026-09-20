@@ -1,0 +1,26 @@
+name: Integration tests
+
+on: [workflow_dispatch]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - name: Start LocalNet and application
+        run: |
+          # Keep the restart scenario's temporary directory writable by the runner.
+          mkdir -p backend/build
+          make docker-run
+      - name: Run integration tests
+        run: make test-backend
+      - name: Show container logs on failure
+        if: failure()
+        run: docker compose logs --no-color --tail=200
+      - name: Stop containers
+        if: always()
+        run: docker compose down --volumes --remove-orphans

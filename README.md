@@ -2,14 +2,14 @@
 
 **Daml contracts · Java backend · TypeScript client · React app**
 
-[Quickstart](#quickstart) · [Onboarding](#onboarding) · [Pool creation](#pool-creation) · [Development](#development)
+[Quickstart](#quickstart) · [Onboarding](#onboarding) · [Pool creation](#pool-creation) · [Swaps](#swaps) · [Development](#development)
 
 ---
 
 ## Prerequisites
 
 - **Docker** with Compose 2.27+.
-- **CLI tools:** Make, curl, tar, and `sha256sum` or `shasum`.
+- **CLI tools:** Make and tar.
 
 ## Quickstart
 
@@ -19,7 +19,7 @@ From the repository root:
 make docker-run
 ```
 
-Downloads LocalNet, starts the stack, and configures Keycloak automatically.
+Extracts the bundled [LocalNet release](docker/artifacts/README.md), starts the stack, and configures Keycloak automatically. Docker downloads any missing container images.
 
 | App | Backend | Keycloak |
 | --- | --- | --- |
@@ -42,7 +42,7 @@ Downloads LocalNet, starts the stack, and configures Keycloak automatically.
 
 ## Pool creation
 
-> **Operator proposes → dvv accepts → Factory creates**
+> **Operator proposes → dvo accepts → Factory creates**
 
 1. Create a proposal from the operator's **Pools** page and copy its UUID.
 2. Run the local approver from the repository root:
@@ -55,7 +55,18 @@ Downloads LocalNet, starts the stack, and configures Keycloak automatically.
    ./scripts/decide-pool.sh reject PROPOSAL_UUID
    ```
 
-3. Watch the result in **Pools**. The script acts as `dvv`; acceptance creates the pool on Canton. Funding is outside this flow.
+3. Watch the result in **Pools**. The script acts as `dvo`; acceptance creates the pool on Canton. Funding is outside this flow.
+
+## Swaps
+
+Bootstrap funds BTC/USDC and ETH/USDC pools with local test tokens. A trader signs a request that locks its input; the operator settles queued requests atomically per pool.
+
+1. **Claim tokens as a trader.** Open **Swap**, select **Get test tokens**, then **Sign in MetaMask**. Each account can claim one bundle.
+2. **Request a swap.** Choose a pool and direction, enter an amount, and select **Get a quote**. Check the exact input, minimum output and deadline before **Request swap** opens the wallet. Track confirmation under **Your requests**.
+3. **Settle as operator.** Open **Settlement** and choose the pool. Set its batch target and **Save settings**. **Run batch** settles an eligible queue even below the target; **Automatic settlement** waits for the full target. Each pool saves its own settings.
+4. **Check the result.** A confirmed batch records actual outputs and reserve changes. An expired request can be withdrawn with **Reclaim**, which requires a wallet signature.
+
+See [token integration](docs/tokens.md) for the standard interfaces, package boundaries and supported settlement flow.
 
 ## Development
 
@@ -63,6 +74,16 @@ Downloads LocalNet, starts the stack, and configures Keycloak automatically.
 | --- | --- |
 | Rebuild frontend / SDK | `make docker-run` |
 | Restart backend | `docker compose restart backend` |
+| Clear ledger and databases; keep containers stopped | `./scripts/dex-reset.sh` |
 | Backend integration tests | `make test-backend` |
+| Swap integration scenario | `./scripts/test-backend.sh swaps` |
 | Daml tests (DPM + Java) | `make test` |
+| Reset script tests (Python 3, no Docker changes) | `python3 -m unittest discover -s scripts/tests -v` |
 | Validate database schema | `./scripts/test-backend.sh schema` |
+
+`dex-reset.sh` stops the project's containers and empties the database and ledger
+volumes, including Keycloak users and domain-upgrade snapshots. Containers,
+volumes, networks, images, builds, dependency caches and wallet keys are retained.
+Use `--dry-run` to preview or `--yes` to skip confirmation. Run `make docker-run`
+afterward to initialize the databases and bootstrap fresh fixtures, then sign in
+and onboard again.

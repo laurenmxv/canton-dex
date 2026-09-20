@@ -1,4 +1,5 @@
 import type { CreatePoolProposal, PoolCreationOptions } from '../../lib/api/types';
+import { isLedgerDecimal } from '../../lib/decimal';
 
 /**
  * What the operator fills in, before it becomes a proposal.
@@ -24,11 +25,6 @@ export interface ProposalDraft {
 
 export type DraftField = keyof ProposalDraft;
 
-/**
- * The shape a Daml `Decimal` accepts: 28 integer digits, 10 fractional, and no
- * leading zero to left-pad it, which the venue refuses.
- */
-const DECIMAL = /^(0|[1-9]\d{0,27})(\.\d{1,10})?$/;
 /** Basis points are exclusive of this, which is a whole fee. */
 const FEE_LIMIT = 10_000;
 /** The venue's own bounds on the text a proposal carries. */
@@ -91,7 +87,7 @@ export function suggestedIds(draft: ProposalDraft): Pick<
 function amountError(raw: string, what: string): string | undefined {
   const value = raw.trim();
   if (value === '') return `${what} is required`;
-  if (!DECIMAL.test(value)) return `${what} must be a decimal with up to 10 fractional digits`;
+  if (!isLedgerDecimal(value)) return `${what} must be a decimal with up to 10 fractional digits`;
   if (!/[1-9]/.test(value)) return `${what} must be greater than zero`;
   return undefined;
 }
@@ -107,7 +103,7 @@ function textError(raw: string, what: string, max: number): string | undefined {
 function feeError(raw: string): string | undefined {
   const value = raw.trim();
   if (value === '') return 'Fee is required';
-  if (!DECIMAL.test(value)) return 'Fee must be a decimal with up to 10 fractional digits';
+  if (!isLedgerDecimal(value)) return 'Fee must be a decimal with up to 10 fractional digits';
   // The integer part is at most five digits here, so this comparison is exact.
   const whole = Number(value.split('.')[0]);
   if (whole >= FEE_LIMIT) return 'Fee must be below 10000 bps';

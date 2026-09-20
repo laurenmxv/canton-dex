@@ -8,9 +8,9 @@ import type { DexClient } from '../lib/api/port';
 import type { Onboarding, PartyPreparation, Profile } from '../lib/api/types';
 import { hexToBase64 } from '../wallet/encoding';
 import { createMetaMaskWallet } from '../wallet/metamask';
-import { PUBLISHED_SNAP } from '../wallet/snap';
 import { WalletError, type CantonWallet } from '../wallet/types';
 import { testClient } from './clients';
+import { testWallet } from './wallets';
 import { renderApp } from './harness';
 import { approveForPool, goTo, openRow, submitApplication } from './flows';
 import '../styles/global.css';
@@ -95,13 +95,12 @@ function details(): HTMLElement {
 }
 
 function stubWallet(overrides: Partial<CantonWallet> = {}): CantonWallet {
-  return {
-    target: PUBLISHED_SNAP,
+  return testWallet({
     connect: () => Promise.resolve(),
     publicKey: () => Promise.resolve({ publicKey: SECP_SPKI, fingerprint: '1220aa' }),
     signTopology: () => Promise.resolve({ signature: SIGNATURE, fingerprint: '1220aa' }),
     ...overrides,
-  };
+  });
 }
 
 function renderWallet(
@@ -392,8 +391,8 @@ describe('a development snap', () => {
 
 describe('a preparation the venue is still settling', () => {
   it.each([
-    ['SUBMITTING' as const, /registering your party/i],
-    ['UNRESOLVED' as const, /checking the outcome/i],
+    ['SUBMITTING' as const, 'Registering'],
+    ['UNRESOLVED' as const, 'Confirming'],
   ])('offers no second signature while it is %s', async (status, expected) => {
     const signTopology = vi.fn(() => Promise.reject(new Error('must not be asked')));
     const confirmParty = vi.fn(() => Promise.reject(new Error('must not be called')));

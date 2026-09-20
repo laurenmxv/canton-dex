@@ -8,7 +8,6 @@ import { DataList } from '../../ui/Card';
 import { SimulatedLedgerNotice } from '../../ui/SimulatedLedger';
 import { keyAlgorithm } from '../../wallet/encoding';
 import type { CantonWallet } from '../../wallet/types';
-import { RECONCILING_DETAIL } from './progress';
 import { WalletRegistration } from './WalletRegistration';
 
 /**
@@ -54,18 +53,13 @@ export function PartyRegistration({
 
   if (onboarding.partyMode !== 'external') {
     return (
-      <p className="muted text-xs">
-        This request predates external parties: its party was held by the venue participant, and
-        there is nothing here for you to sign.
-      </p>
+      <p className="muted text-xs">Party held by the venue participant</p>
     );
   }
 
   if (onboarding.review?.decision !== 'APPROVED') {
     return (
-      <p className="muted text-xs">
-        The venue names your party when it approves your application. Registration opens then.
-      </p>
+      <p className="muted text-xs">Awaiting approval</p>
     );
   }
 
@@ -73,16 +67,9 @@ export function PartyRegistration({
   // signature, whichever path produced it.
   if (party && (party.status === 'SUBMITTING' || party.status === 'UNRESOLVED')) {
     return (
-      <div className="stack-sm">
-        <Badge tone={partyStatusTones[party.status]} dot>
-          {partyStatusLabels[party.status]}
-        </Badge>
-        <p className="muted text-xs">
-          {party.status === 'SUBMITTING'
-            ? 'The venue is registering your party on the network.'
-            : RECONCILING_DETAIL}
-        </p>
-      </div>
+      <Badge tone={partyStatusTones[party.status]} dot>
+        {partyStatusLabels[party.status]}
+      </Badge>
     );
   }
 
@@ -91,11 +78,7 @@ export function PartyRegistration({
   }
 
   if (!wallet) {
-    return (
-      <Callout tone="warning" title="No wallet configured">
-        This build has no wallet, so the party cannot be registered here.
-      </Callout>
-    );
+    return <Callout tone="warning">No wallet configured</Callout>;
   }
 
   // A key prepared before wallets is the trader's, and nothing here replaces it.

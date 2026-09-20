@@ -56,16 +56,10 @@ describe('the trader’s next step', () => {
     (status) => {
       const step = nextStep(onboardingAt(status), 0);
       expect(step.primary).toBe(false);
-      expect(step.detail).toMatch(/no action needed/i);
       // It promises no outcome, in either direction.
-      expect(step.detail).not.toMatch(/will (be resubmitted|retry|complete)|trying again|failed/i);
+      expect(step.headline).not.toMatch(/will (be resubmitted|retry|complete)|trying again|failed/i);
     },
   );
-
-  it('says plainly that nothing is left for the trader to do', () => {
-    const step = nextStep(onboardingAt('AWAITING_REVIEW'), 0);
-    expect(step.detail).toMatch(/Nothing is left for you to do/);
-  });
 
   it('offers no primary action while the ledger is still working', () => {
     for (const status of ['LEDGER_SUBMITTING', 'LEDGER_UNRESOLVED'] as const) {
@@ -76,25 +70,19 @@ describe('the trader’s next step', () => {
   });
 
   it('offers a swap only once onboarding completes, and counts the open pools', () => {
-    expect(nextStep(onboardingAt('COMPLETED'), 1, true)).toMatchObject({
+    expect(nextStep(onboardingAt('COMPLETED'), 1)).toMatchObject({
       headline: 'You can trade',
-      detail: 'One pool is open to you.',
+      detail: '1 pool open',
       primary: true,
       action: { label: 'Request swap', target: 'swap' },
     });
-    expect(nextStep(onboardingAt('COMPLETED'), 3).detail).toBe('3 pools are open to you.');
-    // Without a swap screen to send them to, the action stays on onboarding.
-    expect(nextStep(onboardingAt('COMPLETED'), 1).action?.target).toBe('onboarding');
+    expect(nextStep(onboardingAt('COMPLETED'), 3).detail).toBe('3 pools open');
   });
 
   it('states no pool count while the pool list is unknown', () => {
-    const step = nextStep(onboardingAt('COMPLETED'), undefined, true);
+    const step = nextStep(onboardingAt('COMPLETED'), undefined);
     expect(step.headline).toBe('You can trade');
-    expect(step.detail).not.toMatch(/\d/);
-  });
-
-  it('claims no trading where there is no swap screen', () => {
-    expect(nextStep(onboardingAt('COMPLETED'), 1).headline).toBe('Onboarding complete');
+    expect(step.detail).toBeNull();
   });
 
   it('offers no way to trade after a rejection', () => {
@@ -116,7 +104,7 @@ describe('the trader’s next step', () => {
     ];
     for (const status of [...statuses.map(onboardingAt), null]) {
       const { headline, detail } = nextStep(status, 1);
-      expect(`${headline} ${detail}`).not.toMatch(/balance|portfolio|yield|settled|profit/i);
+      expect(`${headline} ${detail ?? ''}`).not.toMatch(/balance|portfolio|yield|settled|profit/i);
     }
   });
 });

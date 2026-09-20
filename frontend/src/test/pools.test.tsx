@@ -25,12 +25,12 @@ const OPERATOR: Profile = {
 };
 
 const TERMS: PoolTerms = {
-  dvv: 'dvv::1220dvv',
+  dvo: 'dvo::1220dvo',
   baseInstrumentId: { admin: 'issuer-usdc::1220usdc', id: 'USDC' },
   quoteInstrumentId: { admin: 'issuer-eurc::1220eurc', id: 'EURC' },
-  baseAccount: { owner: 'dvv::1220dvv', provider: null, id: 'usdc-eurc-base' },
-  quoteAccount: { owner: 'dvv::1220dvv', provider: null, id: 'usdc-eurc-quote' },
-  lpTokenInstrumentId: { admin: 'dvv::1220dvv', id: 'LP-USDC-EURC' },
+  baseAccount: { owner: 'dvo::1220dvo', provider: null, id: 'usdc-eurc-base' },
+  quoteAccount: { owner: 'dvo::1220dvo', provider: null, id: 'usdc-eurc-quote' },
+  lpTokenInstrumentId: { admin: 'dvo::1220dvo', id: 'LP-USDC-EURC' },
   feeBps: '30.0000000000',
   baseReserve: '1000000.0000000000',
   quoteReserve: '920000.0000000000',
@@ -39,7 +39,7 @@ const TERMS: PoolTerms = {
 
 const OPTIONS: PoolCreationOptions = {
   factoryId: '00factory0001',
-  dvv: 'dvv::1220dvv',
+  dvo: 'dvo::1220dvo',
   venueOperator: 'venue-operator::1220beef',
   instrumentAdmins: [
     { partyId: 'issuer-usdc::1220usdc', label: 'USDC issuer' },
@@ -124,17 +124,17 @@ describe('the venue pools console', () => {
     await openPools(user);
 
     expect(await screen.findByText('In progress')).toBeInTheDocument();
-    expect(await screen.findByText('Awaiting dvv')).toBeInTheDocument();
+    expect(await screen.findByText('Awaiting dvo')).toBeInTheDocument();
     expect(await screen.findByRole('heading', { name: 'USDC / EURC' })).toBeInTheDocument();
-    // No control here acts for the dvv: a script accepts the proposal.
+    // No control here acts for the dvo: a script accepts the proposal.
     expect(screen.queryByRole('button', { name: /Accept|Approve/ })).not.toBeInTheDocument();
   });
 
   it.each([
     ['SUBMITTING' as const, 'Submitting'],
-    ['PENDING' as const, 'Awaiting dvv'],
+    ['PENDING' as const, 'Awaiting dvo'],
     ['CREATED' as const, 'Created'],
-    ['REJECTED' as const, 'Rejected by dvv'],
+    ['REJECTED' as const, 'Rejected by dvo'],
     ['WITHDRAWN' as const, 'Withdrawn'],
     ['UNRESOLVED' as const, 'Confirming'],
     ['FAILED' as const, 'Failed'],
@@ -186,7 +186,7 @@ describe('the venue pools console', () => {
     await openPools(user);
 
     const pending = await row();
-    expect(within(pending).getByText('Awaiting dvv')).toBeInTheDocument();
+    expect(within(pending).getByText('Awaiting dvo')).toBeInTheDocument();
     expect(within(pending).getByText('Withdrawal refused: already accepted')).toBeInTheDocument();
   });
 
@@ -223,15 +223,15 @@ describe('the venue pools console', () => {
         listPoolProposals: () => Promise.resolve([proposal()]),
         listPools: () => Promise.resolve([]),
         withdrawPoolProposal: () =>
-          Promise.reject(new DomainError('The dvv already accepted it', 'CONFLICT')),
+          Promise.reject(new DomainError('The dvo already accepted it', 'CONFLICT')),
       },
     });
 
     await openPools(user);
     await user.click(await screen.findByRole('button', { name: 'Withdraw' }));
 
-    expect(await screen.findByText('The dvv already accepted it')).toBeInTheDocument();
-    expect(screen.getByText('Awaiting dvv')).toBeInTheDocument();
+    expect(await screen.findByText('The dvo already accepted it')).toBeInTheDocument();
+    expect(screen.getByText('Awaiting dvo')).toBeInTheDocument();
   });
 
   it('keeps the list a failed refresh already read', async () => {
@@ -253,7 +253,7 @@ describe('the venue pools console', () => {
     await screen.findByText('The venue is unreachable', {}, { timeout: 10_000 });
 
     // The proposal it already read is still there, and no count claims zero.
-    expect(within(await row()).getByText('Awaiting dvv')).toBeInTheDocument();
+    expect(within(await row()).getByText('Awaiting dvo')).toBeInTheDocument();
     expect(screen.getByText('In progress').closest('.stat')!.textContent).toContain('1');
   });
 
@@ -326,20 +326,6 @@ describe('the venue pools console', () => {
     expect(within(contract as HTMLElement).getByText('00proposal0001')).toBeInTheDocument();
   });
 
-  it('says the reserves are accounting values, where they are shown', async () => {
-    const user = renderPools({
-      admin: {
-        listOnboardings: () => Promise.resolve([]),
-        listPoolProposals: () => Promise.resolve([]),
-        listPools: () => Promise.resolve([POOL]),
-      },
-    });
-
-    await openPools(user);
-
-    expect(await screen.findByText('Accounting reserves, not funded holdings')).toBeInTheDocument();
-  });
-
   it('keeps a decided proposal out of Open, and counts it all the same', async () => {
     const user = renderPools({
       admin: {
@@ -357,14 +343,14 @@ describe('the venue pools console', () => {
     await openPools(user);
     const proposals = (await screen.findByText('Proposals')).closest<HTMLElement>('section')!;
 
-    expect(within(proposals).getAllByText(/Awaiting dvv|Failed|Rejected by dvv/)).toHaveLength(1);
-    expect(within(proposals).getByText('Awaiting dvv')).toBeInTheDocument();
+    expect(within(proposals).getAllByText(/Awaiting dvo|Failed|Rejected by dvo/)).toHaveLength(1);
+    expect(within(proposals).getByText('Awaiting dvo')).toBeInTheDocument();
     // The count still says one needs attention, whichever filter is on.
     const stats = screen.getByText('Needs attention').closest('.stat')!;
     expect(stats.textContent).toContain('1');
 
     await user.click(within(proposals).getByRole('button', { name: 'All' }));
-    expect(within(proposals).getAllByText(/Awaiting dvv|Failed|Rejected by dvv/)).toHaveLength(3);
+    expect(within(proposals).getAllByText(/Awaiting dvo|Failed|Rejected by dvo/)).toHaveLength(3);
   });
 
   it('reports a failed refresh once, with one way back', async () => {
@@ -383,7 +369,7 @@ describe('the venue pools console', () => {
     });
 
     await openPools(user);
-    await screen.findByText('Awaiting dvv');
+    await screen.findByText('Awaiting dvo');
 
     await screen.findByText('The venue is unreachable', {}, { timeout: 10_000 });
     expect(screen.getAllByText('The venue is unreachable')).toHaveLength(1);
@@ -407,7 +393,7 @@ describe('the venue pools console', () => {
     expect(within(details).getByText('00pool0001')).toBeInTheDocument();
     expect(within(details).getByText('00config0001')).toBeInTheDocument();
     expect(within(details).getByText('00state0001')).toBeInTheDocument();
-    expect(within(details).getByText('dvv::1220dvv')).toBeInTheDocument();
+    expect(within(details).getByText('dvo::1220dvo')).toBeInTheDocument();
     // Nothing here invents a price, a volume or a value.
     expect(card.textContent).not.toMatch(/TVL|APR|APY|\$|volume/i);
   });
@@ -530,7 +516,7 @@ describe('proposing a pool', () => {
 });
 
 describe('what the operator is told, and when', () => {
-  it('announces a pool the dvv accepted while they watched, once', () => {
+  it('announces a pool the dvo accepted while they watched, once', () => {
     const before = [proposal()];
     const after = [proposal({ status: 'CREATED', poolId: '00pool0001' })];
 
@@ -550,9 +536,9 @@ describe('what the operator is told, and when', () => {
   it('announces a rejection and a failure with the reason the venue gave', () => {
     const rejected = poolNoticesBetween(
       [proposal()],
-      [proposal({ status: 'REJECTED', error: 'The dvv declined' })],
+      [proposal({ status: 'REJECTED', error: 'The dvo declined' })],
     );
-    expect(rejected[0]?.detail).toBe('The dvv declined');
+    expect(rejected[0]?.detail).toBe('The dvo declined');
 
     const failed = poolNoticesBetween(
       [proposal()],
@@ -577,7 +563,7 @@ describe('what the operator is told, and when', () => {
     });
 
     await openPools(user);
-    expect(await screen.findByText('Awaiting dvv')).toBeInTheDocument();
+    expect(await screen.findByText('Awaiting dvo')).toBeInTheDocument();
     const reads = listPools.mock.calls.length;
 
     queue = [proposal({ status: 'CREATED', poolId: '00pool0001' })];
@@ -625,7 +611,7 @@ describe('keeping the catalogue in step with the queue', () => {
     });
 
     await openPools(user);
-    await screen.findAllByText('Awaiting dvv');
+    await screen.findAllByText('Awaiting dvo');
 
     queue = [
       proposal({ status: 'CREATED', poolId: '00pool0001' }),
@@ -668,7 +654,7 @@ describe('polling the queue', () => {
     queue = [proposal()];
 
     expect(
-      await screen.findByText('Awaiting dvv', {}, { timeout: 10_000 }),
+      await screen.findByText('Awaiting dvo', {}, { timeout: 10_000 }),
     ).toBeInTheDocument();
   });
 
@@ -685,7 +671,7 @@ describe('polling the queue', () => {
 
     await openPools(user);
     // Decided proposals are not in Open, which is the filter this opens on.
-    await screen.findByText('No proposal matches this filter.');
+    await screen.findByText('Nothing here');
     const reads = listPoolProposals.mock.calls.length;
 
     queue = [proposal({ status: 'WITHDRAWN' }), proposal({ proposalId: 'prop-0002' })];
@@ -705,7 +691,7 @@ describe('polling the queue', () => {
     });
 
     await openPools(user);
-    await screen.findByText('Awaiting dvv');
+    await screen.findByText('Awaiting dvo');
     const reads = listPoolProposals.mock.calls.length;
 
     cleanup();
@@ -725,7 +711,7 @@ describe('polling the queue', () => {
     });
 
     await openPools(user);
-    await screen.findByText('Awaiting dvv');
+    await screen.findByText('Awaiting dvo');
     const reads = listPoolProposals.mock.calls.length;
 
     const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');

@@ -89,6 +89,26 @@ export function createFixtureBackend(options: FixtureBackendOptions = {}): DexBa
           get: absent('a pool of its own'),
         },
 
+        // The demo signs nothing and settles nothing, so it serves none of the
+        // venue's swap, balance or settlement routes. Its own simulated swap
+        // flow lives under `demo.swaps`, where a screen can see what it is.
+        swaps: {
+          quote: absent('venue quotes'),
+          prepare: absent('venue swap preparations'),
+          submit: absent('signed swap submissions'),
+          get: absent('a venue swap record'),
+          prepareCancellation: absent('venue withdrawal preparations'),
+          submitCancellation: absent('signed withdrawals'),
+          activity: absent('the venue swap history'),
+        },
+
+        tokens: {
+          balances: absent('ledger balances'),
+          faucetStatus: absent('the development faucet'),
+          prepareFaucetClaim: absent('the development faucet'),
+          submitFaucetClaim: absent('the development faucet'),
+        },
+
         admin: {
           listOnboardings: () => settle(() => demo.listOnboardings(state, accountId).map(advanced)),
           reviewOnboarding: (onboardingId, decision) =>
@@ -99,6 +119,15 @@ export function createFixtureBackend(options: FixtureBackendOptions = {}): DexBa
           getPoolProposal: absent('the venue pool proposals'),
           withdrawPoolProposal: absent('venue pool proposals'),
           listPools: absent('the venue pool records'),
+          settlements: {
+            requests: absent('a venue settlement queue'),
+            list: absent('venue settlements'),
+            get: absent('a venue settlement'),
+            run: absent('venue batches'),
+            policy: absent('a pool settlement policy'),
+            updatePolicy: absent('a pool settlement policy'),
+            monitoring: absent('venue monitoring'),
+          },
         },
       },
 

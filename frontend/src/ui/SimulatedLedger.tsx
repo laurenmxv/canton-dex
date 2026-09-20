@@ -6,8 +6,6 @@ import { Callout } from './Badge';
  */
 export function SimulatedLedgerNotice() {
   return (
-    <Callout tone="demo" title="Simulated ledger">
-      Simulated data; no Canton transactions.
-    </Callout>
+    <Callout tone="demo">Simulated ledger</Callout>
   );
 }

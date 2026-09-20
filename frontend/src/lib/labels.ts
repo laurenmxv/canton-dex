@@ -1,4 +1,5 @@
 import { accessStepPoolId, ATTESTATION_STEP } from './api/ledger-steps';
+import { formatDecimal } from './decimal';
 import type {
   DocumentCategory,
   Instrument,
@@ -8,12 +9,15 @@ import type {
   PartyStatus,
   Pool,
   PoolApprover,
+  PoolHealth,
   PoolProposalStatus,
   PoolSummary,
   ProposalStatus,
   Role,
+  SettlementStatus,
   SwapDirection,
   SwapRequest,
+  SwapStatus,
 } from './api/types';
 
 export type Tone = 'neutral' | 'progress' | 'success' | 'warning' | 'danger';
@@ -77,9 +81,9 @@ export const proposalStatusTones: Record<ProposalStatus, Tone> = {
 /** Where a venue pool proposal stands, in the operator's words. */
 export const poolProposalStatusLabels: Record<PoolProposalStatus, string> = {
   SUBMITTING: 'Submitting',
-  PENDING: 'Awaiting dvv',
+  PENDING: 'Awaiting dvo',
   CREATED: 'Created',
-  REJECTED: 'Rejected by dvv',
+  REJECTED: 'Rejected by dvo',
   WITHDRAWN: 'Withdrawn',
   UNRESOLVED: 'Confirming',
   FAILED: 'Failed',
@@ -93,6 +97,73 @@ export const poolProposalStatusTones: Record<PoolProposalStatus, Tone> = {
   WITHDRAWN: 'neutral',
   UNRESOLVED: 'warning',
   FAILED: 'danger',
+};
+
+/**
+ * Where a request stands, said so that no stage claims more than it did.
+ * Accepting a signature is not queueing, and queueing is not settling.
+ */
+export const swapStatusLabels: Record<SwapStatus, string> = {
+  PREPARED: 'Awaiting your signature',
+  SUBMITTING: 'Submitting',
+  UNRESOLVED: 'Confirming',
+  READY: 'Queued for settlement',
+  BLOCKED: 'Blocked in the queue',
+  SETTLING: 'Settling',
+  SETTLED: 'Settled',
+  EXPIRED: 'Deadline elapsed',
+  WITHDRAWING: 'Reclaiming',
+  WITHDRAWAL_UNRESOLVED: 'Confirming reclaim',
+  WITHDRAWN: 'Reclaimed',
+  FAILED: 'Failed',
+};
+
+export const swapStatusTones: Record<SwapStatus, Tone> = {
+  PREPARED: 'neutral',
+  SUBMITTING: 'progress',
+  UNRESOLVED: 'warning',
+  READY: 'progress',
+  BLOCKED: 'warning',
+  SETTLING: 'progress',
+  SETTLED: 'success',
+  EXPIRED: 'warning',
+  WITHDRAWING: 'progress',
+  WITHDRAWAL_UNRESOLVED: 'warning',
+  WITHDRAWN: 'neutral',
+  FAILED: 'danger',
+};
+
+export const settlementStatusLabels: Record<SettlementStatus, string> = {
+  PREPARING: 'Preparing',
+  SUBMITTING: 'Submitting',
+  UNRESOLVED: 'Confirming',
+  CONFIRMED: 'Confirmed',
+  REJECTED: 'Rejected',
+  CANCELLED: 'Cancelled',
+};
+
+export const settlementStatusTones: Record<SettlementStatus, Tone> = {
+  PREPARING: 'neutral',
+  SUBMITTING: 'progress',
+  UNRESOLVED: 'warning',
+  CONFIRMED: 'success',
+  REJECTED: 'danger',
+  CANCELLED: 'neutral',
+};
+
+/** What the venue observed about a pool, not a score this app invented. */
+export const poolHealthLabels: Record<PoolHealth, string> = {
+  READY: 'Ready to settle',
+  UNFUNDED: 'No token backing',
+  BACKING_MISMATCH: 'Holdings do not match reserves',
+  DELEGATION_MISSING: 'Settlement authority missing',
+};
+
+export const poolHealthTones: Record<PoolHealth, Tone> = {
+  READY: 'success',
+  UNFUNDED: 'warning',
+  BACKING_MISMATCH: 'danger',
+  DELEGATION_MISSING: 'danger',
 };
 
 /** A fee as the ledger carries it: basis points, without the trailing zeros. */
@@ -115,13 +186,6 @@ export function ledgerStepLabel(key: string, poolName: (poolId: string) => strin
 export const partyModeLabels: Record<PartyMode, string> = {
   external: 'External party',
   'participant-test': 'Participant-held key',
-};
-
-export const partyModeDescriptions: Record<PartyMode, string> = {
-  external:
-    'The party belongs to the trader. It is registered from a key they hold, and only they can produce the signature that registers it.',
-  'participant-test':
-    'A historical request whose party was pre-provisioned on the venue participant. New requests register an external party instead.',
 };
 
 /** What a supporting document stands for. */
@@ -198,13 +262,12 @@ export function shortDigest(digest: string): string {
   return truncate(digest, 22, 8);
 }
 
+/**
+ * An amount as a reader sees it. The arithmetic is exact: a `Decimal` holds
+ * more digits than a double, so rounding one here would show the wrong money.
+ */
 export function formatAmount(value: string): string {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return value;
-  return parsed.toLocaleString('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 6,
-  });
+  return formatDecimal(value, { minFractionDigits: 2, maxFractionDigits: 6 });
 }
 
 export function formatDateTime(value: string): string {
@@ -215,6 +278,15 @@ export function formatDateTime(value: string): string {
         dateStyle: 'medium',
         timeStyle: 'short',
       });
+}
+
+/** How long ago something happened, in the same words as a countdown. */
+export function formatAge(since: string, from: number): string {
+  const started = Date.parse(since);
+  if (!Number.isFinite(started)) return since;
+  const seconds = Math.max(0, Math.round((from - started) / 1000));
+  const minutes = Math.floor(seconds / 60);
+  return minutes > 0 ? `${minutes}m ${seconds % 60}s` : `${seconds}s`;
 }
 
 export function formatCountdown(target: string, from: number): string {

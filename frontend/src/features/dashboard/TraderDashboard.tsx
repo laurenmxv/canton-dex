@@ -37,7 +37,6 @@ export function TraderDashboard({ onGo }: { onGo: (target: NextStepTarget) => vo
     <div className="stack-lg fade-in">
       <header className="page-head">
         <h1 className="page-title">Dashboard</h1>
-        <p className="page-lede">Where your onboarding stands, and what to do next.</p>
       </header>
 
       <NoticeBoard notices={updates.notices} onDismiss={updates.dismiss} />
@@ -56,7 +55,6 @@ export function TraderDashboard({ onGo }: { onGo: (target: NextStepTarget) => vo
           onboarding={onboarding.data}
           loading={onboarding.loading}
           eligible={onboarding.data === undefined ? undefined : open.length}
-          canSwap={demo !== null}
           onGo={onGo}
         />
       )}
@@ -74,7 +72,7 @@ export function TraderDashboard({ onGo }: { onGo: (target: NextStepTarget) => vo
             result={catalogue}
             label="Loading the pool catalogue"
             rows={2}
-            empty={<EmptyState title="No pools yet" description="The venue runs no pools." />}
+            empty={<EmptyState title="No pools yet" />}
           >
             {(pools) => <OpenPools poolIds={open} catalogue={pools} />}
           </AsyncSection>
@@ -88,9 +86,7 @@ export function TraderDashboard({ onGo }: { onGo: (target: NextStepTarget) => vo
 
 function OpenPools({ poolIds, catalogue }: { poolIds: string[]; catalogue: PoolSummary[] }) {
   if (poolIds.length === 0) {
-    return (
-      <EmptyState title="No pools yet" description="Your pools appear once access is confirmed." />
-    );
+    return <EmptyState title="No pools yet" />;
   }
   return (
     <table className="table">
@@ -114,13 +110,11 @@ function NextStepCard({
   onboarding,
   loading,
   eligible,
-  canSwap,
   onGo,
 }: {
   onboarding: Onboarding | null | undefined;
   loading: boolean;
   eligible: number | undefined;
-  canSwap: boolean;
   onGo: (target: NextStepTarget) => void;
 }) {
   if (loading && onboarding === undefined) {
@@ -134,7 +128,7 @@ function NextStepCard({
     );
   }
 
-  const step = nextStep(onboarding ?? null, eligible, canSwap);
+  const step = nextStep(onboarding ?? null, eligible);
   return (
     <Card>
       <CardHeader
@@ -153,7 +147,7 @@ function NextStepCard({
         <div className="row-between next-step">
           <div>
             <h2 className="card-title">{step.headline}</h2>
-            <p className="card-desc">{step.detail}</p>
+            {step.detail ? <p className="card-desc">{step.detail}</p> : null}
           </div>
           {step.action ? (
             <Button

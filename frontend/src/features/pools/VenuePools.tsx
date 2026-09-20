@@ -24,7 +24,7 @@ import { AsyncSection, EmptyState, ErrorState } from '../../ui/States';
 import { PoolProposalForm } from './PoolProposalForm';
 import { usePoolNotices } from './poolNotices';
 
-/** Statuses the venue or the dvv is still moving, which is what keeps polling. */
+/** Statuses the venue or the dvo is still moving, which is what keeps polling. */
 const SETTLING: ReadonlySet<PoolProposalStatus> = new Set([
   'SUBMITTING',
   'PENDING',
@@ -66,7 +66,7 @@ export function VenuePools() {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<Filter>('open');
 
-  // A proposal the dvv accepted names a pool. Where the catalogue does not have
+  // A proposal the dvo accepted names a pool. Where the catalogue does not have
   // it yet, read it again: one read per set of accepted pools, so a catalogue
   // that stays behind is not asked over and over.
   const acceptedKey = (proposals.data ?? [])
@@ -148,7 +148,7 @@ export function VenuePools() {
           result={proposals}
           label="Loading proposals"
           rows={3}
-          empty={<EmptyState title="No proposals yet" description="Propose a pool to start." />}
+          empty={<EmptyState title="No proposals yet" />}
         >
           {(list) => (
             <ProposalList
@@ -162,7 +162,6 @@ export function VenuePools() {
       <Card>
         <CardHeader
           title="Live pools"
-          description="Accounting reserves, not funded holdings"
           actions={
             <div className="search-field">
               <label className="sr-only" htmlFor="pool-search">
@@ -183,7 +182,7 @@ export function VenuePools() {
           result={pools}
           label="Loading pools"
           rows={2}
-          empty={<EmptyState title="No pools yet" description="An accepted proposal creates one." />}
+          empty={<EmptyState title="No pools yet" />}
         >
           {(list) => (
             <PoolGrid
@@ -227,7 +226,7 @@ function Terms({ terms }: { terms: PoolTerms }) {
           label: 'Quote admin',
           value: <span className="mono">{terms.quoteInstrumentId.admin}</span>,
         },
-        { label: 'dvv', value: <span className="mono">{terms.dvv}</span> },
+        { label: 'dvo', value: <span className="mono">{terms.dvo}</span> },
       ]}
     />
   );
@@ -237,7 +236,7 @@ function PoolGrid({ pools }: { pools: PoolDetail[] }) {
   if (pools.length === 0) {
     return (
       <div className="card-pad">
-        <EmptyState title="No match" description="No pool matches this search." />
+        <EmptyState title="No match" />
       </div>
     );
   }
@@ -297,7 +296,7 @@ function ProposalList({
   if (proposals.length === 0) {
     return (
       <div className="card-pad">
-        <EmptyState title="Nothing here" description="No proposal matches this filter." />
+        <EmptyState title="Nothing here" />
       </div>
     );
   }

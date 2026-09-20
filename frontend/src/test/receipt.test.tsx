@@ -5,9 +5,9 @@ import { App } from '../App';
 import { DexProvider, type Session } from '../app/runtime';
 import type { DemoApi } from '../lib/api/demo';
 import type { DexClient } from '../lib/api/port';
-import { PUBLISHED_SNAP } from '../wallet/snap';
 import type { CantonWallet } from '../wallet/types';
 import { testClient } from './clients';
+import { testWallet } from './wallets';
 import { TraderOnboarding } from '../features/onboarding/TraderOnboarding';
 import type { LedgerStep, Onboarding, Profile } from '../lib/api/types';
 import '../styles/global.css';
@@ -159,7 +159,7 @@ describe('the attestation receipt', () => {
     // on the real three-second interval, and the announcement lands one commit
     // after the record, so both are awaited rather than read synchronously.
     expect(
-      await screen.findByText('Onboarding complete', {}, { timeout: 15_000 }),
+      await screen.findByText('You can trade', {}, { timeout: 15_000 }),
     ).toBeInTheDocument();
     expect(
       await screen.findByText('KYC attestation confirmed', {}, { timeout: 5_000 }),
@@ -272,11 +272,11 @@ describe('the onboarding screen a trader waits on', () => {
     return userEvent.setup();
   }
 
-  it('offers no swap in real mode, where there is no swap screen to reach', async () => {
+  it('sends a completed trader to the swap screen, which real mode now serves', async () => {
     renderOnboarding(onboardingWith([CONFIRMED_ATTESTATION], 'COMPLETED'));
 
     expect(await screen.findByText('Onboarding complete')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Request a swap' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Request a swap' })).toBeInTheDocument();
   });
 
   it('carries the receipt on the page the reader is already on', async () => {
@@ -368,12 +368,12 @@ describe('the onboarding screen a trader waits on', () => {
   });
 
   it('says an Ed25519 preparation cannot be signed here, and changes nothing', async () => {
-    renderOnboarding({ ...onboardingWith([], 'AWAITING_PARTY'), party: PREPARED_PARTY }, null, {}, {
-      target: PUBLISHED_SNAP,
-      connect: () => Promise.reject(new Error('must not be called')),
-      publicKey: () => Promise.reject(new Error('must not be called')),
-      signTopology: () => Promise.reject(new Error('must not be called')),
-    });
+    renderOnboarding(
+      { ...onboardingWith([], 'AWAITING_PARTY'), party: PREPARED_PARTY },
+      null,
+      {},
+      testWallet(),
+    );
 
     expect(await screen.findByText('Prepared with a key MetaMask cannot sign')).toBeInTheDocument();
     expect(screen.getByText(/start a new request/)).toBeInTheDocument();

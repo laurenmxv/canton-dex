@@ -51,11 +51,31 @@ export interface WalletSignature {
 }
 
 /**
- * What the onboarding screen needs from a wallet, and nothing more.
+ * What the wallet dialog tells the reader a hash stands for.
  *
- * No account, no network, no transaction: this signs one Canton topology hash
- * and exports one public key. The seed and the private key never leave the
- * wallet, and nothing here asks for them.
+ * It is the venue's own description of the transaction it prepared. The Snap
+ * cannot check any of it against the hash, and says so in the dialog, so this
+ * never replaces reading the terms on the page before approving.
+ */
+export interface SigningContext {
+  /** What is being authorized, such as `Swap` or `Reclaim`. */
+  operation: string;
+  tokenSymbol: string;
+  amount: string;
+  recipient?: string;
+  sender?: string;
+}
+
+/** Canton's interactive submission hash: SHA-256, and 32 bytes exactly. */
+export const PREPARED_HASH_BYTES = 32;
+
+/**
+ * What the venue's screens need from a wallet, and nothing more.
+ *
+ * No Ethereum account, no network and no transaction is built here: this
+ * exports one public key and signs two kinds of hash the venue produced. The
+ * seed and the private key never leave the wallet, and nothing here asks for
+ * them.
  */
 export interface CantonWallet {
   /** The Snap this wallet installs and invokes. */
@@ -70,6 +90,20 @@ export interface CantonWallet {
    * topology it stands for.
    */
   signTopology(multiHashBase64: string, keyIndex: number): Promise<WalletSignature>;
+  /**
+   * Signs a participant's prepared-transaction hash, also passed through
+   * untouched.
+   *
+   * This is a different hash from a topology one: it is 32 bare bytes rather
+   * than a multihash, and it stands for a Daml transaction the backend built
+   * and kept. Nothing here rebuilds or re-hashes that transaction, so what is
+   * signed is exactly what the participant will be given back.
+   */
+  signTransaction(
+    preparedTransactionHashBase64: string,
+    keyIndex: number,
+    context?: SigningContext,
+  ): Promise<WalletSignature>;
 }
 
 /** The venue's own bounds on a Canton key index, as the Snap enforces them. */

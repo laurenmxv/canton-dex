@@ -2,6 +2,7 @@ import { base64ToBytes, bytesToHex, hexToBase64 } from './encoding';
 import { PUBLISHED_SNAP } from './snap';
 import {
   isKeyIndex,
+  PREPARED_HASH_BYTES,
   WalletError,
   type CantonWallet,
   type SnapTarget,
@@ -117,6 +118,19 @@ function isRejection(cause: unknown): boolean {
 const NESTED_FIELDS = ['data', 'cause', 'originalError', 'error'] as const;
 const MAX_NESTING = 4;
 
+/** Every message in the tree the provider rejected with, outermost first. */
+function messagesIn(cause: unknown, depth = 0): string[] {
+  if (depth > MAX_NESTING) return [];
+  if (typeof cause === 'string') return [cause];
+  if (typeof cause !== 'object' || cause === null) return [];
+  const source = cause as Record<string, unknown>;
+  const own = typeof source.message === 'string' ? [source.message] : [];
+  return NESTED_FIELDS.reduce<string[]>(
+    (found, field) => found.concat(messagesIn(source[field], depth + 1)),
+    own,
+  );
+}
+
 function keepMessage(found: string[], candidate: string): void {
   const text = candidate.trim();
   if (text === '' || found.some((seen) => seen.includes(text))) return;
@@ -127,31 +141,44 @@ function keepMessage(found: string[], candidate: string): void {
   found.push(text);
 }
 
-function collectMessages(cause: unknown, depth: number, found: string[]): void {
-  if (found.length >= 3 || depth > MAX_NESTING) return;
-  if (typeof cause === 'string') {
-    keepMessage(found, cause);
-    return;
-  }
-  if (typeof cause !== 'object' || cause === null) return;
-  const source = cause as Record<string, unknown>;
-  if (typeof source.message === 'string') keepMessage(found, source.message);
-  for (const field of NESTED_FIELDS) collectMessages(source[field], depth + 1, found);
-}
-
 /** What MetaMask said, as plainly as it said it. */
 export function describeFailure(cause: unknown): string {
   const found: string[] = [];
-  collectMessages(cause, 0, found);
+  for (const message of messagesIn(cause)) {
+    if (found.length >= 3) break;
+    keepMessage(found, message);
+  }
   if (found.length > 0) return found.join(' ');
   const text = String(cause);
   return text === '[object Object]' ? 'no reason given' : text;
 }
 
+/**
+ * How the pinned Canton Snap says the reader dismissed one of its own dialogs.
+ *
+ * It throws a plain `Error` with one of these sentences, so MetaMask reports a
+ * failed Snap invocation rather than its own 4001, and there is nothing else
+ * in the answer to tell a refusal from a Snap that broke. These four sentences
+ * are the Snap's contract, matched exactly rather than searched for.
+ */
+const SNAP_REFUSALS = [
+  'User rejected public key export',
+  'User rejected signing',
+  'User rejected topology signing',
+  'User rejected fingerprint disclosure',
+];
+
+function snapRefused(cause: unknown): boolean {
+  return messagesIn(cause).some((message) => {
+    const text = message.trim();
+    return SNAP_REFUSALS.some((refusal) => text === refusal || text.endsWith(`: ${refusal}`));
+  });
+}
+
 /** Turns whatever the provider threw into something a reader can act on. */
 function walletFailure(cause: unknown, whileDoing: string): WalletError {
   if (cause instanceof WalletError) return cause;
-  if (isRejection(cause)) {
+  if (isRejection(cause) || snapRefused(cause)) {
     return new WalletError('rejected', 'You dismissed the MetaMask prompt.', { cause });
   }
   return new WalletError('snap', `MetaMask could not ${whileDoing}: ${describeFailure(cause)}`, {
@@ -361,15 +388,51 @@ export function createMetaMaskWallet(
         await invoke('canton_signTopology', { hash, keyIndex: requireKeyIndex(keyIndex) }),
         'canton_signTopology',
       );
-      const derSignature = readString(answer, 'derSignature');
-      const fingerprint = readString(answer, 'fingerprint');
+      return readSignature(answer, 'canton_signTopology');
+    },
+
+    async signTransaction(hashBase64, keyIndex, context): Promise<WalletSignature> {
+      let hash: string;
       try {
-        return { signature: hexToBase64(derSignature), fingerprint };
+        const bytes = base64ToBytes(hashBase64);
+        if (bytes.length !== PREPARED_HASH_BYTES) {
+          throw new RangeError(`Expected ${PREPARED_HASH_BYTES} bytes, got ${bytes.length}`);
+        }
+        hash = `0x${bytesToHex(bytes)}`;
       } catch (cause) {
-        throw new WalletError('response', 'The Canton Snap returned a malformed signature.', {
-          cause,
-        });
+        throw new WalletError(
+          'response',
+          'The venue sent a prepared transaction hash this app could not read.',
+          { cause },
+        );
       }
+      // The venue's own 32 bytes, passed through. The Snap applies the SHA-256
+      // that ECDSA signing needs; doing it here too would sign the wrong thing.
+      const answer = readObject(
+        await invoke('canton_signHash', {
+          hash,
+          keyIndex: requireKeyIndex(keyIndex),
+          // Shown in the dialog beside the hash, and marked there as coming
+          // from this site rather than from the hash itself. Left out when
+          // there is none, so the Snap shows its own raw-hash warning.
+          ...(context ? { metadata: context } : {}),
+        }),
+        'canton_signHash',
+      );
+      return readSignature(answer, 'canton_signHash');
     },
   };
+}
+
+/** The signature and the key that made it, as every signing method answers. */
+function readSignature(answer: Record<string, unknown>, method: string): WalletSignature {
+  const derSignature = readString(answer, 'derSignature');
+  const fingerprint = readString(answer, 'fingerprint');
+  try {
+    return { signature: hexToBase64(derSignature), fingerprint };
+  } catch (cause) {
+    throw new WalletError('response', `The Canton Snap returned a malformed ${method} signature.`, {
+      cause,
+    });
+  }
 }

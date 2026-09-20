@@ -9,13 +9,7 @@ import { DataList } from '../../ui/Card';
 import { Disclosure } from '../../ui/Disclosure';
 import { TextField } from '../../ui/Field';
 import { isKeyIndex, WalletError, type CantonWallet, type WalletKey } from '../../wallet/types';
-
-/** What the reader is told, per reason the wallet gave. */
-function walletMessage(error: Error): string {
-  if (!(error instanceof WalletError)) return error.message;
-  // A rejection is the one case where saying what did not happen helps.
-  return error.kind === 'rejected' ? `${error.message} Nothing was sent to the venue.` : error.message;
-}
+import { walletMessage } from '../wallet/signing';
 
 /**
  * Registering the trader's party with MetaMask and the Canton Snap.
@@ -152,13 +146,6 @@ export function WalletRegistration({
         )}
       </div>
 
-      {identity && party ? (
-        <p className="muted text-xs">
-          MetaMask shows a hash, not the party it stands for. Check the party above before you
-          confirm.
-        </p>
-      ) : null}
-
       <Disclosure summary="Key details">
         {/* Reachable at every step: a preparation made at another index can only be finished here. */}
         <TextField
@@ -167,7 +154,6 @@ export function WalletRegistration({
           min={0}
           max={1000}
           value={String(keyIndex)}
-          hint="Chooses which Canton identity the wallet uses. Finish a preparation with the index it was made at."
           disabled={busy}
           onChange={(event) => {
             const next = Number(event.target.value);

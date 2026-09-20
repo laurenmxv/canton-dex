@@ -9,7 +9,7 @@ import {
 
 const OPTIONS = {
   factoryId: '00factory',
-  dvv: 'dvv::1220',
+  dvo: 'dvo::1220',
   venueOperator: 'operator::1220',
   instrumentAdmins: [{ partyId: 'issuer::1220', label: 'Issuer' }],
 };

@@ -186,6 +186,30 @@ export function useLive(): () => boolean {
   return useCallback(() => live.current, []);
 }
 
+/**
+ * Runs `effect` when `token` changes, after the first value it is given.
+ *
+ * It is how one read reacts to another: a confirmed settlement changes what
+ * the ledger says a trader holds, and the balances have to be read again to
+ * find out. The first observed value is the baseline, so arriving at a screen
+ * re-reads nothing.
+ */
+export function useChange(token: string | undefined, effect: () => void): void {
+  const seen = useRef<string | undefined>(undefined);
+  const run = useRef(effect);
+  run.current = effect;
+
+  useEffect(() => {
+    if (token === undefined) return;
+    if (seen.current === undefined || seen.current === token) {
+      seen.current = token;
+      return;
+    }
+    seen.current = token;
+    run.current();
+  }, [token]);
+}
+
 export interface ActionResult<A extends unknown[], T> {
   perform: (...args: A) => Promise<T | undefined>;
   pending: boolean;

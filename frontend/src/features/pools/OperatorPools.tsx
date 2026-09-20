@@ -39,10 +39,6 @@ export function OperatorPools({
     <div className="stack-lg fade-in">
       <header className="page-head">
         <h1 className="page-title">Pools</h1>
-        <p className="page-lede">
-          A proposal becomes a pool only after venue governance, the LP token issuer and pool
-          holdings have each approved. Those three act on their own participants.
-        </p>
       </header>
 
       <Card>
@@ -84,7 +80,6 @@ export function OperatorPools({
           empty={
             <EmptyState
               title="No proposals yet"
-              description="Create one to start collecting the three required approvals."
             />
           }
         >
@@ -133,12 +128,12 @@ export function OperatorPools({
       </Card>
 
       <Card>
-        <CardHeader title="Live pools" description="Where onboarded traders can request swaps." />
+        <CardHeader title="Live pools" />
         <AsyncSection
           result={pools}
           label="Loading pools"
           rows={2}
-          empty={<EmptyState title="No live pools" description="Finalize a proposal to create one." />}
+          empty={<EmptyState title="No live pools" />}
         >
           {(list) => (
             <table className="table">
@@ -250,10 +245,10 @@ function ProposalForm({
           ))}
         </SelectField>
         <TextField
-          label="Fee"
+          label="Fee (bps)"
           value={feeBps}
           inputMode="numeric"
-          hint={`Basis points, below ${BPS_SCALE}.`}
+          hint={`Below ${BPS_SCALE}`}
           error={touched ? errors.feeBps : undefined}
           onChange={(event) => setFeeBps(event.target.value)}
         />
@@ -276,9 +271,7 @@ function ProposalForm({
           onChange={(event) => setQuoteReserve(event.target.value)}
         />
       </div>
-      <Callout tone="demo">
-        Reserves and instruments are fixtures. No holdings move and no accounts are debited.
-      </Callout>
+      <Callout tone="demo">Reserves and instruments are fixtures</Callout>
       {create.error ? <Callout tone="danger">{create.error.message}</Callout> : null}
       <div>
         <Button

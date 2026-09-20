@@ -8,6 +8,9 @@ const codeByStatus: Record<number, DexErrorCode> = {
   403: 'FORBIDDEN',
   404: 'NOT_FOUND',
   409: 'CONFLICT',
+  // The participant is temporarily out of reach. A read may be tried again;
+  // nothing the venue was asked to submit is known to have failed.
+  503: 'UNAVAILABLE',
 };
 
 /** What a reader is told when the venue gives no Problem Details of its own. */
@@ -38,7 +41,9 @@ async function translate<T>(work: Promise<T>): Promise<T> {
     if (!(cause instanceof ApiError)) throw cause;
     const detail = cause.problem?.detail;
     const code = cause.status === undefined ? undefined : codeByStatus[cause.status];
-    if (code) throw new DomainError(detail ?? fallbackMessage(cause), code, { cause });
+    if (code) {
+      throw new DomainError(detail ?? fallbackMessage(cause), code, cause.problem?.code, { cause });
+    }
     // No rule to name, so the status stays in the message a reader or a log sees.
     const message =
       detail === undefined
@@ -73,6 +78,24 @@ export function venueClient(api: DexClient): DexClient {
       list: (options) => translate(api.pools.list(options)),
       get: (poolId, options) => translate(api.pools.get(poolId, options)),
     },
+    swaps: {
+      quote: (input, options) => translate(api.swaps.quote(input, options)),
+      prepare: (input, options) => translate(api.swaps.prepare(input, options)),
+      submit: (input, options) => translate(api.swaps.submit(input, options)),
+      get: (swapId, options) => translate(api.swaps.get(swapId, options)),
+      prepareCancellation: (swapId, options) =>
+        translate(api.swaps.prepareCancellation(swapId, options)),
+      submitCancellation: (swapId, input, options) =>
+        translate(api.swaps.submitCancellation(swapId, input, options)),
+      activity: (query, options) => translate(api.swaps.activity(query, options)),
+    },
+    tokens: {
+      balances: (options) => translate(api.tokens.balances(options)),
+      faucetStatus: (options) => translate(api.tokens.faucetStatus(options)),
+      prepareFaucetClaim: (options) => translate(api.tokens.prepareFaucetClaim(options)),
+      submitFaucetClaim: (input, options) =>
+        translate(api.tokens.submitFaucetClaim(input, options)),
+    },
     admin: {
       listOnboardings: (options) => translate(api.admin.listOnboardings(options)),
       reviewOnboarding: (onboardingId, input, options) =>
@@ -85,6 +108,20 @@ export function venueClient(api: DexClient): DexClient {
       withdrawPoolProposal: (proposalId, options) =>
         translate(api.admin.withdrawPoolProposal(proposalId, options)),
       listPools: (options) => translate(api.admin.listPools(options)),
+      settlements: {
+        requests: (poolId, status, options) =>
+          translate(api.admin.settlements.requests(poolId, status, options)),
+        list: (poolId, options) => translate(api.admin.settlements.list(poolId, options)),
+        get: (settlementId, options) =>
+          translate(api.admin.settlements.get(settlementId, options)),
+        run: (poolId, input, options) =>
+          translate(api.admin.settlements.run(poolId, input, options)),
+        policy: (poolId, options) => translate(api.admin.settlements.policy(poolId, options)),
+        updatePolicy: (poolId, input, options) =>
+          translate(api.admin.settlements.updatePolicy(poolId, input, options)),
+        monitoring: (poolId, options) =>
+          translate(api.admin.settlements.monitoring(poolId, options)),
+      },
     },
   };
 }

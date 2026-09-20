@@ -67,7 +67,7 @@ export function ProposalDetail({
 
       <div className="grid-2">
         <Card>
-          <CardHeader title="Settings" description="What the pool contracts will carry." />
+          <CardHeader title="Settings" />
           <div className="card-pad">
             <DataList
               items={[
@@ -100,12 +100,7 @@ export function ProposalDetail({
             description={`${approved} of ${required} collected`}
           />
           <div className="card-pad stack">
-            <Callout tone="demo" title="Other organizations act through fixtures">
-              Each approval below belongs to a different party on its own participant.
-              {controls
-                ? ' The buttons stand in for those organizations, and are separate from anything you do as operator.'
-                : ' Each one approves on its own participant, outside this screen.'}
-            </Callout>
+            <Callout tone="demo">Approvals are fixtures</Callout>
             <ul className="stack-sm">
               {data.approvals.map((approval) => (
                 <li key={approval.approver} className="row-between">

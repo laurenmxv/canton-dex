@@ -39,10 +39,6 @@ export function OperatorOnboardingList({ onOpen }: { onOpen: (onboardingId: stri
     <div className="stack-lg fade-in">
       <header className="page-head">
         <h1 className="page-title">Onboarding requests</h1>
-        <p className="page-lede">
-          Review an application, then approve it with the pools the trader may access, or reject
-          it. Approving names the trader's party, which they then register themselves.
-        </p>
       </header>
 
       <Card>
@@ -58,7 +54,6 @@ export function OperatorOnboardingList({ onOpen }: { onOpen: (onboardingId: stri
           empty={
             <EmptyState
               title="No onboarding requests yet"
-              description="A trader must submit an application before anything appears here."
             />
           }
         >

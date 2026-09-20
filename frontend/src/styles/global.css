@@ -178,11 +178,6 @@ code,
   font-size: 0.8125rem;
 }
 
-.page-lede {
-  color: var(--muted-foreground);
-  max-width: 62ch;
-}
-
 @keyframes oz-fade-in {
   from {
     opacity: 0;

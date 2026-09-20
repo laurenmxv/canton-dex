@@ -128,8 +128,6 @@ export function PoolProposalForm({
           {field('quoteReserve', 'Quote reserve')}
         </div>
 
-        <p className="muted text-xs">Accounting reserves. No holdings are funded.</p>
-
         <Disclosure summary="Advanced">
           <div className="grid-2">
             {field('baseAccountId', 'Base account')}
@@ -139,7 +137,7 @@ export function PoolProposalForm({
           {options.data ? (
             <DataList
               items={[
-                { label: 'dvv', value: <span className="mono">{options.data.dvv}</span> },
+                { label: 'dvo', value: <span className="mono">{options.data.dvo}</span> },
                 { label: 'Factory', value: <span className="mono">{options.data.factoryId}</span> },
               ]}
             />

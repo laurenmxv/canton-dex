@@ -19,7 +19,6 @@ export function SwapRequestsCard({ demo }: { demo: DemoApi }) {
     <Card>
       <CardHeader
         title="Your swap requests"
-        description="Simulated by the demo, and registered against no ledger."
       />
       <AsyncSection
         result={requests}
@@ -28,7 +27,6 @@ export function SwapRequestsCard({ demo }: { demo: DemoApi }) {
         empty={
           <EmptyState
             title="No requests yet"
-            description="A submitted swap appears here while it waits for settlement."
           />
         }
       >

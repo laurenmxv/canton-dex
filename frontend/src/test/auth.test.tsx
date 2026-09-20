@@ -5,9 +5,9 @@ import { App } from '../App';
 import { KeycloakRuntime } from '../app/runtime';
 import type { AuthAdapter, AuthState } from '../auth/types';
 import type { DexClient } from '../lib/api/port';
-import { PUBLISHED_SNAP } from '../wallet/snap';
 import type { CantonWallet } from '../wallet/types';
 import { testClient } from './clients';
+import { testWallet } from './wallets';
 import type { Profile } from '../lib/api/types';
 import '../styles/global.css';
 
@@ -48,12 +48,7 @@ function stubClient(overrides: ClientParts = {}): DexClient {
 }
 
 /** A wallet nothing in these tests reaches for; the session is what is under test. */
-const IDLE_WALLET: CantonWallet = {
-  target: PUBLISHED_SNAP,
-  connect: () => Promise.reject(new Error('not used')),
-  publicKey: () => Promise.reject(new Error('not used')),
-  signTopology: () => Promise.reject(new Error('not used')),
-};
+const IDLE_WALLET: CantonWallet = testWallet();
 
 function authenticated(subject: string): AuthState {
   return {
@@ -148,10 +143,10 @@ describe('real sign-in', () => {
 
     const nav = await screen.findByRole('navigation', { name: 'Sections' });
     const sections = Array.from(nav.querySelectorAll('button')).map((button) => button.textContent);
-    expect(sections).toEqual(['Dashboard', 'Onboarding']);
+    expect(sections).toEqual(['Dashboard', 'Swap', 'Onboarding']);
   });
 
-  it('shows an operator the sections the venue serves, and no swap', async () => {
+  it('shows an operator the sections the venue serves, and no trader screen', async () => {
     renderWithAuth(
       stubAuth(authenticated('david')),
       stubClient({
@@ -166,7 +161,7 @@ describe('real sign-in', () => {
 
     const nav = await screen.findByRole('navigation', { name: 'Sections' });
     const sections = Array.from(nav.querySelectorAll('button')).map((button) => button.textContent);
-    expect(sections).toEqual(['Onboarding requests', 'Pools']);
+    expect(sections).toEqual(['Onboarding requests', 'Pools', 'Settlement']);
   });
 
   it('reports a profile the client cannot load, instead of waiting forever', async () => {

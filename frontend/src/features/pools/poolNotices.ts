@@ -18,7 +18,7 @@ function outcome(proposal: PoolProposalRecord): PoolNotice | null {
       return {
         kind: `${proposal.proposalId}:REJECTED`,
         title: `${proposal.name} rejected`,
-        detail: proposal.error ?? 'The dvv rejected this proposal.',
+        detail: proposal.error ?? 'The dvo rejected this proposal.',
       };
     case 'FAILED':
       return {

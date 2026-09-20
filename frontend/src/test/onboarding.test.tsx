@@ -44,7 +44,7 @@ describe('onboarding', () => {
     expect(
       screen.queryByRole('button', { name: 'Simulate registration' }),
     ).not.toBeInTheDocument();
-    expect(await screen.findByText(/names your party when it approves/)).toBeInTheDocument();
+    expect(await screen.findByText('Awaiting approval')).toBeInTheDocument();
 
     await actAs('Venue Operations');
     await openRow(user, 'Acme Trading Ltd');
@@ -86,7 +86,7 @@ describe('onboarding', () => {
 
     await user.click(await screen.findByRole('button', { name: /Accept with 0 pools/ }));
     expect(
-      await screen.findByText('Select at least one pool to approve this application'),
+      await screen.findByText('Select at least one pool'),
     ).toBeInTheDocument();
 
     await user.click(screen.getByRole('checkbox', { name: /USDC \/ EURC/ }));
@@ -188,9 +188,9 @@ describe('what the operator is told after accepting', () => {
 
     // The status badge says the same thing, so this reads the callout itself.
     const accepted = (await screen.findByText('Accepted')).closest<HTMLElement>('.callout')!;
-    expect(within(accepted).getByText(/Awaiting party registration/)).toBeInTheDocument();
+    expect(within(accepted).getByText('Not registered')).toBeInTheDocument();
     // Accepting never creates or signs anything on the trader's behalf.
-    expect(screen.queryByText(/registered their party,/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Party registered/)).not.toBeInTheDocument();
     // Nothing on the operator's screen narrates the venue's own plumbing.
     expect(document.body.textContent).not.toMatch(/Ledger API/);
   });
@@ -207,7 +207,7 @@ describe('what the operator is told after accepting', () => {
     await openRow(user, 'Acme Trading Ltd');
 
     expect(await screen.findByText('Accepted')).toBeInTheDocument();
-    expect(await screen.findByText(/registered their party/)).toBeInTheDocument();
+    expect(await screen.findByText(/Party registered/)).toBeInTheDocument();
     expect(screen.queryByText(/does not exist yet/)).not.toBeInTheDocument();
   });
 });

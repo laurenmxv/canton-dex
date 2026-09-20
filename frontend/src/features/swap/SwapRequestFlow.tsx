@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { requireDemoApi } from '../../app/runtime';
 import { useAction, useAsync, type ActionResult } from '../../app/useAsync';
+import { useNow } from '../../app/useNow';
 import type { Pool, SwapDirection, SwapPreparation, SwapQuote, SwapRequest } from '../../lib/api/types';
 import { errorCode, MAX_SLIPPAGE_BPS, parseAmount, toDecimal } from '../../lib/api/types';
 import {
@@ -29,18 +30,6 @@ interface AttemptGuard {
   beginAttempt: () => () => boolean;
 }
 
-/** Re-renders once a second, so a quote's remaining time never freezes. */
-function useNow(active: boolean): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!active) return;
-    setNow(Date.now());
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [active]);
-  return now;
-}
-
 export function SwapRequestFlow({ onGoToOnboarding }: { onGoToOnboarding: () => void }) {
   const demo = requireDemoApi();
   const pools = useAsync(() => demo.swaps.eligiblePools(), [demo]);
@@ -56,15 +45,11 @@ export function SwapRequestFlow({ onGoToOnboarding }: { onGoToOnboarding: () => 
     <div className="stack-lg fade-in">
       <header className="page-head">
         <h1 className="page-title">Request a swap</h1>
-        <p className="page-lede">
-          Quote, confirm, approve, submit. The request is registered and waits for settlement. This
-          demo never settles it and never credits an output balance.
-        </p>
       </header>
 
       {instruments.error ? (
         <Callout tone="warning" title="Instrument names unavailable">
-          {instruments.error.message} Amounts below show raw identifiers instead of symbols.
+          {instruments.error.message}
         </Callout>
       ) : null}
 
@@ -74,7 +59,6 @@ export function SwapRequestFlow({ onGoToOnboarding }: { onGoToOnboarding: () => 
         <Card>
           <EmptyState
             title="No pools available to you"
-            description="Complete onboarding and get approved for at least one pool first."
             action={
               <Button variant="secondary" size="sm" onClick={onGoToOnboarding}>
                 Go to onboarding
@@ -85,20 +69,12 @@ export function SwapRequestFlow({ onGoToOnboarding }: { onGoToOnboarding: () => 
       )}
 
       <Card>
-        <CardHeader
-          title="Your swap requests"
-          description="Registered on the ledger and awaiting settlement."
-        />
+        <CardHeader title="Your swap requests" />
         <AsyncSection
           result={requests}
           label="Loading your requests"
           rows={2}
-          empty={
-            <EmptyState
-              title="No requests yet"
-              description="A submitted swap appears here while it waits for settlement."
-            />
-          }
+          empty={<EmptyState title="No requests yet" />}
         >
           {(list) => (
             <table className="table">
@@ -382,7 +358,6 @@ function ComposeStage({
           label="Maximum slippage"
           value={slippageBps}
           inputMode="numeric"
-          hint="Basis points. Sets the minimum output."
           disabled={locked}
           error={touched ? slippageError : undefined}
           onChange={(event) => setSlippageBps(event.target.value)}
@@ -517,10 +492,7 @@ function ApproveStage({
 }) {
   return (
     <div className="stack">
-      <Callout tone="demo" title="Simulated wallet approval">
-        No external wallet is contacted and no key signs anything. Pressing approve stands in for
-        the signature a real trader would give.
-      </Callout>
+      <Callout tone="demo">Simulated wallet approval</Callout>
       <DataList
         items={[
           { label: 'Preparation', value: <span className="mono">{preparation.preparationId}</span> },
@@ -574,10 +546,6 @@ function SubmittedStage({
           { label: 'Settles by', value: formatDateTime(request.settlementDeadline) },
         ]}
       />
-      <Callout tone="info">
-        The request is registered. Settlement is out of scope for this demo, so no output balance is
-        credited.
-      </Callout>
       <div>
         <Button variant="secondary" onClick={onRestart}>
           Request another swap

@@ -1,0 +1,277 @@
+import { useEffect, useRef, useState } from 'react';
+import { useDexClient } from '../../app/runtime';
+import { useAction, useAsync, useChange, type AsyncResult } from '../../app/useAsync';
+import {
+  errorCode,
+  type FaucetPreparation,
+  type FaucetResult,
+  type FaucetStatus,
+  type TokenBalances,
+} from '../../lib/api/types';
+import { formatExact } from '../../lib/decimal';
+import { Badge, Callout } from '../../ui/Badge';
+import { Button } from '../../ui/Button';
+import { Card, CardHeader } from '../../ui/Card';
+import { AsyncSection, EmptyState, RefreshFailure } from '../../ui/States';
+import { walletMessage, type WalletSigner } from '../wallet/signing';
+
+/** The granted bundle, as the wallet dialog and the page both say it. */
+function granted(preparation: FaucetPreparation): string {
+  return preparation.amounts
+    .map((amount) => `${formatExact(amount.amount, amount.decimals)} ${amount.symbol}`)
+    .join(', ');
+}
+
+/**
+ * What the trader holds, and the one development claim that seeds it.
+ *
+ * The tokens are local fixtures with no issuer, market or value behind them,
+ * which is said here rather than left to be inferred. The claim is granted
+ * once per account and is signed by the trader's own wallet, like any other
+ * transaction the venue prepares.
+ */
+export function TestTokens({
+  balances,
+  signer,
+}: {
+  balances: AsyncResult<TokenBalances>;
+  signer: WalletSigner;
+}) {
+  const client = useDexClient();
+  const [prepared, setPrepared] = useState<FaucetPreparation>();
+  /**
+   * True from a signed claim leaving until the venue answers about it again.
+   *
+   * The answer that was on screen when the reply was lost is remembered, so a
+   * status read that fails, or one still serving that same answer, does not
+   * pass for a new one.
+   */
+  const [unresolved, setUnresolved] = useState(false);
+  const answeredWith = useRef<FaucetResult | null>(null);
+  const unresolvedNow = useRef(unresolved);
+  unresolvedNow.current = unresolved;
+
+  const faucet = useAsync((signal) => client.tokens.faucetStatus({ signal }), [client], {
+    pollWhile: (result) =>
+      result.status === 'SUBMITTING' ||
+      result.status === 'UNRESOLVED' ||
+      unresolvedNow.current,
+  });
+
+  // One successful read is the venue's own answer, whatever it says, and it is
+  // what ends the unknown.
+  useEffect(() => {
+    if (unresolved && (faucet.data ?? null) !== answeredWith.current) setUnresolved(false);
+  }, [faucet.data, unresolved]);
+
+  // A confirmed claim is new holdings, so they are read again rather than
+  // waiting for the next thing that happens to refresh them.
+  useChange(faucet.data?.status, balances.reload);
+
+  const prepare = useAction(() => client.tokens.prepareFaucetClaim());
+  const claim = useAction(async (preparation: FaucetPreparation) => {
+    const signature = await signer.sign(preparation, {
+      operation: 'Test token claim',
+      tokenSymbol: preparation.amounts.map((amount) => amount.symbol).join(', '),
+      amount: granted(preparation),
+      recipient: preparation.partyId,
+    });
+    try {
+      return await client.tokens.submitFaucetClaim({
+        preparationId: preparation.preparationId,
+        signature,
+      });
+    } catch (cause) {
+      // The signature has left. Whether the venue took it is its answer to
+      // give, so the status is read again rather than a new signature asked for.
+      answeredWith.current = faucet.data ?? null;
+      setUnresolved(true);
+      faucet.reload();
+      throw cause;
+    }
+  });
+
+  // A deployment without development tokens serves no faucet route. There is
+  // then nothing to offer, so nothing about one is shown.
+  const offered = !(faucet.error && errorCode(faucet.error) === 'NOT_FOUND');
+  const status = faucet.data?.status;
+  const failure = prepare.error ?? claim.error;
+  const notices = Boolean((failure && !unresolved) || unresolved || faucet.error || faucet.data?.error);
+
+  return (
+    <Card>
+      <CardHeader
+        title="Test tokens"
+        actions={
+          offered && status ? (
+            <Badge tone={status === 'COMPLETED' ? 'success' : 'neutral'}>
+              {status === 'COMPLETED' ? 'Claimed' : 'One claim per account'}
+            </Badge>
+          ) : null
+        }
+      />
+
+      {/* Balances arrive as one record rather than a list, so the empty case
+          is the record's own empty list, checked below. */}
+      <AsyncSection result={balances} label="Loading your balances" rows={3}>
+        {(held) =>
+          held.balances.length === 0 ? (
+            <EmptyState title="No balances yet" />
+          ) : (
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Token</th>
+                  <th className="table-num">Available</th>
+                  <th className="table-num">Locked</th>
+                </tr>
+              </thead>
+              <tbody>
+                {held.balances.map((balance) => (
+                  <tr key={`${balance.instrument.admin}/${balance.instrument.id}`}>
+                    <td>{balance.symbol}</td>
+                    {/* At the instrument's own precision: a whole satoshi
+                        shown to six places would read as nothing. */}
+                    <td className="table-num tabular">
+                      {formatExact(balance.available, balance.decimals)}
+                    </td>
+                    <td className="table-num tabular">
+                      {formatExact(balance.locked, balance.decimals)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )
+        }
+      </AsyncSection>
+
+      {offered && (notices || hasClaimAction(status, prepared !== undefined, unresolved)) ? (
+        <div className="card-pad stack-sm">
+          {/* A claim already sent explains itself below; the transport failure
+              that hid its outcome is not something to act on separately. */}
+          {failure && !unresolved ? (
+            <Callout tone="danger">{walletMessage(failure)}</Callout>
+          ) : null}
+
+          {unresolved ? (
+            <Callout tone="warning">Claim sent, outcome unknown</Callout>
+          ) : null}
+
+          {faucet.error ? (
+            <RefreshFailure error={faucet.error} onRetry={faucet.reload} />
+          ) : null}
+
+          {faucet.data?.error ? (
+            <Callout tone="warning" title="The venue reported a problem with your claim">
+              {faucet.data.error}
+            </Callout>
+          ) : null}
+
+          <Claim
+            status={status}
+            unresolved={unresolved}
+            onCheck={faucet.reload}
+            prepared={prepared}
+            preparing={prepare.pending}
+            signing={claim.pending}
+            onPrepare={async () => {
+              const result = await prepare.perform();
+              if (result) setPrepared(result);
+            }}
+            onSign={async (preparation) => {
+              if (!(await claim.perform(preparation))) return;
+              setPrepared(undefined);
+              setUnresolved(false);
+              faucet.reload();
+              balances.reload();
+            }}
+            onCancel={() => setPrepared(undefined)}
+          />
+        </div>
+      ) : null}
+    </Card>
+  );
+}
+
+/** Whether the claim control has anything to offer, which is also what says
+ *  whether its surrounding panel is worth rendering at all. */
+function hasClaimAction(
+  status: FaucetStatus | undefined,
+  prepared: boolean,
+  unresolved: boolean,
+): boolean {
+  if (unresolved) return true;
+  if (status === 'COMPLETED') return false;
+  return status !== undefined || prepared;
+}
+
+/** Where the account's one claim stands, and the one thing to do about it. */
+function Claim({
+  status,
+  unresolved,
+  onCheck,
+  prepared,
+  preparing,
+  signing,
+  onPrepare,
+  onSign,
+  onCancel,
+}: {
+  status: FaucetStatus | undefined;
+  /** True while a sent claim has no answer, which is when nothing may be signed. */
+  unresolved: boolean;
+  onCheck: () => void;
+  prepared: FaucetPreparation | undefined;
+  preparing: boolean;
+  signing: boolean;
+  onPrepare: () => void;
+  onSign: (preparation: FaucetPreparation) => void;
+  onCancel: () => void;
+}) {
+  if (!hasClaimAction(status, prepared !== undefined, unresolved)) return null;
+
+  // A second signature here could claim twice. The status on screen is the one
+  // that was there before the reply went missing, so it decides nothing.
+  if (unresolved) {
+    return (
+      <div className="row">
+        <Button size="sm" variant="secondary" onClick={onCheck}>
+          Check again
+        </Button>
+      </div>
+    );
+  }
+
+  if (status === 'SUBMITTING' || status === 'UNRESOLVED') {
+    return (
+      <p className="muted text-xs">
+        {status === 'SUBMITTING' ? 'Submitting' : 'Confirming'}
+      </p>
+    );
+  }
+
+  if (prepared) {
+    return (
+      <>
+        <p className="text-xs">Grants {granted(prepared)}</p>
+        <div className="row">
+          <Button size="sm" loading={signing} onClick={() => onSign(prepared)}>
+            Sign in MetaMask
+          </Button>
+          <Button size="sm" variant="ghost" disabled={signing} onClick={onCancel}>
+            Cancel
+          </Button>
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <div className="row">
+      <Button size="sm" variant="secondary" loading={preparing} onClick={onPrepare}>
+        Get test tokens
+      </Button>
+    </div>
+  );
+}

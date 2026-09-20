@@ -11,6 +11,8 @@ import { TraderOnboarding } from './features/onboarding/TraderOnboarding';
 import { OperatorPools } from './features/pools/OperatorPools';
 import { VenuePools } from './features/pools/VenuePools';
 import { ProposalDetail } from './features/pools/ProposalDetail';
+import { OperatorSettlement } from './features/settlement/OperatorSettlement';
+import { SwapDesk } from './features/swap/SwapDesk';
 import { SwapRequestFlow } from './features/swap/SwapRequestFlow';
 import type { Role } from './lib/api/types';
 import { roleLabels } from './lib/labels';
@@ -25,6 +27,7 @@ type View =
   | { name: 'operator-onboardings' }
   | { name: 'operator-onboarding'; onboardingId: string }
   | { name: 'operator-pools' }
+  | { name: 'operator-settlement' }
   | { name: 'operator-proposal'; proposalId: string };
 
 /** A view that has its own entry in the sidebar. Detail views do not. */
@@ -32,18 +35,24 @@ type Section = Exclude<View['name'], 'operator-onboarding' | 'operator-proposal'
 
 type NavItem = { id: Section; label: string };
 
-/** Sections per role. Swap is the demo's alone: the venue serves no swap route. */
+/**
+ * Sections per role. Settlement is the venue's alone: the demo runs no queue
+ * and settles nothing, so it has no such screen to offer.
+ */
 function navFor(role: Role, simulated: boolean): readonly NavItem[] {
   if (role === 'OPERATOR') {
-    return [
+    const sections: NavItem[] = [
       { id: 'operator-onboardings', label: 'Onboarding requests' },
       { id: 'operator-pools', label: 'Pools' },
     ];
+    if (!simulated) sections.push({ id: 'operator-settlement', label: 'Settlement' });
+    return sections;
   }
-  const sections: NavItem[] = [{ id: 'trader-dashboard', label: 'Dashboard' }];
-  if (simulated) sections.push({ id: 'trader-swap', label: 'Swap' });
-  sections.push({ id: 'trader-onboarding', label: 'Onboarding' });
-  return sections;
+  return [
+    { id: 'trader-dashboard', label: 'Dashboard' },
+    { id: 'trader-swap', label: 'Swap' },
+    { id: 'trader-onboarding', label: 'Onboarding' },
+  ];
 }
 
 /** A detail view keeps its parent section highlighted. */
@@ -65,6 +74,7 @@ const sectionViews: Record<Section, View> = {
   'trader-onboarding': { name: 'trader-onboarding' },
   'operator-onboardings': { name: 'operator-onboardings' },
   'operator-pools': { name: 'operator-pools' },
+  'operator-settlement': { name: 'operator-settlement' },
 };
 
 export function App() {
@@ -92,9 +102,7 @@ export function App() {
       {realLogin ? null : (
         <div className="demo-bar">
           <strong>Demo session</strong>
-          <span className="muted">
-            Identities, approvals, signatures and ledger results on this site are simulated.
-          </span>
+          <span className="muted">Simulated identities, signatures and ledger results</span>
         </div>
       )}
 
@@ -244,7 +252,6 @@ function AppBody({
         <EmptyState
           icon="→"
           title="Sign in to continue"
-          description="Sign in to apply, or create an account first."
           action={
             <div className="row">
               <Button onClick={session.login}>Sign in</Button>
@@ -300,7 +307,12 @@ function ViewContent({
     case 'trader-onboarding':
       return <TraderOnboarding onGoToSwap={() => navigate({ name: 'trader-swap' })} />;
     case 'trader-swap':
-      return <SwapRequestFlow onGoToOnboarding={() => navigate({ name: 'trader-onboarding' })} />;
+      // The demo runs its own simulated flow; the venue's is the real one.
+      return demo ? (
+        <SwapRequestFlow onGoToOnboarding={() => navigate({ name: 'trader-onboarding' })} />
+      ) : (
+        <SwapDesk onGoToOnboarding={() => navigate({ name: 'trader-onboarding' })} />
+      );
     case 'operator-onboardings':
       return (
         <OperatorOnboardingList
@@ -323,6 +335,8 @@ function ViewContent({
       ) : (
         <VenuePools />
       );
+    case 'operator-settlement':
+      return <OperatorSettlement />;
     case 'operator-proposal':
       return (
         <ProposalDetail

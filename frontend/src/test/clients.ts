@@ -17,7 +17,10 @@ export function testClient(parts: {
   me?: DexClient['me'];
   onboarding?: Partial<DexClient['onboarding']>;
   pools?: Partial<DexClient['pools']>;
-  admin?: Partial<DexClient['admin']>;
+  swaps?: Partial<DexClient['swaps']>;
+  tokens?: Partial<DexClient['tokens']>;
+  admin?: Partial<Omit<DexClient['admin'], 'settlements'>>;
+  settlements?: Partial<DexClient['admin']['settlements']>;
 }): DexClient {
   return {
     me: parts.me ?? unused('me'),
@@ -34,6 +37,23 @@ export function testClient(parts: {
       get: unused('pools.get'),
       ...parts.pools,
     },
+    swaps: {
+      quote: unused('swaps.quote'),
+      prepare: unused('swaps.prepare'),
+      submit: unused('swaps.submit'),
+      get: unused('swaps.get'),
+      prepareCancellation: unused('swaps.prepareCancellation'),
+      submitCancellation: unused('swaps.submitCancellation'),
+      activity: unused('swaps.activity'),
+      ...parts.swaps,
+    },
+    tokens: {
+      balances: unused('tokens.balances'),
+      faucetStatus: unused('tokens.faucetStatus'),
+      prepareFaucetClaim: unused('tokens.prepareFaucetClaim'),
+      submitFaucetClaim: unused('tokens.submitFaucetClaim'),
+      ...parts.tokens,
+    },
     admin: {
       listOnboardings: unused('admin.listOnboardings'),
       reviewOnboarding: unused('admin.reviewOnboarding'),
@@ -44,6 +64,16 @@ export function testClient(parts: {
       withdrawPoolProposal: unused('admin.withdrawPoolProposal'),
       listPools: unused('admin.listPools'),
       ...parts.admin,
+      settlements: {
+        requests: unused('admin.settlements.requests'),
+        list: unused('admin.settlements.list'),
+        get: unused('admin.settlements.get'),
+        run: unused('admin.settlements.run'),
+        policy: unused('admin.settlements.policy'),
+        updatePolicy: unused('admin.settlements.updatePolicy'),
+        monitoring: unused('admin.settlements.monitoring'),
+        ...parts.settlements,
+      },
     },
   };
 }

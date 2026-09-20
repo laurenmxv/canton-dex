@@ -44,7 +44,6 @@ export function TraderOnboarding({ onGoToSwap }: { onGoToSwap: () => void }) {
     <div className="stack-lg fade-in">
       <header className="page-head">
         <h1 className="page-title">Onboarding</h1>
-        <p className="page-lede">Where your application stands, and what to do next.</p>
       </header>
 
       {onboarding.error && onboarding.data !== undefined ? (
@@ -110,10 +109,7 @@ function ApplicationForm({ onSubmitted }: { onSubmitted: () => void }) {
 
   return (
     <Card>
-      <CardHeader
-        title="Submit your application"
-        description="The venue operator reviews this information before granting pool access."
-      />
+      <CardHeader title="Submit your application" />
       <div className="card-pad stack">
         <TextField
           label="Legal name"
@@ -128,7 +124,6 @@ function ApplicationForm({ onSubmitted }: { onSubmitted: () => void }) {
           value={countryCode}
           maxLength={2}
           placeholder="PT"
-          hint="Two-letter ISO code."
           error={touched ? errors.countryCode : undefined}
           onChange={(event) => setCountryCode(event.target.value.toUpperCase())}
         />
@@ -136,9 +131,7 @@ function ApplicationForm({ onSubmitted }: { onSubmitted: () => void }) {
           <legend className="field-label" style={{ marginBottom: '0.5rem' }}>
             Supporting documents
           </legend>
-          <Callout tone="demo" title="Test documents">
-            No files are uploaded. The venue reviews the name, type and size you pick.
-          </Callout>
+          <Callout tone="demo">Test documents: no files are uploaded</Callout>
           {documentTemplates.map((template) => (
             <label key={template.key} className="row text-sm">
               <input
@@ -219,17 +212,12 @@ function OnboardingProgress({
             {rejected ? 'Rejected' : 'Approved'}
           </Badge>
           <p className="muted text-xs">
-            {rejected
-              ? 'No pool access is granted.'
-              : `Approved for ${approvedNames.join(', ')}.`}
+            {rejected ? 'No pool access granted' : `Approved for ${approvedNames.join(', ')}`}
           </p>
         </div>
       ) : (
         <div className="stack-sm">
-          <p className="muted text-xs">
-            Waiting for the venue operator.
-            {simulated ? ' Switch to the operator identity to review it.' : ''}
-          </p>
+          <p className="muted text-xs">Waiting for the venue operator</p>
           <div>
             <Button size="sm" variant="secondary" onClick={onChanged}>
               Check for updates
@@ -273,11 +261,7 @@ function OnboardingProgress({
               ))}
             </ul>
           </div>
-        ) : (
-          <p className="muted text-xs">
-            These follow the review and your party registration.
-          </p>
-        ),
+        ) : null,
     },
   ];
 
@@ -308,14 +292,9 @@ function OnboardingProgress({
           <div className="row-between">
             <div>
               <h2 className="card-title">Onboarding complete</h2>
-              <p className="card-desc">
-                {simulated
-                  ? `You can trade ${approvedNames.join(', ')}.`
-                  : `Access confirmed for ${approvedNames.join(', ')}.`}
-              </p>
+              <p className="card-desc">{approvedNames.join(', ')}</p>
             </div>
-            {/* Only the demo has a swap screen to send the trader to. */}
-            {simulated ? <Button onClick={onGoToSwap}>Request a swap</Button> : null}
+            <Button onClick={onGoToSwap}>Request a swap</Button>
           </div>
         </Card>
       ) : null}

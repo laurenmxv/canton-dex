@@ -31,7 +31,12 @@ function instrument(client: DexClient, calls: Calls): DexClient {
     ...recording({ me: client.me }, '', calls),
     onboarding: recording(client.onboarding, 'onboarding.', calls),
     pools: recording(client.pools, 'pools.', calls),
-    admin: recording(client.admin, 'admin.', calls),
+    swaps: recording(client.swaps, 'swaps.', calls),
+    tokens: recording(client.tokens, 'tokens.', calls),
+    admin: {
+      ...recording(client.admin, 'admin.', calls),
+      settlements: recording(client.admin.settlements, 'admin.settlements.', calls),
+    },
   } as DexClient;
 }
 
@@ -48,7 +53,13 @@ function names(client: DexClient, demo: DemoApi, controls: DemoControls): string
     'me',
     ...Object.keys(client.onboarding).map((key) => `onboarding.${key}`),
     ...Object.keys(client.pools).map((key) => `pools.${key}`),
-    ...Object.keys(client.admin).map((key) => `admin.${key}`),
+    ...Object.keys(client.swaps).map((key) => `swaps.${key}`),
+    ...Object.keys(client.tokens).map((key) => `tokens.${key}`),
+    // `settlements` is the nested surface below, not an operation of its own.
+    ...Object.keys(client.admin)
+      .filter((key) => key !== 'settlements')
+      .map((key) => `admin.${key}`),
+    ...Object.keys(client.admin.settlements).map((key) => `admin.settlements.${key}`),
     ...Object.keys(demo.onboarding).map((key) => `demo.onboarding.${key}`),
     ...Object.keys(demo.pools).map((key) => `demo.pools.${key}`),
     ...Object.keys(demo.swaps).map((key) => `demo.swaps.${key}`),
@@ -149,6 +160,45 @@ async function walkEveryFlow(calls: Calls) {
     () => operator.admin.withdrawPoolProposal('prop-0001'),
     () => operator.admin.listPools(),
     () => alice.pools.get('pool-usdc-eurc'),
+    // The demo signs nothing and settles nothing, so it serves none of the
+    // venue's real swap, balance or settlement routes either.
+    () =>
+      alice.swaps.quote({
+        poolId: 'pool-usdc-eurc',
+        direction: 'BaseToQuote',
+        amountIn: '1',
+        slippageBps: 50,
+      }),
+    () =>
+      alice.swaps.prepare({
+        quoteId: 'quote-0001',
+        minOut: '1',
+        settlementDeadline: '2026-09-19T12:10:00Z',
+      }),
+    () => alice.swaps.submit({ preparationId: 'prep-0001', signature: 'c2ln' }),
+    () => alice.swaps.get('swap-0001'),
+    () => alice.swaps.prepareCancellation('swap-0001'),
+    () => alice.swaps.submitCancellation('swap-0001', { preparationId: 'p', signature: 'c2ln' }),
+    () => alice.swaps.activity(),
+    () => alice.tokens.balances(),
+    () => alice.tokens.faucetStatus(),
+    () => alice.tokens.prepareFaucetClaim(),
+    () => alice.tokens.submitFaucetClaim({ preparationId: 'p', signature: 'c2ln' }),
+    () => operator.admin.settlements.requests('pool-usdc-eurc'),
+    () => operator.admin.settlements.list('pool-usdc-eurc'),
+    () => operator.admin.settlements.get('settle-0001'),
+    () =>
+      operator.admin.settlements.run('pool-usdc-eurc', {
+        idempotencyKey: '11111111-0000-4000-8000-000000000099',
+      }),
+    () => operator.admin.settlements.policy('pool-usdc-eurc'),
+    () =>
+      operator.admin.settlements.updatePolicy('pool-usdc-eurc', {
+        automaticEnabled: true,
+        batchSize: 3,
+        expectedVersion: 1,
+      }),
+    () => operator.admin.settlements.monitoring('pool-usdc-eurc'),
   ];
   for (const call of unavailable) {
     await expect(call()).rejects.toThrow(/does not serve/);

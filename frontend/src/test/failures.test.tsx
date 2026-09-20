@@ -5,6 +5,7 @@ import { App } from '../App';
 import { DexProvider, type Session } from '../app/runtime';
 import type { DexClient } from '../lib/api/port';
 import type { Onboarding, Profile } from '../lib/api/types';
+import { testClient } from './clients';
 import { goTo } from './flows';
 import '../styles/global.css';
 
@@ -16,17 +17,16 @@ const OPERATOR: Profile = {
   partyId: null,
 };
 
-/** Every call rejects unless the test overrides it. */
+/** Every call a screen under test reaches rejects unless it is overridden. */
 function brokenClient(
   overrides: {
     onboarding?: Partial<DexClient['onboarding']>;
     pools?: Partial<DexClient['pools']>;
-    admin?: Partial<DexClient['admin']>;
+    admin?: Partial<Omit<DexClient['admin'], 'settlements'>>;
   } = {},
 ): DexClient {
   const fail = () => Promise.reject(new Error('The venue is unreachable'));
-  const ok = <T,>(value: T) => () => Promise.resolve(value);
-  return {
+  return testClient({
     me: fail,
     onboarding: {
       mine: fail,
@@ -37,7 +37,7 @@ function brokenClient(
       ...overrides.onboarding,
     },
     pools: {
-      list: ok([]),
+      list: () => Promise.resolve([]),
       get: fail,
       ...overrides.pools,
     },
@@ -52,7 +52,7 @@ function brokenClient(
       listPools: fail,
       ...overrides.admin,
     },
-  } as DexClient;
+  });
 }
 
 function renderAs(profile: Profile, client: DexClient) {

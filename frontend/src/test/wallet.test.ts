@@ -21,6 +21,15 @@ const LOCAL_SNAP: SnapTarget = { snapId: 'local:http://localhost:4040', version:
 /** The Snap's own multihash form: 0x1220 then a 32-byte digest. */
 const MULTIHASH_HEX = `1220${'ab'.repeat(32)}`;
 const MULTIHASH_BASE64 = hexToBase64(MULTIHASH_HEX);
+/** A participant's prepared-transaction hash: 32 bare bytes, and no prefix. */
+const PREPARED_HASH_HEX = 'cd'.repeat(32);
+const PREPARED_HASH_BASE64 = hexToBase64(PREPARED_HASH_HEX);
+
+interface SignHashParams {
+  hash: string;
+  keyIndex: number;
+  metadata?: Record<string, string>;
+}
 /** A secp256k1 SPKI, as `compressedPubKeyToSPKIDer` builds one. */
 const SECP_SPKI_HEX = `3036301006072a8648ce3d020106052b8104000a032200${'02'}${'11'.repeat(32)}`;
 /** An Ed25519 SPKI, as the offline script produced. */
@@ -101,7 +110,7 @@ function snapAnswers(request: Request): unknown {
   if (invoked.method === 'canton_getPublicKey') {
     return { compressedPubKey: '0x02', spkiDer: `0x${SECP_SPKI_HEX}`, fingerprint: '1220aa' };
   }
-  if (invoked.method === 'canton_signTopology') {
+  if (invoked.method === 'canton_signTopology' || invoked.method === 'canton_signHash') {
     return { derSignature: `0x${DER_SIGNATURE_HEX}`, fingerprint: '1220aa' };
   }
   throw new Error(`Unexpected ${invoked.method}`);
@@ -534,6 +543,78 @@ describe('what crosses between the snap and the venue', () => {
   });
 });
 
+describe('signing a prepared transaction', () => {
+  it('hands the venue’s own 32 bytes over, without hashing them again', async () => {
+    const { scope, calls } = metamask(snapAnswers);
+
+    await createMetaMaskWallet(scope).signTransaction(PREPARED_HASH_BASE64, 2);
+
+    const request = (calls[0]!.params as { request: { method: string; params: SignHashParams } })
+      .request;
+    expect(request.method).toBe('canton_signHash');
+    expect(request.params.hash).toBe(`0x${PREPARED_HASH_HEX}`);
+    expect(hexToBytes(request.params.hash)).toHaveLength(32);
+    expect(request.params.keyIndex).toBe(2);
+  });
+
+  it('shows the venue’s own description of the transaction beside the hash', async () => {
+    const { scope, calls } = metamask(snapAnswers);
+
+    await createMetaMaskWallet(scope).signTransaction(PREPARED_HASH_BASE64, 0, {
+      operation: 'Swap',
+      tokenSymbol: 'BTC to USDC',
+      amount: '0.05 BTC for at least 2926.47 USDC',
+      sender: 'sullivan::1220aa',
+    });
+
+    const sent = (calls[0]!.params as { request: { params: SignHashParams } }).request.params;
+    expect(sent.metadata).toEqual({
+      operation: 'Swap',
+      tokenSymbol: 'BTC to USDC',
+      amount: '0.05 BTC for at least 2926.47 USDC',
+      sender: 'sullivan::1220aa',
+    });
+  });
+
+  it('sends no description at all when it has none, rather than an empty one', async () => {
+    const { scope, calls } = metamask(snapAnswers);
+
+    await createMetaMaskWallet(scope).signTransaction(PREPARED_HASH_BASE64, 0);
+
+    const sent = (calls[0]!.params as { request: { params: SignHashParams } }).request.params;
+    expect('metadata' in sent).toBe(false);
+  });
+
+  it('refuses a topology multihash here, because it is a different 34 bytes', async () => {
+    const { scope, calls } = metamask(snapAnswers);
+
+    await expect(
+      createMetaMaskWallet(scope).signTransaction(MULTIHASH_BASE64, 0),
+    ).rejects.toMatchObject({ kind: 'response' });
+    expect(calls).toHaveLength(0);
+  });
+
+  it('converts the signature into what the venue stores', async () => {
+    const { scope } = metamask(snapAnswers);
+
+    const signed = await createMetaMaskWallet(scope).signTransaction(PREPARED_HASH_BASE64, 0);
+
+    expect(signed.signature).toBe(hexToBase64(DER_SIGNATURE_HEX));
+    expect(signed.fingerprint).toBe('1220aa');
+  });
+
+  it('reads a dismissed prompt as a rejection, not as a failure of the venue', async () => {
+    const { scope } = metamask((request) => {
+      if (request.method === 'wallet_getSnaps') return {};
+      throw Object.assign(new Error('User rejected the request.'), { code: 4001 });
+    });
+
+    await expect(
+      createMetaMaskWallet(scope).signTransaction(PREPARED_HASH_BASE64, 0),
+    ).rejects.toMatchObject({ kind: 'rejected' });
+  });
+});
+
 describe('when the reader says no', () => {
   it('reports a dismissal as one, not as a failure', async () => {
     const rejection = Object.assign(new Error('User rejected the request.'), { code: 4001 });
@@ -696,5 +777,82 @@ describe('the wallet never asks for a secret', () => {
     const serialized = JSON.stringify(calls);
     expect(serialized).not.toMatch(/private|seed|mnemonic|secret|entropy/i);
     expect(vi.isMockFunction(scope.dispatchEvent)).toBe(false);
+  });
+});
+
+describe('when the reader dismisses the snap’s own dialog', () => {
+  /** The Snap throws a plain Error, which MetaMask reports as a failed call. */
+  function snapRefusal(sentence: string) {
+    return {
+      code: -32603,
+      message: 'Internal JSON-RPC error.',
+      data: { cause: { message: sentence, stack: 'at canton-snap' } },
+    };
+  }
+
+  it.each([
+    ['signing a transaction', 'User rejected signing'],
+    ['signing a topology transaction', 'User rejected topology signing'],
+    ['exporting a key', 'User rejected public key export'],
+  ])('reads a refused %s as a rejection, not as a broken snap', async (_name, sentence) => {
+    const { scope } = metamask((request) => {
+      if (request.method === 'wallet_getSnaps') return {};
+      throw snapRefusal(sentence);
+    });
+
+    const failure = await createMetaMaskWallet(scope)
+      .signTransaction(PREPARED_HASH_BASE64, 0)
+      .catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(WalletError);
+    expect((failure as WalletError).kind).toBe('rejected');
+    expect((failure as WalletError).message).toBe('You dismissed the MetaMask prompt.');
+  });
+
+  it('reads it the same way when the snap error arrives unwrapped', async () => {
+    const { scope } = metamask((request) => {
+      if (request.method === 'wallet_getSnaps') return {};
+      throw new Error('User rejected signing');
+    });
+
+    await expect(
+      createMetaMaskWallet(scope).signTransaction(PREPARED_HASH_BASE64, 0),
+    ).rejects.toMatchObject({ kind: 'rejected' });
+  });
+
+  it('reads it through a prefix the wallet may add', async () => {
+    const { scope } = metamask((request) => {
+      if (request.method === 'wallet_getSnaps') return {};
+      throw new Error('Snap Error: User rejected signing');
+    });
+
+    await expect(
+      createMetaMaskWallet(scope).signTransaction(PREPARED_HASH_BASE64, 0),
+    ).rejects.toMatchObject({ kind: 'rejected' });
+  });
+
+  it('still reports a snap that actually broke as a snap failure', async () => {
+    const { scope } = metamask((request) => {
+      if (request.method === 'wallet_getSnaps') return {};
+      throw new Error('could not derive valid private key from entropy');
+    });
+
+    const failure = (await createMetaMaskWallet(scope)
+      .signTransaction(PREPARED_HASH_BASE64, 0)
+      .catch((error: unknown) => error)) as WalletError;
+
+    expect(failure.kind).toBe('snap');
+    expect(failure.message).toContain('could not derive valid private key');
+  });
+
+  it('does not read a sentence that merely mentions a rejection as one', async () => {
+    const { scope } = metamask((request) => {
+      if (request.method === 'wallet_getSnaps') return {};
+      throw new Error('User rejected signing is not what happened here');
+    });
+
+    await expect(
+      createMetaMaskWallet(scope).signTransaction(PREPARED_HASH_BASE64, 0),
+    ).rejects.toMatchObject({ kind: 'snap' });
   });
 });

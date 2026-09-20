@@ -163,10 +163,17 @@ describe('what the adapter forwards', () => {
   it('exposes nothing the venue does not serve', () => {
     const client = venueClient(refusing(new Error('unused'))) as unknown as Record<string, unknown>;
 
-    expect(Object.keys(client).sort()).toEqual(['admin', 'me', 'onboarding', 'pools']);
-    for (const absent of ['swaps', 'instruments', 'proposals']) {
+    expect(Object.keys(client).sort()).toEqual([
+      'admin',
+      'me',
+      'onboarding',
+      'pools',
+      'swaps',
+      'tokens',
+    ]);
+    for (const absent of ['instruments', 'proposals', 'lp', 'treasury']) {
       expect(client[absent]).toBeUndefined();
     }
-    expect(vi.isMockFunction(client['swaps'])).toBe(false);
+    expect(vi.isMockFunction(client['lp'])).toBe(false);
   });
 });

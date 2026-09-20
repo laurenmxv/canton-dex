@@ -53,7 +53,7 @@ describe('the trader dashboard', () => {
     await goTo(user, 'Dashboard');
 
     expect(await screen.findByText('You can trade')).toBeInTheDocument();
-    expect(screen.getByText('One pool is open to you.')).toBeInTheDocument();
+    expect(screen.getByText('1 pool open')).toBeInTheDocument();
     expect(within(card('Pools open to you')).getByText('USDC / EURC')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Request swap' })).toBeInTheDocument();
   });
@@ -100,7 +100,7 @@ describe('the trader dashboard', () => {
     expect(
       await within(card('Pools open to you')).findByText('USDC / EURC', {}, LEDGER_WAIT),
     ).toBeInTheDocument();
-    expect(screen.getByText('One pool is open to you.')).toBeInTheDocument();
+    expect(screen.getByText('1 pool open')).toBeInTheDocument();
   });
 
   it('never carries one trader’s requests onto another’s dashboard', async () => {
@@ -239,6 +239,6 @@ describe('a dashboard the venue cannot serve', () => {
 
     // The demo's own card carries the request; the venue serves no swap route.
     expect(await screen.findByText('USDC / EURC')).toBeInTheDocument();
-    expect(screen.getByText(/Simulated by the demo/)).toBeInTheDocument();
+    expect(screen.getByText('Your swap requests')).toBeInTheDocument();
   });
 });

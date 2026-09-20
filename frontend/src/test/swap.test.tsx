@@ -33,12 +33,6 @@ describe('swap request', () => {
     expect(screen.getAllByText('Awaiting settlement')).toHaveLength(3);
     const requests = (await screen.findByText('Your swap requests')).closest('section')!;
     expect(within(requests).getByText(requestId)).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        /Settlement is out of scope for this demo, so no output balance is credited/,
-      ),
-    ).toBeInTheDocument();
-
     // The pool the trader swapped against is untouched.
     await actAs('Venue Operations');
     await user.click(await screen.findByRole('button', { name: 'Pools' }));

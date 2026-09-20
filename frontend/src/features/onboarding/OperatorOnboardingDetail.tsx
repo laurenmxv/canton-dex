@@ -9,7 +9,6 @@ import {
   ledgerStepTones,
   onboardingStatusLabels,
   onboardingStatusTones,
-  partyModeDescriptions,
   partyModeLabels,
   partyStatusLabels,
   partyStatusTones,
@@ -55,7 +54,6 @@ export function OperatorOnboardingDetail({
       <EmptyState
         icon="?"
         title="That request is not in the queue"
-        description="No request with that reference is in the queue."
         action={
           <Button variant="secondary" onClick={onBack}>
             All requests
@@ -104,7 +102,7 @@ export function OperatorOnboardingDetail({
         </Card>
 
         <Card>
-          <CardHeader title="Party" description="Registered by the trader once you approve." />
+          <CardHeader title="Party" />
           <div className="card-pad stack-sm">
             {request.party ? (
               <>
@@ -131,12 +129,9 @@ export function OperatorOnboardingDetail({
                     },
                   ]}
                 />
-                {request.partyMode === 'external' ? null : (
-                  <Callout tone="demo">{partyModeDescriptions[request.partyMode]}</Callout>
-                )}
               </>
             ) : (
-              <p className="muted text-xs">Not registered yet.</p>
+              <p className="muted text-xs">Not registered</p>
             )}
           </div>
         </Card>
@@ -189,24 +184,12 @@ export function OperatorOnboardingDetail({
   );
 }
 
-/**
- * Where the trader's own step has got to. Accepting never creates or signs
- * their party, so this only reports what they have done since.
- */
+/** Where the trader's own party stands, in the same words the badges use. */
 function acceptedDetail(party: PartyPreparation | null): string {
   if (party?.confirmed || party?.status === 'CONFIRMED') {
-    return `They registered their party, ${party.partyId}.`;
+    return `Party registered · ${party.partyId}`;
   }
-  switch (party?.status) {
-    case 'PREPARED':
-      return 'Their party is prepared and waiting for their signature.';
-    case 'SUBMITTING':
-      return 'Their signed registration is being submitted to the network.';
-    case 'UNRESOLVED':
-      return 'The outcome of their registration is not known yet, and the venue is checking for it.';
-    default:
-      return 'Awaiting party registration from the trader’s external wallet.';
-  }
+  return party ? partyStatusLabels[party.status] : 'Not registered';
 }
 
 function ReviewPanel({
@@ -293,7 +276,6 @@ function ReviewPanel({
     <Card>
       <CardHeader
         title="Review this application"
-        description="Select pools and confirm the party name."
       />
       <div className="card-pad stack">
         {poolsError ? (
@@ -325,14 +307,13 @@ function ReviewPanel({
               </label>
             ))}
             {touched && selected.length === 0 ? (
-              <p className="field-error">Select at least one pool to approve this application</p>
+              <p className="field-error">Select at least one pool</p>
             ) : null}
           </fieldset>
         )}
 
         <TextField
           label="Party name"
-          hint="Suggested from the legal name."
           error={
             touched && !hintValid
               ? 'Use lowercase letters, digits and underscores, starting with a letter'
@@ -347,7 +328,7 @@ function ReviewPanel({
 
         {confirmingReject ? (
           <Callout tone="danger" title="Reject this application?">
-            <p>Rejection is final and grants no pool access. The trader cannot reapply.</p>
+            <p>Rejection is final.</p>
             <div className="row" style={{ marginTop: '0.75rem' }}>
               <Button variant="danger" loading={review.pending} onClick={() => decide('REJECTED')}>
                 Yes, reject

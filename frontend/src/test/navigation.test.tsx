@@ -34,9 +34,7 @@ describe('the demo warning', () => {
     await screen.findByRole('navigation', { name: 'Sections' });
 
     expect(screen.getByText('Demo session')).toBeInTheDocument();
-    expect(
-      screen.getByText(/Identities, approvals, signatures and ledger results/),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/Simulated identities, signatures and ledger results/)).toBeInTheDocument();
   });
 });
 

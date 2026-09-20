@@ -6,6 +6,8 @@
  * and swap shapes below have no route behind them and belong to the demo.
  */
 
+import type { SwapDirection } from '@canton-dex/client';
+
 /** Basis points denominator, as the Daml fee arithmetic uses it. */
 export const BPS_SCALE = 10_000;
 /** Ceiling this webapp offers for a swap's slippage tolerance. */
@@ -38,6 +40,9 @@ export function parseAmount(raw: string): number | undefined {
 export type {
   CreatePoolProposal,
   DocumentCategory,
+  FaucetPreparation,
+  FaucetResult,
+  FaucetStatus,
   LedgerStep,
   LedgerStepStatus,
   Onboarding,
@@ -55,13 +60,41 @@ export type {
   PoolAccount,
   PoolCreationOptions,
   PoolDetail,
+  PoolHealth,
   PoolProposal as PoolProposalRecord,
   PoolProposalStatus,
+  PoolReserves,
+  PoolSnapshot,
   PoolSummary,
   PoolTerms,
+  PrepareSwapInput,
   Profile,
   ReviewDecisionInput,
   Role,
+  RunSettlementInput,
+  Settlement,
+  SettlementFill,
+  SettlementMonitoring,
+  SettlementPolicy,
+  SettlementQueueFilter,
+  SettlementRequest,
+  SettlementStatus,
+  SettlementTrigger,
+  SubmitSignatureInput,
+  Swap,
+  SwapAction,
+  SwapActivity,
+  SwapActivityQuery,
+  SwapDirection,
+  SwapPreparation as SwapPreparationRecord,
+  SwapQuote as SwapQuoteRecord,
+  SwapQuoteInput,
+  SwapStatus,
+  SwapTerms,
+  TokenAmount,
+  TokenBalance,
+  TokenBalances,
+  UpdateSettlementPolicy,
 } from '@canton-dex/client';
 
 /** Backend bounds on an application, mirrored so the form can warn early. */
@@ -139,10 +172,13 @@ export interface CreateProposalInput {
   quoteReserve: string;
 }
 
-// --------------------------------------------------------------------- swaps
+// ---------------------------------------------------- demo-only swap shapes
 
-export type SwapDirection = 'BaseToQuote' | 'QuoteToBase';
-
+/**
+ * What the demo invents in place of the venue's own swap records. The real
+ * screens use the SDK's `Swap`, `SwapQuoteRecord` and `SwapPreparationRecord`,
+ * which the backend defines and this file only re-exports.
+ */
 export interface SwapQuote {
   quoteId: string;
   poolId: string;
@@ -184,7 +220,13 @@ export interface QuoteInput {
   slippageBps: number;
 }
 
-export type DexErrorCode = 'VALIDATION' | 'CONFLICT' | 'NOT_FOUND' | 'EXPIRED' | 'FORBIDDEN';
+export type DexErrorCode =
+  | 'VALIDATION'
+  | 'CONFLICT'
+  | 'NOT_FOUND'
+  | 'EXPIRED'
+  | 'FORBIDDEN'
+  | 'UNAVAILABLE';
 
 /**
  * A rule the venue enforced, named so a screen can offer the right recovery.
@@ -196,6 +238,12 @@ export class DomainError extends Error {
   constructor(
     message: string,
     readonly code: DexErrorCode,
+    /**
+     * The venue's own name for the rule, such as `QUOTE_EXPIRED`, where it
+     * sent one. Several rules share one status, so this is what tells a screen
+     * which recovery to offer.
+     */
+    readonly venueCode?: string,
     options?: ErrorOptions,
   ) {
     super(message, options);
@@ -205,4 +253,9 @@ export class DomainError extends Error {
 
 export function errorCode(error: unknown): DexErrorCode | undefined {
   return error instanceof DomainError ? error.code : undefined;
+}
+
+/** The venue's own rule name, where it named one. */
+export function venueErrorCode(error: unknown): string | undefined {
+  return error instanceof DomainError ? error.venueCode : undefined;
 }

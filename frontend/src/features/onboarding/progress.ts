@@ -38,9 +38,6 @@ export function isReconciling(onboarding: Onboarding | null | undefined): boolea
   return status === 'PARTY_UNRESOLVED' || status === 'LEDGER_UNRESOLVED';
 }
 
-/** Said while the outcome is unknown: it promises nothing and asks for nothing. */
-export const RECONCILING_DETAIL = 'Checking the outcome. No action needed.';
-
 /**
  * The pools the trader may actually trade.
  *

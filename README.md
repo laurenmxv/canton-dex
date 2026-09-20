@@ -78,16 +78,18 @@ are compiled when the backend restarts. Node dependencies stay in Docker volumes
 | --- | --- |
 | Refresh frontend / SDK dependencies after changing a lockfile | `docker compose restart frontend` |
 | Restart backend | `docker compose restart backend` |
-| Clear ledger and databases; keep containers stopped | `./scripts/dex-reset.sh` |
+| Clear ledger and databases; keep containers stopped | `make docker-reset` |
 | Backend integration tests | `make test-backend` |
 | Swap integration scenario | `./scripts/test-backend.sh swaps` |
 | Daml tests (DPM + Java) | `make test` |
 | Reset script tests (Python 3, no Docker changes) | `python3 -m unittest discover -s scripts/tests -v` |
 | Validate database schema | `./scripts/test-backend.sh schema` |
 
-`dex-reset.sh` stops the project's containers and empties the database and ledger
-volumes, including Keycloak users and domain-upgrade snapshots. Containers,
+`make docker-reset` asks for confirmation, stops the project's containers and
+empties the database and ledger volumes, including Keycloak users and
+domain-upgrade snapshots. Containers,
 volumes, networks, images, builds, dependency caches and wallet keys are retained.
-Use `--dry-run` to preview or `--yes` to skip confirmation. Run `make docker-run`
-afterward to initialize the databases and bootstrap fresh fixtures, then sign in
+Use `./scripts/dex-reset.sh --dry-run` to preview or `./scripts/dex-reset.sh --yes`
+to skip confirmation. Run `make docker-run` afterward to initialize the databases
+and bootstrap fresh fixtures, then sign in
 and onboard again.

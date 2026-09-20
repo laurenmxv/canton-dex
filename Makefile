@@ -1,4 +1,4 @@
-.PHONY: test docker-run docker-stop status logs test-backend prepare-localnet
+.PHONY: test docker-run docker-stop docker-reset status logs test-backend prepare-localnet
 
 test:
 	@./scripts/test-contracts.sh
@@ -14,6 +14,9 @@ docker-run:
 
 docker-stop:
 	@docker compose down
+
+docker-reset:
+	@./scripts/dex-reset.sh
 
 status:
 	@docker compose ps

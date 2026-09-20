@@ -2,6 +2,7 @@ import { useState, type ReactElement } from 'react';
 import './app/shell.css';
 import { useDemoApi, useDemoControls, useSession, type Session } from './app/runtime';
 import { Sidebar } from './app/Sidebar';
+import { Mark } from './app/Mark';
 import { useTheme } from './app/useTheme';
 import type { NextStepTarget } from './features/dashboard/nextStep';
 import { TraderDashboard } from './features/dashboard/TraderDashboard';
@@ -138,7 +139,11 @@ export function App() {
         ) : null}
 
         <div className="content">
-          <main className="main" id="main" tabIndex={-1}>
+          <main
+            className={`main${session.auth?.status === 'anonymous' ? ' main-welcome' : ''}`}
+            id="main"
+            tabIndex={-1}
+          >
             {/* Keyed on the actor, so one trader's data never lands on another's screen. */}
             <AppBody
               key={session.current?.accountId ?? 'anonymous'}
@@ -249,20 +254,25 @@ function AppBody({
 
   if (auth?.status === 'anonymous') {
     return (
-      <Card padded>
-        <EmptyState
-          icon="→"
-          title="Sign in to continue"
-          action={
-            <div className="row">
-              <Button onClick={session.login}>Sign in</Button>
-              <Button variant="secondary" onClick={session.register}>
-                Create an account
-              </Button>
-            </div>
-          }
-        />
-      </Card>
+      <section className="welcome" aria-labelledby="welcome-title">
+        <header className="welcome-brand">
+          <div className="welcome-mark"><Mark /></div>
+          <h1 id="welcome-title">Canton DEX</h1>
+        </header>
+        <div className="welcome-card">
+          <h2>Sign in to continue</h2>
+          <p>Access your account, explore pools and manage your swaps.</p>
+          <div className="welcome-actions">
+            <Button className="btn-block" onClick={session.login}>
+              Sign in <span aria-hidden="true">→</span>
+            </Button>
+            <Button className="btn-block" variant="secondary" onClick={session.register}>
+              Create an account
+            </Button>
+          </div>
+        </div>
+        <p className="welcome-footer">Built on Canton Network</p>
+      </section>
     );
   }
 

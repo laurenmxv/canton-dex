@@ -41,6 +41,7 @@ const desired = {
   redirectUris: [`${APP_ORIGIN}/*`],
   webOrigins: [APP_ORIGIN],
   attributes: {
+    login_theme: 'canton-dex',
     'pkce.code.challenge.method': 'S256',
     'post.logout.redirect.uris': `${APP_ORIGIN}/*`,
   },

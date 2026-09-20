@@ -3,3 +3,6 @@ services:
     ports: ['127.0.0.1:18082:8082']
     volumes:
       - ./docker/Dex-realm.json:/opt/keycloak/data/import/Dex-realm.json:ro
+      - ./docker/keycloak/canton-dex:/opt/keycloak/themes/canton-dex:ro
+      - ./frontend/src/styles/tokens.css:/opt/keycloak/themes/canton-dex/login/resources/css/tokens.css:ro
+      - ./frontend/src/assets:/opt/keycloak/themes/canton-dex/login/resources/img:ro

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.daml.ledger.javaapi.data.DamlRecord;
 import com.openzeppelin.dex.bootstrap.DevelopmentFixtures;
 import com.openzeppelin.dex.canton.generated.pool.*;
+import java.math.BigDecimal;
 import java.net.URI;
 import java.net.http.*;
 import java.time.Duration;
@@ -24,7 +25,8 @@ class EnvironmentIT {
               fixtures
                   .sql()
                   .sql(
-                      "SELECT table_name FROM information_schema.tables WHERE table_schema=current_schema()")
+                      "SELECT table_name FROM information_schema.tables WHERE"
+                          + " table_schema=current_schema()")
                   .query(String.class)
                   .list())
           .contains(
@@ -57,17 +59,10 @@ class EnvironmentIT {
                       || right.hasCanReadAsAnyParty()
                       || right.hasCanExecuteAsAnyParty());
       assertThat(ledger.hasPackage(Pool.PACKAGE_ID)).isTrue();
-      var row =
-          fixtures
-              .sql()
-              .sql("SELECT * FROM pools WHERE active ORDER BY name LIMIT 1")
-              .query()
-              .singleRow();
-      assertThat(row.get("package_id")).isEqualTo(Pool.PACKAGE_ID);
       String authority =
           fixtures
               .sql()
-              .sql("SELECT party_id FROM fixture_parties WHERE name = 'dvv'")
+              .sql("SELECT party_id FROM fixture_parties WHERE name = 'dvo'")
               .query(String.class)
               .single();
       var runtimeRights = fixtures.admin().rights(DevelopmentFixtures.operatorIdentity().userId());
@@ -76,62 +71,67 @@ class EnvironmentIT {
                   .filter(r -> r.hasCanActAs())
                   .map(r -> r.getCanActAs().getParty()))
           .containsExactly(ledger.primaryParty());
-      var pools = ledger.activeContracts(ledger.primaryParty(), Pool.TEMPLATE_ID);
-      var event =
-          pools.stream()
-              .filter(e -> e.getContractId().equals(row.get("pool_id")))
-              .findFirst()
-              .orElseThrow();
-      assertThat(event.getTemplateId().getPackageId()).isEqualTo(Pool.PACKAGE_ID);
-      var pool = Pool.valueDecoder().decode(DamlRecord.fromProto(event.getCreateArguments()));
-      var roles =
+      var rows =
           fixtures
               .sql()
-              .sql("SELECT name, party_id FROM fixture_parties")
+              .sql(
+                  """
+                  SELECT p.*, t.pair FROM test_token_pools t JOIN pools p ON p.pool_id=t.pool_id
+                  WHERE p.active ORDER BY t.pair
+                  """)
               .query()
-              .listOfRows()
-              .stream()
-              .collect(
-                  java.util.stream.Collectors.toMap(
-                      r -> (String) r.get("name"), r -> (String) r.get("party_id")));
-      assertThat(pool.dvv).isEqualTo(authority);
-      assertThat(pool.venueOperator).isEqualTo(ledger.primaryParty());
-      assertThat(event.getSignatoriesList()).containsExactly(authority);
-      assertThat(event.getObserversList()).contains(ledger.primaryParty());
-      assertThat(pool.lpTokenInstrumentId.admin).isEqualTo(authority);
-      assertThat(pool.baseAccount.owner).contains(authority);
-      assertThat(pool.quoteAccount.owner).contains(authority);
-      assertThat(pool.baseInstrumentId.admin).isNotEqualTo(authority);
-      assertThat(pool.quoteInstrumentId.admin).isNotEqualTo(authority);
-      assertThat(ledger.primaryParty()).isEqualTo(roles.get("operator"));
-      assertThat(pool.baseInstrumentId.id).isEqualTo("BASE");
-      assertThat(pool.quoteInstrumentId.id).isEqualTo("QUOTE");
-      var configEvent =
-          ledger.activeContracts(ledger.primaryParty(), PoolConfig.TEMPLATE_ID).stream()
-              .filter(e -> e.getContractId().equals(row.get("config_id")))
-              .findFirst()
-              .orElseThrow();
-      var stateEvent =
-          ledger.activeContracts(ledger.primaryParty(), PoolState.TEMPLATE_ID).stream()
-              .filter(e -> e.getContractId().equals(row.get("state_id")))
-              .findFirst()
-              .orElseThrow();
-      var config =
-          PoolConfig.valueDecoder().decode(DamlRecord.fromProto(configEvent.getCreateArguments()));
-      var state =
-          PoolState.valueDecoder().decode(DamlRecord.fromProto(stateEvent.getCreateArguments()));
-      assertThat(config.poolCid.contractId).isEqualTo(row.get("pool_id"));
-      assertThat(state.poolCid.contractId).isEqualTo(row.get("pool_id"));
-      assertThat(config.dvv).isEqualTo(authority);
-      assertThat(state.dvv).isEqualTo(authority);
-      assertThat(config.venueOperator).isEqualTo(ledger.primaryParty());
-      assertThat(state.venueOperator).isEqualTo(ledger.primaryParty());
-      assertThat(config.feeBps).isEqualByComparingTo("30");
-      assertThat(state.baseReserve).isEqualByComparingTo("997");
-      assertThat(state.quoteReserve).isEqualByComparingTo("1000");
-      assertThat(state.lpTokenSupply).isEqualByComparingTo("1000");
+              .listOfRows();
+      assertThat(rows).extracting(r -> r.get("pair")).containsExactly("BTC/USDC", "ETH/USDC");
+      var names = new HashMap<String, String>();
+      rows.forEach(r -> names.put((String) r.get("pool_id"), (String) r.get("name")));
+      var catalog = new CantonPoolLedger(ledger).pools(names, authority);
+      var events = ledger.activeContracts(ledger.primaryParty(), Pool.TEMPLATE_ID);
+      String issuer =
+          fixtures
+              .sql()
+              .sql("SELECT issuer_party_id FROM test_token_configuration WHERE id=1")
+              .query(String.class)
+              .single();
+      assertThat(
+              runtimeRights.stream()
+                  .filter(r -> r.hasCanReadAs())
+                  .map(r -> r.getCanReadAs().getParty()))
+          .contains(authority)
+          .doesNotContain(issuer);
+      for (var row : rows) {
+        String poolId = (String) row.get("pool_id");
+        var event =
+            events.stream().filter(e -> e.getContractId().equals(poolId)).findFirst().orElseThrow();
+        String sourcePackage = event.getTemplateId().getPackageId();
+        assertThat(sourcePackage).isEqualTo(Pool.PACKAGE_ID);
+        assertThat(row.get("package_id")).isEqualTo(sourcePackage);
+        var pool = Pool.valueDecoder().decode(DamlRecord.fromProto(event.getCreateArguments()));
+        assertThat(pool.dvo).isEqualTo(authority);
+        assertThat(pool.venueOperator).isEqualTo(ledger.primaryParty());
+        assertThat(event.getSignatoriesList()).containsExactly(authority);
+        assertThat(event.getObserversList()).contains(ledger.primaryParty());
+        assertThat(pool.lpTokenInstrumentId.admin).isEqualTo(authority);
+        assertThat(pool.baseAccount.owner).contains(authority);
+        assertThat(pool.quoteAccount.owner).contains(authority);
+        assertThat(pool.baseAccount.provider).isEmpty();
+        assertThat(pool.quoteAccount.provider).isEmpty();
+        assertThat(pool.baseAccount.id).isNotBlank().isNotEqualTo(pool.quoteAccount.id);
+        assertThat(pool.baseInstrumentId.admin).isEqualTo(issuer);
+        assertThat(pool.quoteInstrumentId.admin).isEqualTo(issuer);
+        assertThat(pool.baseInstrumentId.id + "/" + pool.quoteInstrumentId.id)
+            .isEqualTo(row.get("pair"));
+        var detail =
+            catalog.stream().filter(p -> p.poolId().equals(poolId)).findFirst().orElseThrow();
+        assertThat(detail.packageId()).isEqualTo(sourcePackage);
+        assertThat(detail.settings().dvo()).isEqualTo(authority);
+        assertThat(new BigDecimal(detail.settings().baseReserve())).isPositive();
+        assertThat(new BigDecimal(detail.settings().quoteReserve())).isPositive();
+        assertThat(new BigDecimal(detail.settings().lpTokenSupply())).isPositive();
+        SwapLedgerAssertions.backing(ledger, poolId);
+      }
       System.out.println(
-          "PASS environment: real PostgreSQL, Keycloak, authenticated ledger, exact DAR and pool contracts.");
+          "PASS environment: real PostgreSQL, Keycloak, authenticated ledger, approved DAR versions"
+              + " and backed fixture pools.");
     }
   }
 }

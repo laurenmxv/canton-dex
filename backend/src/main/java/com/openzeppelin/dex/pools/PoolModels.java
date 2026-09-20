@@ -17,7 +17,7 @@ public final class PoolModels {
   public record ReserveAccount(String owner, String provider, String id) {}
 
   public record Terms(
-      String dvv,
+      String dvo,
       Instrument baseInstrumentId,
       Instrument quoteInstrumentId,
       ReserveAccount baseAccount,
@@ -83,12 +83,12 @@ public final class PoolModels {
         if (decimal(value).signum() <= 0)
           throw new IllegalArgumentException("Initial amounts must be positive");
       return new Terms(
-          options.dvv(),
+          options.dvo(),
           baseInstrumentId,
           quoteInstrumentId,
-          new ReserveAccount(options.dvv(), null, baseAccountId),
-          new ReserveAccount(options.dvv(), null, quoteAccountId),
-          new Instrument(options.dvv(), lpTokenId),
+          new ReserveAccount(options.dvo(), null, baseAccountId),
+          new ReserveAccount(options.dvo(), null, quoteAccountId),
+          new Instrument(options.dvo(), lpTokenId),
           feeBps,
           baseReserve,
           quoteReserve,
@@ -105,7 +105,7 @@ public final class PoolModels {
   public record Admin(String partyId, String label) {}
 
   public record Options(
-      String factoryId, String dvv, String venueOperator, List<Admin> instrumentAdmins) {}
+      String factoryId, String dvo, String venueOperator, List<Admin> instrumentAdmins) {}
 
   public enum Status {
     SUBMITTING,

@@ -10,4 +10,9 @@ public class CantonConfiguration {
     return new LedgerConnection(
         properties.host(), properties.port(), properties.tokenUrl(), properties.identity());
   }
+
+  @Bean
+  InteractiveTransactions interactiveTransactions(LedgerConnection ledger) {
+    return new InteractiveTransactions(ledger);
+  }
 }

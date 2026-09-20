@@ -14,7 +14,7 @@ public final class PoolEncoding {
 
   public static PoolSettings daml(Terms t) {
     return new PoolSettings(
-        t.dvv(),
+        t.dvo(),
         instrument(t.baseInstrumentId()),
         instrument(t.quoteInstrumentId()),
         account(t.baseAccount()),
@@ -44,7 +44,7 @@ public final class PoolEncoding {
 
   public static Terms from(PoolSettings s) {
     return new Terms(
-        s.dvv,
+        s.dvo,
         instrument(s.baseInstrumentId),
         instrument(s.quoteInstrumentId),
         account(s.baseAccount),
@@ -58,14 +58,14 @@ public final class PoolEncoding {
 
   static Terms terms(Pool p, PoolConfig c, PoolState s) {
     if (!c.poolCid.equals(s.poolCid)
-        || !p.dvv.equals(c.dvv)
-        || !p.dvv.equals(s.dvv)
+        || !p.dvo.equals(c.dvo)
+        || !p.dvo.equals(s.dvo)
         || !p.venueOperator.equals(c.venueOperator)
         || !p.venueOperator.equals(s.venueOperator))
       throw new IllegalStateException("Pool components differ");
     return from(
         new PoolSettings(
-            p.dvv,
+            p.dvo,
             p.baseInstrumentId,
             p.quoteInstrumentId,
             p.baseAccount,

@@ -88,8 +88,8 @@ public class OnboardingStore {
 
   public List<PoolSummary> pools() {
     return sql.sql(
-            "SELECT pool_id,name FROM pools WHERE package_id=? AND active ORDER BY name,pool_id")
-        .param(ledger.packageId())
+            "SELECT pool_id,name FROM pools WHERE package_id=:packageId AND active ORDER BY name,pool_id")
+        .param("packageId", ledger.packageId())
         .query((r, i) -> new PoolSummary(r.getString(1), r.getString(2)))
         .list();
   }

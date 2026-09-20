@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test;
 
 class PoolTermsTest {
   private final Options options =
-      new Options("factory", "dvv", "operator", List.of(new Admin("a", "A"), new Admin("b", "B")));
+      new Options("factory", "dvo", "operator", List.of(new Admin("a", "A"), new Admin("b", "B")));
 
   private Create input(Instrument a, Instrument b, String fee) {
     return new Create("A / B", a, b, "base", "quote", "LP", fee, "100", "200", "100");
@@ -23,8 +23,8 @@ class PoolTermsTest {
     assertThat(forward.pairKey()).isEqualTo(reverse.pairKey());
     assertThat(forward.pairKey())
         .isNotEqualTo(input(new Instrument("b", "USD"), b, "30").terms(options).pairKey());
-    assertThat(forward.baseAccount().owner()).isEqualTo("dvv");
-    assertThat(forward.lpTokenInstrumentId().admin()).isEqualTo("dvv");
+    assertThat(forward.baseAccount().owner()).isEqualTo("dvo");
+    assertThat(forward.lpTokenInstrumentId().admin()).isEqualTo("dvo");
   }
 
   @Test

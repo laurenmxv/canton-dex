@@ -93,11 +93,11 @@ class PoolWorkflowTest {
       return 42;
     }
 
-    public String factory(String dvv) {
+    public String factory(String dvo) {
       return "factory";
     }
 
-    public List<Detail> pools(Map<String, String> names, String dvv) {
+    public List<Detail> pools(Map<String, String> names, String dvo) {
       return List.of();
     }
 
@@ -132,8 +132,8 @@ class PoolWorkflowTest {
       return List.of(new Admin("admin", "Admin"));
     }
 
-    public String dvv() {
-      return "dvv";
+    public String dvo() {
+      return "dvo";
     }
 
     public Map<String, String> names() {

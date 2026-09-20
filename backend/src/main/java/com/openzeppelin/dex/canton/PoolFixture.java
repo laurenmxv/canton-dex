@@ -7,7 +7,7 @@ import com.openzeppelin.dex.canton.generated.splice.api.token.holdingv2.Instrume
 import java.math.BigDecimal;
 import java.util.*;
 
-/** Operator proposal followed by atomic dvv acceptance, using separate authenticated actors. */
+/** Operator proposal followed by atomic dvo acceptance, using separate authenticated actors. */
 public final class PoolFixture {
   private PoolFixture() {}
 
@@ -18,7 +18,7 @@ public final class PoolFixture {
   }
 
   public static boolean compatible(
-      LedgerConnection ledger, String dvv, String operator, Contracts ids) {
+      LedgerConnection ledger, String dvo, String operator, Contracts ids) {
     var event =
         ledger.activeContracts(operator, Pool.TEMPLATE_ID).stream()
             .filter(e -> e.getTemplateId().getPackageId().equals(Pool.PACKAGE_ID))
@@ -30,7 +30,7 @@ public final class PoolFixture {
             .decode(
                 com.daml.ledger.javaapi.data.DamlRecord.fromProto(
                     event.get().getCreateArguments()));
-    if (!pool.dvv.equals(dvv) || !pool.venueOperator.equals(operator)) return false;
+    if (!pool.dvo.equals(dvo) || !pool.venueOperator.equals(operator)) return false;
     boolean config =
         ledger.activeContracts(operator, PoolConfig.TEMPLATE_ID).stream()
             .filter(e -> e.getTemplateId().getPackageId().equals(PoolConfig.PACKAGE_ID))
@@ -43,7 +43,7 @@ public final class PoolFixture {
                               com.daml.ledger.javaapi.data.DamlRecord.fromProto(
                                   e.getCreateArguments()));
                   return value.poolCid.contractId.equals(ids.poolId())
-                      && value.dvv.equals(dvv)
+                      && value.dvo.equals(dvo)
                       && value.venueOperator.equals(operator);
                 });
     boolean state =
@@ -58,7 +58,7 @@ public final class PoolFixture {
                               com.daml.ledger.javaapi.data.DamlRecord.fromProto(
                                   e.getCreateArguments()));
                   return value.poolCid.contractId.equals(ids.poolId())
-                      && value.dvv.equals(dvv)
+                      && value.dvo.equals(dvo)
                       && value.venueOperator.equals(operator);
                 });
     return config && state;
@@ -69,23 +69,23 @@ public final class PoolFixture {
       LedgerConnection operator,
       LedgerConnection baseAdmin,
       LedgerConnection quoteAdmin) {
-    String dvv = authority.primaryParty(), op = operator.primaryParty();
+    String dvo = authority.primaryParty(), op = operator.primaryParty();
     String run = UUID.randomUUID().toString();
     var settings =
         new PoolSettings(
-            dvv,
+            dvo,
             new InstrumentId(baseAdmin.primaryParty(), "BASE"),
             new InstrumentId(quoteAdmin.primaryParty(), "QUOTE"),
-            new Account(Optional.of(dvv), Optional.empty(), "base"),
-            new Account(Optional.of(dvv), Optional.empty(), "quote"),
-            new InstrumentId(dvv, "LP"),
+            new Account(Optional.of(dvo), Optional.empty(), "base"),
+            new Account(Optional.of(dvo), Optional.empty(), "quote"),
+            new InstrumentId(dvo, "LP"),
             new BigDecimal("30"),
             new BigDecimal("997"),
             new BigDecimal("1000"),
             new BigDecimal("1000"));
     var factory =
         LedgerConnection.created(
-            authority.submit(run + "-factory", dvv, List.of(), new PoolFactory(dvv, op).create()),
+            authority.submit(run + "-factory", dvo, List.of(), new PoolFactory(dvo, op).create()),
             PoolFactory.TEMPLATE_ID);
     var proposal =
         LedgerConnection.created(
@@ -99,7 +99,7 @@ public final class PoolFixture {
     var created =
         authority.submit(
             run + "-accept",
-            dvv,
+            dvo,
             List.of(),
             new PoolProposal.ContractId(proposal.getContractId()).exercisePoolProposal_Accept());
     return new Contracts(

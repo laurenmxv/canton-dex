@@ -6,7 +6,7 @@ import java.util.*;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import tools.jackson.databind.json.JsonMapper;
 
-/** Local development approver. Uses the existing dvv identity, never the web operator. */
+/** Local development approver. Uses the existing dvo identity, never the web operator. */
 public final class PoolDecisionMain {
   private PoolDecisionMain() {}
 
@@ -24,16 +24,16 @@ public final class PoolDecisionMain {
     if (!"PENDING".equals(row.get("status")))
       throw new IllegalStateException(
           "Proposal must be confirmed pending; current status: " + row.get("status"));
-    var actor = sql.sql("SELECT * FROM fixture_parties WHERE name='dvv'").query().singleRow();
+    var actor = sql.sql("SELECT * FROM fixture_parties WHERE name='dvo'").query().singleRow();
     var identity =
         new LedgerIdentity(
             (String) actor.get("ledger_user_id"),
             (String) actor.get("ledger_client_id"),
-            System.getenv().getOrDefault("DEX_DVV_CLIENT_SECRET", "local-fixture-dvv"));
+            System.getenv().getOrDefault("DEX_DVO_CLIENT_SECRET", "local-fixture-dvo"));
     try (var ledger = DevelopmentFixtures.connection(identity)) {
       String party = ledger.primaryParty();
       if (!party.equals(actor.get("party_id")))
-        throw new IllegalStateException("dvv identity mismatch");
+        throw new IllegalStateException("dvo identity mismatch");
       var terms =
           JsonMapper.builder()
               .build()

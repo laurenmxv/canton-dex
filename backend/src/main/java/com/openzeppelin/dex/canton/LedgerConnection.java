@@ -102,7 +102,15 @@ public final class LedgerConnection implements AutoCloseable {
   }
 
   public long ledgerEnd() {
-    return StateServiceGrpc.newBlockingStub(authenticatedChannel())
+    return ledgerEnd(authenticatedChannel());
+  }
+
+  public long ledgerEnd(String callerToken) {
+    return ledgerEnd(authenticatedChannel(callerToken));
+  }
+
+  private long ledgerEnd(io.grpc.Channel authorized) {
+    return StateServiceGrpc.newBlockingStub(authorized)
         .withDeadlineAfter(10, TimeUnit.SECONDS)
         .getLedgerEnd(StateServiceOuterClass.GetLedgerEndRequest.getDefaultInstance())
         .getOffset();
@@ -121,16 +129,33 @@ public final class LedgerConnection implements AutoCloseable {
   }
 
   public List<TransactionOuterClass.Transaction> transactions(long beginOffset, String party) {
+    return history(beginOffset, party).transactions();
+  }
+
+  /**
+   * Complete visible history through endOffset and a record-time watermark for one synchronizer.
+   */
+  public record History(
+      List<TransactionOuterClass.Transaction> transactions,
+      Optional<Instant> recordTime,
+      long endOffset) {
+    public History {
+      transactions = List.copyOf(transactions);
+    }
+  }
+
+  public History history(long beginOffset, String party) {
     long end = ledgerEnd();
-    if (end <= beginOffset) return List.of();
-    var filter =
-        Filters.newBuilder()
-            .addCumulative(
-                CumulativeFilter.newBuilder()
-                    .setWildcardFilter(WildcardFilter.getDefaultInstance()));
+    if (beginOffset < 0 || end < beginOffset)
+      throw new IllegalArgumentException("History begins outside the current ledger range");
+    if (end == 0) return new History(List.of(), Optional.empty(), end);
+    String synchronizer = singleSynchronizer();
+    var filter = InterfaceViews.transactionFilter();
     var request =
         UpdateServiceOuterClass.GetUpdatesRequest.newBuilder()
-            .setBeginExclusive(beginOffset)
+            // A one-offset overlap permits an end checkpoint even when the ledger offset has
+            // not changed. The overlap's transaction is excluded from the returned history.
+            .setBeginExclusive(beginOffset == end ? Math.max(0, end - 1) : beginOffset)
             .setEndInclusive(end)
             .setUpdateFormat(
                 UpdateFormat.newBuilder()
@@ -138,7 +163,7 @@ public final class LedgerConnection implements AutoCloseable {
                         TransactionFormat.newBuilder()
                             .setEventFormat(
                                 EventFormat.newBuilder()
-                                    .putFiltersByParty(party, filter.build())
+                                    .putFiltersByParty(party, filter)
                                     .setVerbose(true))
                             .setTransactionShape(
                                 TransactionShape.TRANSACTION_SHAPE_LEDGER_EFFECTS)))
@@ -148,11 +173,33 @@ public final class LedgerConnection implements AutoCloseable {
             .withDeadlineAfter(20, TimeUnit.SECONDS)
             .getUpdates(request);
     var result = new ArrayList<TransactionOuterClass.Transaction>();
-    stream.forEachRemaining(
-        update -> {
-          if (update.hasTransaction()) result.add(update.getTransaction());
-        });
-    return result;
+    Instant recordTime = null;
+    while (stream.hasNext()) {
+      var update = stream.next();
+      if (update.hasTransaction()) {
+        var transaction = update.getTransaction();
+        if (transaction.getOffset() > end)
+          throw new IllegalStateException("Participant returned a transaction beyond the snapshot");
+        if (transaction.getOffset() > beginOffset) result.add(transaction);
+        if (transaction.getSynchronizerId().equals(synchronizer) && transaction.hasRecordTime())
+          recordTime = latest(recordTime, transaction.getRecordTime());
+      } else if (update.hasOffsetCheckpoint()) {
+        var checkpoint = update.getOffsetCheckpoint();
+        // A later watermark cannot prove absence in a history ending before that checkpoint.
+        if (checkpoint.getOffset() <= end) {
+          for (var time : checkpoint.getSynchronizerTimesList()) {
+            if (time.getSynchronizerId().equals(synchronizer) && time.hasRecordTime())
+              recordTime = latest(recordTime, time.getRecordTime());
+          }
+        }
+      }
+    }
+    return new History(result, Optional.ofNullable(recordTime), end);
+  }
+
+  private static Instant latest(Instant previous, com.google.protobuf.Timestamp timestamp) {
+    Instant current = Instant.ofEpochSecond(timestamp.getSeconds(), timestamp.getNanos());
+    return previous == null || current.isAfter(previous) ? current : previous;
   }
 
   public boolean connected() {
@@ -175,21 +222,71 @@ public final class LedgerConnection implements AutoCloseable {
   }
 
   public List<EventOuterClass.CreatedEvent> activeContracts(String party, Identifier template) {
+    var authorized = authenticatedChannel();
+    return activeContracts(party, template, authorized, ledgerEnd(authorized));
+  }
+
+  public List<EventOuterClass.CreatedEvent> activeContracts(
+      String party, Identifier template, long activeAtOffset) {
+    return activeContracts(party, template, authenticatedChannel(), activeAtOffset);
+  }
+
+  public List<EventOuterClass.CreatedEvent> activeContracts(
+      String party, Identifier template, String callerToken) {
+    var authorized = authenticatedChannel(callerToken);
+    return activeContracts(party, template, authorized, ledgerEnd(authorized));
+  }
+
+  /** A shared offset lets callers compare balances and pool reserves from the same ledger state. */
+  public List<EventOuterClass.CreatedEvent> activeContracts(
+      String party, Identifier template, long activeAtOffset, String callerToken) {
+    return activeContracts(party, template, authenticatedChannel(callerToken), activeAtOffset);
+  }
+
+  private List<EventOuterClass.CreatedEvent> activeContracts(
+      String party, Identifier template, io.grpc.Channel authorized, long activeAtOffset) {
+    if (!template.getPackageId().startsWith("#"))
+      throw new IllegalArgumentException(
+          "Ledger template filters require package-name identifiers");
     var filter =
         Filters.newBuilder()
             .addCumulative(
                 CumulativeFilter.newBuilder()
                     .setTemplateFilter(
-                        TemplateFilter.newBuilder().setTemplateId(template.toProto())))
+                        TemplateFilter.newBuilder()
+                            .setTemplateId(template.toProto())
+                            .setIncludeCreatedEventBlob(true)))
             .build();
+    return activeContracts(party, filter, authorized, activeAtOffset);
+  }
+
+  public List<EventOuterClass.CreatedEvent> activeInterfaceContracts(
+      String party, Identifier interfaceId, long activeAtOffset) {
+    return activeInterfaceContracts(party, interfaceId, authenticatedChannel(), activeAtOffset);
+  }
+
+  public List<EventOuterClass.CreatedEvent> activeInterfaceContracts(
+      String party, Identifier interfaceId, long activeAtOffset, String callerToken) {
+    return activeInterfaceContracts(
+        party, interfaceId, authenticatedChannel(callerToken), activeAtOffset);
+  }
+
+  private List<EventOuterClass.CreatedEvent> activeInterfaceContracts(
+      String party, Identifier interfaceId, io.grpc.Channel authorized, long activeAtOffset) {
+    var filter = Filters.newBuilder().addCumulative(InterfaceViews.filter(interfaceId)).build();
+    return activeContracts(party, filter, authorized, activeAtOffset);
+  }
+
+  private List<EventOuterClass.CreatedEvent> activeContracts(
+      String party, Filters filter, io.grpc.Channel authorized, long activeAtOffset) {
     var request =
         StateServiceOuterClass.GetActiveContractsRequest.newBuilder()
-            .setActiveAtOffset(ledgerEnd())
+            .setActiveAtOffset(activeAtOffset)
             .setEventFormat(
                 EventFormat.newBuilder().putFiltersByParty(party, filter).setVerbose(true))
             .build();
     var stream =
-        StateServiceGrpc.newBlockingStub(authenticatedChannel())
+        StateServiceGrpc.newBlockingStub(authorized)
             .withDeadlineAfter(30, TimeUnit.SECONDS)
             .getActiveContracts(request);
     var result = new ArrayList<EventOuterClass.CreatedEvent>();
@@ -203,6 +300,15 @@ public final class LedgerConnection implements AutoCloseable {
 
   public TransactionOuterClass.Transaction submit(
       String commandId, String actor, List<String> readers, Update<?> update) {
+    return submit(commandId, actor, readers, update, List.of());
+  }
+
+  public TransactionOuterClass.Transaction submit(
+      String commandId,
+      String actor,
+      List<String> readers,
+      Update<?> update,
+      List<CommandsOuterClass.DisclosedContract> disclosures) {
     var commands =
         CommandsOuterClass.Commands.newBuilder()
             .setUserId(identity.userId())
@@ -211,22 +317,73 @@ public final class LedgerConnection implements AutoCloseable {
             .setCommandId(commandId)
             .addActAs(actor)
             .addAllReadAs(readers)
+            .addAllDisclosedContracts(disclosures)
             .setDeduplicationDuration(com.google.protobuf.Duration.newBuilder().setSeconds(30));
     update.commands().stream().map(Command::toProtoCommand).forEach(commands::addCommands);
     var eventFormat = EventFormat.newBuilder().setVerbose(true);
-    var wildcard =
-        Filters.newBuilder()
-            .addCumulative(
-                CumulativeFilter.newBuilder()
-                    .setWildcardFilter(WildcardFilter.getDefaultInstance()))
-            .build();
-    eventFormat.putFiltersByParty(actor, wildcard);
-    readers.forEach(party -> eventFormat.putFiltersByParty(party, wildcard));
+    var filter = InterfaceViews.transactionFilter();
+    eventFormat.putFiltersByParty(actor, filter);
+    readers.forEach(party -> eventFormat.putFiltersByParty(party, filter));
     return CommandServiceGrpc.newBlockingStub(authenticatedChannel())
         .withDeadlineAfter(60, TimeUnit.SECONDS)
         .submitAndWaitForTransaction(
             CommandServiceOuterClass.SubmitAndWaitForTransactionRequest.newBuilder()
                 .setCommands(commands)
+                .setTransactionFormat(
+                    TransactionFormat.newBuilder()
+                        .setEventFormat(eventFormat)
+                        .setTransactionShape(TransactionShape.TRANSACTION_SHAPE_LEDGER_EFFECTS))
+                .build())
+        .getTransaction();
+  }
+
+  /** Build once, then persist the entire protobuf before its first submission. */
+  public CommandsOuterClass.Commands storedCommands(
+      String commandId,
+      String actor,
+      List<String> readers,
+      Update<?> update,
+      long deduplicationOffset,
+      List<CommandsOuterClass.DisclosedContract> disclosures) {
+    if (deduplicationOffset < 0)
+      throw new IllegalArgumentException("Deduplication offset must be non-negative");
+    var commands =
+        CommandsOuterClass.Commands.newBuilder()
+            .setUserId(identity.userId())
+            .setCommandId(commandId)
+            .addActAs(actor)
+            .addAllReadAs(readers)
+            .addAllDisclosedContracts(disclosures)
+            .setDeduplicationOffset(deduplicationOffset)
+            .addPackageIdSelectionPreference(
+                com.openzeppelin.dex.canton.generated.pool.Pool.PACKAGE_ID);
+    update.commands().stream().map(Command::toProtoCommand).forEach(commands::addCommands);
+    return commands.build();
+  }
+
+  /**
+   * Retry the same stored intent on this participant. Never advance its deduplication offset,
+   * including when Canton rejects an offset as unsupported or pruned.
+   */
+  public TransactionOuterClass.Transaction submitStored(CommandsOuterClass.Commands stored) {
+    if (!stored.getUserId().equals(identity.userId()))
+      throw new IllegalArgumentException("Stored command belongs to a different ledger user");
+    if (!stored.hasDeduplicationOffset()
+        || stored.getDeduplicationOffset() < 0
+        || stored.getActAsCount() != 1
+        || stored.getCommandsCount() == 0)
+      throw new IllegalArgumentException(
+          "Stored command requires one actor, commands, and an original offset");
+    var eventFormat = EventFormat.newBuilder().setVerbose(true);
+    var filter = InterfaceViews.transactionFilter();
+    stored.getActAsList().forEach(party -> eventFormat.putFiltersByParty(party, filter));
+    stored.getReadAsList().forEach(party -> eventFormat.putFiltersByParty(party, filter));
+    return CommandServiceGrpc.newBlockingStub(authenticatedChannel())
+        .withDeadlineAfter(60, TimeUnit.SECONDS)
+        .submitAndWaitForTransaction(
+            CommandServiceOuterClass.SubmitAndWaitForTransactionRequest.newBuilder()
+                // Submission IDs identify individual attempts; they do not change the intent.
+                .setCommands(stored.toBuilder().setSubmissionId(UUID.randomUUID().toString()))
                 .setTransactionFormat(
                     TransactionFormat.newBuilder()
                         .setEventFormat(eventFormat)

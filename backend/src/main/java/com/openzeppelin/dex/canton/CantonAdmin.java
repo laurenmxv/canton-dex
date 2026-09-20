@@ -90,9 +90,15 @@ public final class CantonAdmin {
     var stub =
         PartyManagementServiceGrpc.newBlockingStub(connection.authenticatedChannel())
             .withDeadlineAfter(60, TimeUnit.SECONDS);
-    var request = ListKnownPartiesRequest.newBuilder().setFilterParty(hint + "::").setPageSize(100);
-    var parties = stub.listKnownParties(request.build()).getPartyDetailsList();
-    if (!parties.isEmpty()) return parties.getFirst().getParty();
+    String prefix = hint + "::";
+    var request = ListKnownPartiesRequest.newBuilder().setFilterParty(prefix).setPageSize(100);
+    do {
+      var response = stub.listKnownParties(request.build());
+      for (var party : response.getPartyDetailsList()) {
+        if (party.getIsLocal() && party.getParty().startsWith(prefix)) return party.getParty();
+      }
+      request.setPageToken(response.getNextPageToken());
+    } while (!request.getPageToken().isEmpty());
     return stub.allocateParty(AllocatePartyRequest.newBuilder().setPartyIdHint(hint).build())
         .getPartyDetails()
         .getParty();

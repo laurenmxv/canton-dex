@@ -170,13 +170,13 @@ class PoolCreationIT {
               return delegate.offset();
             }
 
-            public String factory(String dvv) {
-              return delegate.factory(dvv);
+            public String factory(String dvo) {
+              return delegate.factory(dvo);
             }
 
             public List<com.openzeppelin.dex.pools.PoolModels.Detail> pools(
-                Map<String, String> names, String dvv) {
-              return delegate.pools(names, dvv);
+                Map<String, String> names, String dvo) {
+              return delegate.pools(names, dvo);
             }
 
             public Confirmation propose(

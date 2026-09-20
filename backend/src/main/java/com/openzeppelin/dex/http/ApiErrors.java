@@ -1,5 +1,6 @@
 package com.openzeppelin.dex.http;
 
+import com.openzeppelin.dex.canton.LedgerAvailability;
 import com.openzeppelin.dex.onboarding.OnboardingConflict;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.ConstraintViolationException;
@@ -33,6 +34,15 @@ public final class ApiErrors implements HandlerFilterFunction<ServerResponse, Se
       return problem(HttpStatus.FORBIDDEN, "This account cannot perform that operation");
     } catch (NoSuchElementException e) {
       return problem(HttpStatus.NOT_FOUND, "Resource not found");
+    } catch (com.openzeppelin.dex.swaps.SwapFailure e) {
+      var detail =
+          ProblemDetail.forStatusAndDetail(HttpStatusCode.valueOf(e.status()), e.getMessage());
+      detail.setProperty("code", e.code());
+      return ServerResponse.status(e.status())
+          .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+          .body(detail);
+    } catch (com.openzeppelin.dex.tokens.TokenConflict e) {
+      return problem(HttpStatus.CONFLICT, e.getMessage());
     } catch (ConstraintViolationException
         | IllegalArgumentException
         | HttpMessageNotReadableException e) {
@@ -46,6 +56,16 @@ public final class ApiErrors implements HandlerFilterFunction<ServerResponse, Se
     } catch (DuplicateKeyException e) {
       return problem(HttpStatus.CONFLICT, "An onboarding already exists for this account");
     } catch (Exception e) {
+      if (LedgerAvailability.isTransientFailure(e)) {
+        var detail =
+            ProblemDetail.forStatusAndDetail(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "The participant is temporarily unavailable; try again");
+        detail.setProperty("code", "LEDGER_UNAVAILABLE");
+        return ServerResponse.status(HttpStatus.SERVICE_UNAVAILABLE)
+            .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+            .body(detail);
+      }
       LOG.error("Request failed: {} {}", request.method(), request.path(), e);
       return problem(HttpStatus.INTERNAL_SERVER_ERROR, "The request could not be completed");
     }

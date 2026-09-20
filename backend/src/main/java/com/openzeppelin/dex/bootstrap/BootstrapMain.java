@@ -13,7 +13,21 @@ public final class BootstrapMain {
     new ResourceDatabasePopulator(new ClassPathResource("db/V1__schema.sql"))
         .execute(DevelopmentFixtures.dataSource());
     try (var fixtures = new DevelopmentFixtures()) {
-      fixtures.admin().uploadAndVet(Path.of("../contracts/.daml/dist/oz-dex-ri-dvv-0.0.1.dar"));
+      if (fixtures
+              .sql()
+              .sql("SELECT count(*) FROM pools WHERE package_id<>?")
+              .param(PoolFixture.packageId())
+              .query(Long.class)
+              .single()
+          != 0L) {
+        throw new IllegalStateException(
+            "This contract generation needs fresh local participant and application databases");
+      }
+      fixtures.admin().uploadAndVet(Path.of("../contracts/.daml/dist/canton-dex-ri-0.1.0.dar"));
+      fixtures
+          .admin()
+          .uploadAndVet(
+              Path.of("../contracts/test-faucet/.daml/dist/canton-dex-test-faucet-0.1.0.dar"));
       fixtures.keycloak().enableRegistration();
       fixtures
           .admin()
@@ -22,65 +36,29 @@ public final class BootstrapMain {
               DevelopmentFixtures.env("DEX_IAM_ISSUER"),
               DevelopmentFixtures.env("DEX_IAM_JWK_SET_URI"),
               "00000000-0000-0000-0000-000000000003");
-      var dvv = fixtures.actor("dvv");
-      var base = fixtures.actor("base-admin");
-      var quote = fixtures.actor("quote-admin");
-      var operator = fixtures.actor("operator", DevelopmentFixtures.operatorIdentity(), List.of());
+      var dvo = fixtures.actor("dvo");
+      fixtures.actor("base-admin");
+      fixtures.actor("quote-admin");
+      var issuer = fixtures.actor("test-token-issuer-cip112");
+      var operator =
+          fixtures.actor("operator", DevelopmentFixtures.operatorIdentity(), List.of(dvo.party()));
       fixtures.account("operator", "00000000-0000-0000-0000-000000000003", "OPERATOR");
-      try (var authority = DevelopmentFixtures.connection(dvv.identity());
+      try (var authority = DevelopmentFixtures.connection(dvo.identity());
           var op = DevelopmentFixtures.connection(operator.identity());
-          var baseAdmin = DevelopmentFixtures.connection(base.identity());
-          var quoteAdmin = DevelopmentFixtures.connection(quote.identity())) {
+          var tokenIssuer = DevelopmentFixtures.connection(issuer.identity())) {
         fixtures
             .sql()
             .sql(
-                "INSERT INTO venue_configuration(id,synchronizer_id,participant_id) VALUES(1,?,?) ON CONFLICT(id) DO UPDATE SET synchronizer_id=EXCLUDED.synchronizer_id,participant_id=EXCLUDED.participant_id")
+                "INSERT INTO venue_configuration(id,synchronizer_id,participant_id) VALUES(1,?,?)"
+                    + " ON CONFLICT(id) DO UPDATE SET"
+                    + " synchronizer_id=EXCLUDED.synchronizer_id,participant_id=EXCLUDED.participant_id")
             .params(op.singleSynchronizer(), fixtures.admin().participantId())
             .update();
-        fixtures.sql().sql("UPDATE pools SET active=false WHERE active").update();
-        boolean reused = false;
-        for (var row :
-            fixtures
-                .sql()
-                .sql("SELECT * FROM pools WHERE package_id=?")
-                .param(PoolFixture.packageId())
-                .query()
-                .listOfRows()) {
-          var ids =
-              new PoolFixture.Contracts(
-                  (String) row.get("pool_id"),
-                  (String) row.get("config_id"),
-                  (String) row.get("state_id"),
-                  (String) row.get("package_id"));
-          if (PoolFixture.compatible(op, dvv.party(), operator.party(), ids)) {
-            fixtures
-                .sql()
-                .sql("UPDATE pools SET active=true WHERE pool_id=?")
-                .param(row.get("pool_id"))
-                .update();
-            reused = true;
-          }
-        }
-        if (!reused) {
-          var pool = PoolFixture.create(authority, op, baseAdmin, quoteAdmin);
-          fixtures
-              .sql()
-              .sql(
-                  "INSERT INTO pools(pool_id,config_id,state_id,package_id,name,active) VALUES(?,?,?,?,?,true)")
-              .params(
-                  pool.poolId(),
-                  pool.configId(),
-                  pool.stateId(),
-                  pool.packageId(),
-                  "BASE/QUOTE fixture "
-                      + PoolFixture.packageId().substring(0, 8)
-                      + " "
-                      + UUID.randomUUID().toString().substring(0, 8))
-              .update();
-        }
+        new TestTokenFixture(fixtures.sql(), tokenIssuer, authority, op).initialize();
       }
       System.out.println(
-          "Bootstrap complete: current-package dvv pool and self-registration ready.");
+          "Bootstrap complete: funded BTC/USDC and ETH/USDC test pools and self-registration"
+              + " ready.");
     }
   }
 }

@@ -67,7 +67,7 @@ public final class OnboardingLedgerAssertions {
       for (var reader : List.of(operator)) {
         var attestations =
             reader.activeContracts(reader.primaryParty(), KycAttestation.TEMPLATE_ID).stream()
-                .filter(e -> e.getTemplateId().getPackageId().equals(KycAttestation.PACKAGE_ID))
+                .filter(e -> CantonSwapPools.isAppTemplate(e, KycAttestation.TEMPLATE_ID))
                 .filter(
                     e ->
                         KycAttestation.valueDecoder()
@@ -90,7 +90,7 @@ public final class OnboardingLedgerAssertions {
             .containsExactlyInAnyOrderElementsOf(pools);
         var accesses =
             reader.activeContracts(reader.primaryParty(), PoolAccess.TEMPLATE_ID).stream()
-                .filter(e -> e.getTemplateId().getPackageId().equals(PoolAccess.PACKAGE_ID))
+                .filter(e -> CantonSwapPools.isAppTemplate(e, PoolAccess.TEMPLATE_ID))
                 .filter(
                     e ->
                         PoolAccess.valueDecoder()

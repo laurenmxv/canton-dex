@@ -19,7 +19,7 @@ public interface PoolLedger {
 
   long offset();
 
-  String factory(String dvv);
+  String factory(String dvo);
 
   Confirmation propose(Proposal proposal, UUID command);
 
@@ -27,5 +27,5 @@ public interface PoolLedger {
 
   List<Confirmation> recover(Pending pending);
 
-  List<Detail> pools(Map<String, String> names, String dvv);
+  List<Detail> pools(Map<String, String> names, String dvo);
 }

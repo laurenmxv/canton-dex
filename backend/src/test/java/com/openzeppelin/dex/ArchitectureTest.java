@@ -22,7 +22,17 @@ class ArchitectureTest {
     slices().matching("com.openzeppelin.dex.(*)..").should().beFreeOfCycles().check(classes);
     noClasses()
         .that()
-        .resideOutsideOfPackages("..iam..", "..onboarding..", "..pools..", "..bootstrap..")
+        .resideOutsideOfPackages(
+            "..iam..",
+            "..onboarding..",
+            "..pools..",
+            "..swaps..",
+            "..settlements..",
+            "..operations..",
+            "..tokens..",
+            "..bootstrap..")
+        .and()
+        .doNotHaveSimpleName("TestTokenFixture")
         .should()
         .dependOnClassesThat()
         .resideInAnyPackage("org.springframework.jdbc..")

@@ -96,7 +96,7 @@ public final class CantonOnboardingLedger implements OnboardingLedger {
     if (tx.getEventsCount() != 1 || !tx.getEvents(0).hasCreated())
       throw new IllegalStateException("Unexpected onboarding transaction effects");
     var event = tx.getEvents(0).getCreated();
-    if (!event.getTemplateId().equals(template.toProto())
+    if (!CantonSwapPools.isAppTemplate(event, template)
         || !event.getSignatoriesList().equals(List.of(issuer))
         || !event.getObserversList().contains(trader))
       throw new IllegalStateException("Unexpected onboarding contract authority");

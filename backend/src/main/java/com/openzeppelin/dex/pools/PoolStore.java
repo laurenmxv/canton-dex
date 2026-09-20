@@ -28,20 +28,22 @@ public class PoolStore {
 
   public List<Admin> admins() {
     return sql.sql(
-            "SELECT party_id,name FROM fixture_parties WHERE name IN ('base-admin','quote-admin') ORDER BY name")
+            "SELECT party_id,name FROM fixture_parties WHERE name IN ('base-admin','quote-admin')"
+                + " UNION SELECT admin,'token-registry' FROM token_registries ORDER BY name,party_id")
         .query((r, n) -> new Admin(r.getString(1), r.getString(2)))
         .list();
   }
 
-  public String dvv() {
-    return sql.sql("SELECT party_id FROM fixture_parties WHERE name='dvv'")
+  public String dvo() {
+    return sql.sql("SELECT party_id FROM fixture_parties WHERE name='dvo'")
         .query(String.class)
         .single();
   }
 
   public Proposal get(UUID id) {
     return sql.sql(
-            "SELECT p.*,a.display_name FROM pool_proposals p JOIN accounts a ON a.id=p.proposed_by WHERE p.id=?")
+            "SELECT p.*,a.display_name FROM pool_proposals p JOIN accounts a ON a.id=p.proposed_by"
+                + " WHERE p.id=?")
         .param(id)
         .query(this::proposal)
         .optional()
@@ -50,14 +52,16 @@ public class PoolStore {
 
   public List<Proposal> proposals() {
     return sql.sql(
-            "SELECT p.*,a.display_name FROM pool_proposals p JOIN accounts a ON a.id=p.proposed_by ORDER BY created_at DESC,id")
+            "SELECT p.*,a.display_name FROM pool_proposals p JOIN accounts a ON a.id=p.proposed_by"
+                + " ORDER BY created_at DESC,id")
         .query(this::proposal)
         .list();
   }
 
   public List<Pending> pending() {
     return sql.sql(
-            "SELECT p.*,a.display_name FROM pool_proposals p JOIN accounts a ON a.id=p.proposed_by WHERE status IN ('SUBMITTING','PENDING','UNRESOLVED') ORDER BY created_at")
+            "SELECT p.*,a.display_name FROM pool_proposals p JOIN accounts a ON a.id=p.proposed_by"
+                + " WHERE status IN ('SUBMITTING','PENDING','UNRESOLVED') ORDER BY created_at")
         .query(
             (r, n) ->
                 new Pending(
@@ -73,7 +77,9 @@ public class PoolStore {
       return tx.execute(
           s -> {
             sql.sql(
-                    "INSERT INTO pool_proposals(id,name,settings,factory_id,proposed_by,status,command_id,begin_offset) VALUES(?,?,?::jsonb,?,?,'SUBMITTING',?,?)")
+                    "INSERT INTO"
+                        + " pool_proposals(id,name,settings,factory_id,proposed_by,status,command_id,begin_offset)"
+                        + " VALUES(?,?,?::jsonb,?,?,'SUBMITTING',?,?)")
                 .params(
                     id,
                     input.name(),
@@ -95,14 +101,17 @@ public class PoolStore {
 
   public void proposed(UUID id, String cid, String updateId) {
     sql.sql(
-            "UPDATE pool_proposals SET proposal_cid=?,update_id=?,status='PENDING',error=NULL,updated_at=now() WHERE id=? AND proposal_cid IS NULL AND status IN ('SUBMITTING','UNRESOLVED')")
+            "UPDATE pool_proposals SET"
+                + " proposal_cid=?,update_id=?,status='PENDING',error=NULL,updated_at=now() WHERE"
+                + " id=? AND proposal_cid IS NULL AND status IN ('SUBMITTING','UNRESOLVED')")
         .params(cid, updateId, id)
         .update();
   }
 
   public void unresolved(UUID id) {
     sql.sql(
-            "UPDATE pool_proposals SET status='UNRESOLVED',error='Confirmation pending',updated_at=now() WHERE id=? AND status='SUBMITTING'")
+            "UPDATE pool_proposals SET status='UNRESOLVED',error='Confirmation"
+                + " pending',updated_at=now() WHERE id=? AND status='SUBMITTING'")
         .param(id)
         .update();
   }
@@ -112,7 +121,8 @@ public class PoolStore {
         s -> {
           int changed =
               sql.sql(
-                      "UPDATE pool_proposals SET status=?,error=?,updated_at=now() WHERE id=? AND status='SUBMITTING'")
+                      "UPDATE pool_proposals SET status=?,error=?,updated_at=now() WHERE id=? AND"
+                          + " status='SUBMITTING'")
                   .params(
                       withdrawal ? "PENDING" : "FAILED",
                       withdrawal
@@ -129,7 +139,8 @@ public class PoolStore {
     String message = "Status could not be refreshed. Retrying.";
     if (failed)
       sql.sql(
-              "UPDATE pool_proposals SET error=? WHERE id=? AND status IN ('SUBMITTING','PENDING','UNRESOLVED') AND error IS DISTINCT FROM ?")
+              "UPDATE pool_proposals SET error=? WHERE id=? AND status IN"
+                  + " ('SUBMITTING','PENDING','UNRESOLVED') AND error IS DISTINCT FROM ?")
           .params(message, id, message)
           .update();
     else
@@ -154,7 +165,8 @@ public class PoolStore {
                 .update();
           }
           sql.sql(
-                  "UPDATE pool_proposals SET status=?,pool_id=?,update_id=?,error=NULL,updated_at=now() WHERE id=?")
+                  "UPDATE pool_proposals SET"
+                      + " status=?,pool_id=?,update_id=?,error=NULL,updated_at=now() WHERE id=?")
               .params(status.name(), pool == null ? null : pool.poolId(), updateId, id)
               .update();
           if (pool == null)
@@ -168,7 +180,9 @@ public class PoolStore {
 
   public boolean claimWithdrawal(UUID id, UUID command) {
     return sql.sql(
-                "UPDATE pool_proposals SET status='SUBMITTING',command_id=?,error=NULL,updated_at=now() WHERE id=? AND status='PENDING'")
+                "UPDATE pool_proposals SET"
+                    + " status='SUBMITTING',command_id=?,error=NULL,updated_at=now() WHERE id=? AND"
+                    + " status='PENDING'")
             .params(command, id)
             .update()
         == 1;
@@ -176,7 +190,10 @@ public class PoolStore {
 
   public void save(Detail p) {
     sql.sql(
-            "INSERT INTO pools(pool_id,config_id,state_id,package_id,name,active,settings,created_at,updated_at) VALUES(?,?,?,?,?,true,?::jsonb,?,?) ON CONFLICT(pool_id) DO UPDATE SET config_id=EXCLUDED.config_id,state_id=EXCLUDED.state_id,settings=EXCLUDED.settings,active=true,created_at=COALESCE(pools.created_at,EXCLUDED.created_at),updated_at=EXCLUDED.updated_at")
+            "INSERT INTO"
+                + " pools(pool_id,config_id,state_id,package_id,name,active,settings,created_at,updated_at)"
+                + " VALUES(?,?,?,?,?,true,?::jsonb,?,?) ON CONFLICT(pool_id) DO UPDATE SET"
+                + " config_id=EXCLUDED.config_id,state_id=EXCLUDED.state_id,settings=EXCLUDED.settings,active=true,created_at=COALESCE(pools.created_at,EXCLUDED.created_at),updated_at=EXCLUDED.updated_at")
         .params(
             p.poolId(),
             p.configId(),
@@ -188,7 +205,8 @@ public class PoolStore {
             java.sql.Timestamp.from(p.updatedAt()))
         .update();
     sql.sql(
-            "INSERT INTO pool_pair_claims(pair_key,pool_id) VALUES(?,?) ON CONFLICT(pair_key) DO NOTHING")
+            "INSERT INTO pool_pair_claims(pair_key,pool_id) VALUES(?,?) ON CONFLICT(pair_key) DO"
+                + " NOTHING")
         .params(p.settings().pairKey(), p.poolId())
         .update();
   }
@@ -204,16 +222,19 @@ public class PoolStore {
 
   public List<Detail> pools(String packageId) {
     return sql.sql(
-            "SELECT * FROM pools WHERE active AND package_id=? AND settings IS NOT NULL ORDER BY name,pool_id")
-        .param(packageId)
+            "SELECT * FROM pools WHERE active AND package_id=:packageId AND settings IS NOT"
+                + " NULL ORDER BY name,pool_id")
+        .param("packageId", packageId)
         .query(this::detail)
         .list();
   }
 
   public Detail pool(String id, String packageId) {
     return sql.sql(
-            "SELECT * FROM pools WHERE pool_id=? AND package_id=? AND active AND settings IS NOT NULL")
-        .params(id, packageId)
+            "SELECT * FROM pools WHERE pool_id=:id AND package_id=:packageId AND active AND"
+                + " settings IS NOT NULL")
+        .param("id", id)
+        .param("packageId", packageId)
         .query(this::detail)
         .optional()
         .orElseThrow(NoSuchElementException::new);

@@ -22,7 +22,7 @@ public final class PoolWorkflow {
   }
 
   public Options options() {
-    return new Options(ledger.factory(store.dvv()), store.dvv(), ledger.operator(), store.admins());
+    return new Options(ledger.factory(store.dvo()), store.dvo(), ledger.operator(), store.admins());
   }
 
   public synchronized Proposal create(Create input, Account caller) {
@@ -76,7 +76,7 @@ public final class PoolWorkflow {
 
   private void refreshCatalog() {
     try {
-      for (var pool : ledger.pools(store.names(), store.dvv())) store.save(pool);
+      for (var pool : ledger.pools(store.names(), store.dvo())) store.save(pool);
       refreshed = Instant.now();
     } catch (RuntimeException e) {
       LOG.warn("Pool catalogue refresh failed: {}", e.toString());

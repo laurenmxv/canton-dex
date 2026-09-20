@@ -3,11 +3,11 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 scenario="${1:-all}"
 case "$scenario" in
-  schema|environment|iam|onboarding|pools|restart|all) ;;
-  *) printf 'Usage: %s schema|environment|iam|onboarding|pools|restart|all\n' "$0" >&2; exit 2 ;;
+  schema|environment|iam|onboarding|pools|swaps|restart|all) ;;
+  *) printf 'Usage: %s schema|environment|iam|onboarding|pools|swaps|restart|all\n' "$0" >&2; exit 2 ;;
 esac
 
-make --no-print-directory fetch-localnet
+make --no-print-directory prepare-localnet
 
 run_scenario() {
   docker compose run --rm --no-deps backend-tests ./gradlew \
@@ -20,8 +20,23 @@ fi
 if [[ "$scenario" == restart || "$scenario" == all ]]; then
   mkdir -p backend/build
   restart_state="$(mktemp backend/build/restart-XXXXXX)"
+  chmod 600 "$restart_state"
   export DEX_RESTART_STATE="/workspace/$restart_state"
-  trap 'rm -f "$restart_state"' EXIT
+  cleanup_restart() {
+    local result=$?
+    trap - EXIT
+    if [[ "$result" != 0 && -s "$restart_state" ]]; then
+      if docker compose start backend && run_scenario restart-restore; then
+        rm -f "$restart_state"
+      else
+        printf 'Restart cleanup incomplete; wallet recovery state retained at %s\n' "$restart_state" >&2
+      fi
+    else
+      rm -f "$restart_state"
+    fi
+    exit "$result"
+  }
+  trap cleanup_restart EXIT
   run_scenario restart-prepare
   docker compose stop backend
   run_scenario restart-mark-uncertain

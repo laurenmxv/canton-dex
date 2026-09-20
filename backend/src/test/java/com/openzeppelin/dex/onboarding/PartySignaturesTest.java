@@ -12,6 +12,28 @@ class PartySignaturesTest {
   private static final Provider EC_PROVIDER = new BouncyCastleProvider();
 
   @Test
+  void transactionSignatureUsesExplicitHashInsteadOfOnboardingMultihash() throws Exception {
+    var key = ecKey("secp256k1");
+    byte[] topologyHash = new byte[34];
+    byte[] transactionHash = new byte[32];
+    new SecureRandom().nextBytes(topologyHash);
+    new SecureRandom().nextBytes(transactionHash);
+    var party = preparation(key, topologyHash);
+    var signature = ecSign(key, transactionHash);
+    String expectedHash = Base64.getEncoder().encodeToString(transactionHash);
+    PartySignatures.verify(party, expectedHash, signature);
+    assertThatThrownBy(() -> PartySignatures.verify(party, signature))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(
+            () ->
+                PartySignatures.verify(
+                    party,
+                    expectedHash,
+                    ecSign(key, MessageDigest.getInstance("SHA-256").digest(transactionHash))))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
   void secp256k1DerSignatureCoversOriginalMultihashExactlyOnce() throws Exception {
     var key = ecKey("secp256k1");
     byte[] hash = new byte[34];

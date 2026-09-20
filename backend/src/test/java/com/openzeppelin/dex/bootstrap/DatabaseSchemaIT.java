@@ -41,7 +41,20 @@ class DatabaseSchemaIT {
                 "onboarding_steps",
                 "venue_configuration",
                 "pool_proposals",
-                "pool_pair_claims");
+                "pool_pair_claims",
+                "pool_swap_queues",
+                "swap_quotes",
+                "swap_requests",
+                "swap_preparations",
+                "settlement_batches",
+                "operator_commands",
+                "test_token_configuration",
+                "test_token_instruments",
+                "test_token_pools",
+                "dev_faucet_claims",
+                "token_registries",
+                "token_registry_contracts",
+                "token_instruments");
 
         var accounts = new AccountDirectory(sql);
         var david = accounts.authenticate("test-issuer", "david", "David");

@@ -43,6 +43,13 @@ public class SecurityConfiguration {
                     .hasRole("OPERATOR")
                     .requestMatchers("/v1/onboardings", "/v1/onboardings/**")
                     .hasRole("TRADER")
+                    .requestMatchers(
+                        "/v1/swaps/**",
+                        "/v1/activity",
+                        "/v1/balances",
+                        "/v1/dev/faucet",
+                        "/v1/dev/faucet/**")
+                    .hasRole("TRADER")
                     .anyRequest()
                     .denyAll())
         .oauth2ResourceServer(

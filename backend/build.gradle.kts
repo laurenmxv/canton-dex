@@ -35,18 +35,21 @@ dependencies {
 }
 
 val contractsDirectory = layout.projectDirectory.dir("../contracts")
-val contractDar = contractsDirectory.file(".daml/dist/oz-dex-ri-dvv-0.0.1.dar")
+val contractDar = contractsDirectory.file(".daml/dist/canton-dex-ri-0.1.0.dar")
+val faucetDar = contractsDirectory.file("test-faucet/.daml/dist/canton-dex-test-faucet-0.1.0.dar")
 val damlBindingsDirectory = layout.buildDirectory.dir("generated/sources/daml")
 val dpmExecutable = providers.environmentVariable("DPM_BIN").getOrElse("dpm")
 
 val buildContracts by tasks.registering(Exec::class) {
     workingDir(contractsDirectory.asFile)
     environment("DAML_PACKAGE", contractsDirectory.asFile.absolutePath)
-    commandLine(dpmExecutable, "build")
+    commandLine(dpmExecutable, "build", "--all")
     inputs.dir(contractsDirectory.dir("daml"))
     inputs.dir(contractsDirectory.dir("dars"))
-    inputs.files(contractsDirectory.file("daml.yaml"), contractsDirectory.file("multi-package.yaml"))
-    outputs.file(contractDar)
+    inputs.dir(contractsDirectory.dir("test-faucet/daml"))
+    inputs.dir(contractsDirectory.dir("tests/daml"))
+    inputs.files(contractsDirectory.file("daml.yaml"), contractsDirectory.file("multi-package.yaml"), contractsDirectory.file("test-faucet/daml.yaml"), contractsDirectory.file("tests/daml.yaml"))
+    outputs.files(contractDar, faucetDar)
 }
 val generateDamlBindings by tasks.registering(Exec::class) {
     dependsOn(buildContracts)
@@ -55,10 +58,11 @@ val generateDamlBindings by tasks.registering(Exec::class) {
     commandLine(
         dpmExecutable, "codegen-java",
         "${contractDar.asFile.absolutePath}=com.openzeppelin.dex.canton.generated",
+        "${faucetDar.asFile.absolutePath}=com.openzeppelin.dex.canton.generated",
         "-o", damlBindingsDirectory.get().asFile.absolutePath
     )
-    inputs.file(contractDar)
-    inputs.files(contractsDirectory.file("daml.yaml"), contractsDirectory.file("multi-package.yaml"))
+    inputs.files(contractDar, faucetDar)
+    inputs.files(contractsDirectory.file("daml.yaml"), contractsDirectory.file("multi-package.yaml"), contractsDirectory.file("test-faucet/daml.yaml"), contractsDirectory.file("tests/daml.yaml"))
     outputs.dir(damlBindingsDirectory)
     doFirst {
         delete(damlBindingsDirectory)

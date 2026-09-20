@@ -63,6 +63,12 @@ public final class PartySignatures {
   }
 
   static void verify(Onboarding.PartyPreparation party, String encoded) {
+    verify(party, party.multiHash(), encoded);
+  }
+
+  /** Verifies the participant's exact hash using the wallet key already bound during onboarding. */
+  public static void verify(
+      Onboarding.PartyPreparation party, String expectedHash, String encoded) {
     try {
       byte[] signature = Base64.getDecoder().decode(encoded);
       var parsed = parse(party.publicKey());
@@ -74,7 +80,7 @@ public final class PartySignatures {
               ? Signature.getInstance("Ed25519")
               : Signature.getInstance("SHA256withECDSA", EC_PROVIDER);
       verifier.initVerify(parsed.key());
-      verifier.update(Base64.getDecoder().decode(party.multiHash()));
+      verifier.update(Base64.getDecoder().decode(expectedHash));
       if (!verifier.verify(signature))
         throw new IllegalArgumentException("Invalid preparation signature");
     } catch (GeneralSecurityException | IllegalArgumentException e) {

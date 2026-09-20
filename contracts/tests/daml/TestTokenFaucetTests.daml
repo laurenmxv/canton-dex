@@ -1,0 +1,135 @@
+module TestTokenFaucetTests where
+
+import Daml.Script
+import DA.Foldable (forA_)
+import DA.Optional (isNone)
+import DA.Time (days, minutes)
+import OpenZeppelin.TokenCIP112V1.Registry (TokenRules(..))
+import OpenZeppelin.TokenCIP112V1.Holding (TokenHolding(..))
+import Splice.Api.Token.HoldingV2 qualified as HoldingV2
+import TestTokenFaucet
+
+testAmounts : [TestTokenAmount]
+testAmounts =
+  [ TestTokenAmount "USDC" 10000.0
+  , TestTokenAmount "BTC" 0.1
+  , TestTokenAmount "ETH" 2.0
+  ]
+
+ownerClaimsExactGrantOnce : Script ()
+ownerClaimsExactGrantOnce = script do
+  issuer <- allocateParty "Issuer"
+  operator <- allocateParty "Operator"
+  trader <- allocateParty "Trader"
+  stranger <- allocateParty "Stranger"
+  rulesCid <- submit issuer $ createCmd TokenRules with
+    admin = issuer; maxTTL = days 1; lockGrace = minutes 1
+  Some rulesDisclosure <- queryDisclosure @TokenRules issuer rulesCid
+  let account = HoldingV2.Account (Some trader) None ""
+  grantCid <- submit issuer $ createCmd TestTokenGrant with
+    issuer; operator; rulesCid; recipient = trader; account
+    grantId = "trader-onboarding"; amounts = testAmounts
+  submitMustFail (actAs operator <> discloseMany [rulesDisclosure]) $
+    exerciseCmd grantCid TestTokenGrant_Claim
+  rejected <- trySubmit (actAs stranger <> readAs issuer <> discloseMany [rulesDisclosure]) $
+    exerciseCmd grantCid TestTokenGrant_Claim
+  case rejected of
+    Left AuthorizationError {} -> pure ()
+    _ -> abort "Claiming a grant requires recipient authority"
+  result <- submit (actAs trader <> discloseMany [rulesDisclosure]) $
+    exerciseCmd grantCid TestTokenGrant_Claim
+  assertMsg "one holding per granted instrument" (length result.holdingCids == 3)
+  forA_ (zip testAmounts result.holdingCids) $ \(expected, holdingCid) -> do
+    Some actual <- queryContractId trader (fromInterfaceContractId @TokenHolding holdingCid)
+    assertMsg "minted amount matches grant" (actual.holding.amount == expected.amount)
+    assertMsg "minted instrument matches grant"
+      (actual.holding.instrumentId == HoldingV2.InstrumentId issuer expected.instrumentId)
+    assertMsg "minted owner account matches grant" (actual.holding.account == account)
+    assertMsg "claimed tokens are spendable" (isNone actual.holding.lock)
+  submitMustFail (actAs trader <> discloseMany [rulesDisclosure]) $
+    exerciseCmd grantCid TestTokenGrant_Claim
+  None <- queryContractId trader grantCid
+  forA_ [issuer, operator, trader] $ \reader -> do
+    Some receipt <- queryContractId reader result.receiptCid
+    assertMsg "receipt preserves grant identity" (receipt.grantId == "trader-onboarding")
+    assertMsg "receipt preserves exact holdings" (receipt.holdingCids == result.holdingCids)
+  None <- queryContractId stranger result.receiptCid
+  submitMustFail trader $ exerciseCmd result.receiptCid Archive
+  submitMustFail operator $ exerciseCmd result.receiptCid Archive
+  Some _ <- queryContractId operator result.receiptCid
+  holdings <- query @TokenHolding trader
+  assertMsg "replay did not mint again" (length holdings == 3)
+
+operatorIssuesOnlyConfiguredBundle : Script ()
+operatorIssuesOnlyConfiguredBundle = script do
+  issuer <- allocateParty "FaucetIssuer"
+  operator <- allocateParty "FaucetOperator"
+  trader <- allocateParty "FaucetTrader"
+  rulesCid <- submit issuer $ createCmd TokenRules with
+    admin = issuer; maxTTL = days 1; lockGrace = minutes 1
+  faucetCid <- submit issuer $ createCmd TestTokenFaucet with
+    issuer; operator; rulesCid; amounts = testAmounts
+  rejected <- trySubmit (actAs trader <> readAs issuer) $
+    exerciseCmd faucetCid TestTokenFaucet_IssueGrant with
+      recipient = trader; grantId = "unauthorized"
+  case rejected of
+    Left AuthorizationError {} -> pure ()
+    _ -> abort "Issuing a grant requires operator authority"
+  grantCid <- submit operator $ exerciseCmd faucetCid TestTokenFaucet_IssueGrant with
+    recipient = trader; grantId = "one-time-grant"
+  Some grant <- queryContractId trader grantCid
+  assertMsg "factory uses exact configured registry" (grant.rulesCid == rulesCid)
+  assertMsg "factory uses exact configured amounts" (grant.amounts == testAmounts)
+  assertMsg "factory uses the recipient's default account"
+    (grant.account == HoldingV2.Account (Some trader) None "")
+  submitMustFail operator $ exerciseCmd faucetCid TestTokenFaucet_IssueGrant with
+    recipient = trader; grantId = ""
+  Some _ <- queryContractId operator faucetCid
+  pure ()
+
+rejectsWrongRegistryAndOwner : Script ()
+rejectsWrongRegistryAndOwner = script do
+  issuer <- allocateParty "ExpectedIssuer"
+  otherIssuer <- allocateParty "WrongIssuer"
+  operator <- allocateParty "ValidationOperator"
+  trader <- allocateParty "ValidationTrader"
+  otherOwner <- allocateParty "WrongOwner"
+  wrongRulesCid <- submit otherIssuer $ createCmd TokenRules with
+    admin = otherIssuer; maxTTL = days 1; lockGrace = minutes 1
+  let grant = TestTokenGrant with
+        issuer; operator; rulesCid = wrongRulesCid; recipient = trader
+        account = HoldingV2.Account (Some trader) None ""
+        grantId = "wrong-registry"; amounts = testAmounts
+  grantCid <- submit issuer $ createCmd grant
+  submitMustFail (actAs trader <> readAs [issuer, otherIssuer]) $
+    exerciseCmd grantCid TestTokenGrant_Claim
+  Some _ <- queryContractId trader grantCid
+  [] <- query @TokenHolding trader
+  submitMustFail issuer $ createCmd grant with
+    account = HoldingV2.Account (Some otherOwner) None ""
+  submitMustFail issuer $ createCmd grant with
+    account = HoldingV2.Account (Some trader) (Some operator) ""
+  submitMustFail issuer $ createCmd grant with amounts = []
+  submitMustFail issuer $ createCmd grant with amounts = [TestTokenAmount "USDC" 0.0]
+  submitMustFail issuer $ createCmd grant with
+    amounts = [TestTokenAmount "USDC" 1.0, TestTokenAmount "USDC" 2.0]
+
+isolatesNamedPoolAccounts : Script ()
+isolatesNamedPoolAccounts = script do
+  issuer <- allocateParty "PoolIssuer"
+  operator <- allocateParty "PoolOperator"
+  dvo <- allocateParty "PoolOwner"
+  rulesCid <- submit issuer $ createCmd TokenRules with
+    admin = issuer; maxTTL = days 1; lockGrace = minutes 1
+  let accountA = HoldingV2.Account (Some dvo) None "pool-a"
+      accountB = HoldingV2.Account (Some dvo) None "pool-b"
+  forA_ [("pool-a-bootstrap", accountA, 100.0), ("pool-b-bootstrap", accountB, 200.0)] $
+    \(grantId, account, amount) -> do
+      grantCid <- submit issuer $ createCmd TestTokenGrant with
+        issuer; operator; rulesCid; grantId; account; recipient = dvo
+        amounts = [TestTokenAmount "USDC" amount]
+      result <- submit (actAs dvo <> readAs issuer) $ exerciseCmd grantCid TestTokenGrant_Claim
+      [holdingCid] <- pure result.holdingCids
+      Some actual <- queryContractId dvo (fromInterfaceContractId @TokenHolding holdingCid)
+      assertMsg "pool funding stays in its named account" (actual.holding.account == account)
+      assertMsg "pool funding matches its exact reserve" (actual.holding.amount == amount)

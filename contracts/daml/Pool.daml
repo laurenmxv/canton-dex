@@ -1,54 +1,52 @@
+-- | Defines the pool, its fee and reserves, and receipts for completed swaps.
+-- Connects reserves to token holdings and settles each swap batch as one transaction.
 module Pool where
 
 import Splice.Api.Token.HoldingV2 (Account, InstrumentId)
 import Lib.Math
+import Lib.Tokens
+import DA.Optional (isNone)
+import Splice.Api.Token.HoldingV2 qualified as H
+import Splice.Api.Token.AllocationV2 qualified as A
+import Splice.TokenStandard.Utils (basicAccount, toAnyContractId)
+import DA.Assert (assertDeadlineExceeded)
+import DA.List (dedup)
+import Lib.Swap
 
-data SwapDirection = BaseToQuote | QuoteToBase
+data PoolFunding = PoolFunding with
+    baseToken : Token
+    quoteToken : Token
+    baseHoldingCids : [ContractId H.Holding]
+    quoteHoldingCids : [ContractId H.Holding]
   deriving (Eq, Show)
 
-data SwapRequest = SwapRequest with
-    poolCid : ContractId Pool
-    trader : Party
-    direction : SwapDirection
-    amountIn : Decimal
-    minOut : Decimal
-  deriving (Eq, Show)
-
-data DepositRequest = DepositRequest with
-    poolCid : ContractId Pool
-    trader : Party
-    baseAmount : Decimal
-    quoteAmount : Decimal
-    minLpTokens : Decimal
-  deriving (Eq, Show)
-
-data WithdrawalRequest = WithdrawalRequest with
-    poolCid : ContractId Pool
-    trader : Party
-    lpTokens : Decimal
-    minBase : Decimal
-    minQuote : Decimal
-  deriving (Eq, Show)
-
-data SwapResult = SwapResult with
+data BatchResult = BatchResult with
     stateCid : ContractId PoolState
+    receiptCids : [ContractId SwapReceipt]
     amountsOut : [Decimal]
   deriving (Eq, Show)
 
-data DepositResult = DepositResult with
-    stateCid : ContractId PoolState
-    lpTokens : Decimal
-  deriving (Eq, Show)
+-- | Records a completed swap and the allocations used to settle it.
+template SwapReceipt
+  with
+    dvo : Party
+    venueOperator : Party
+    trader : Party
+    poolCid : ContractId Pool
+    inputAllocation : ContractId A.Allocation
+    outputAllocation : ContractId A.Allocation
+    batchId : Text
+    terms : SwapTerms
+    amountOut : Decimal
+    settledAt : Time
+  where
+    signatory dvo, venueOperator
+    observer trader
 
-data WithdrawalResult = WithdrawalResult with
-    stateCid : ContractId PoolState
-    baseAmount : Decimal
-    quoteAmount : Decimal
-  deriving (Eq, Show)
-
+-- | Keeps the token pair and accounts, and handles funding, swaps and expired token locks.
 template Pool
   with
-    dvv : Party
+    dvo : Party
     venueOperator : Party
     baseInstrumentId : InstrumentId
     quoteInstrumentId : InstrumentId
@@ -56,110 +54,114 @@ template Pool
     quoteAccount : Account
     lpTokenInstrumentId : InstrumentId
   where
-    signatory dvv
+    signatory dvo
     observer venueOperator
-    ensure dvv /= venueOperator
+    ensure dvo /= venueOperator
       && baseInstrumentId /= quoteInstrumentId
-      && lpTokenInstrumentId.admin == dvv
-      && baseAccount.owner == Some dvv
-      && quoteAccount.owner == Some dvv
+      && lpTokenInstrumentId.admin == dvo
+      && baseAccount.owner == Some dvo
+      && quoteAccount.owner == Some dvo
 
-    nonconsuming choice Pool_Swap : SwapResult
+    -- | Settle an ordered batch atomically and replace the state once with its final backing.
+    nonconsuming choice Pool_Swap : BatchResult
       with
         configCid : ContractId PoolConfig
         stateCid : ContractId PoolState
-        requests : [SwapRequest]
-      controller dvv
+        requests : [BatchRequest Pool]
+        batchId : Text
+      controller dvo, venueOperator
       do
         (config, state) <- loadComponents this self configCid stateCid
-        assertMsg "Swap batch must not be empty" (not (null requests))
-        (nextState, amountsOut) <- applySwaps config.feeBps state requests
+        funding <- requireFunding state
+        assertMsg "Batch id is required" (batchId /= "")
+        assertMsg "Batch must contain between one and twenty requests"
+          (not (null requests) && length requests <= 20)
+        let allocationCids = concatMap (\item -> [item.request.inputAllocation, item.request.outputAllocation]) requests
+        assertMsg "Duplicate allocation" (length allocationCids == length (dedup allocationCids))
+        let route = SwapRoute with
+              poolCid = self; dvo; venueOperator
+              baseToken = funding.baseToken; quoteToken = funding.quoteToken; baseAccount; quoteAccount
+        validateBacking this state funding
+        (next, nextFunding, receipts, amountsOut) <- settleRequests route config.feeBps batchId state funding requests
+        validateBacking this next nextFunding
         archive stateCid
-        nextCid <- create nextState
-        pure SwapResult with stateCid = nextCid; amountsOut
+        nextCid <- create next with funding = Some nextFunding
+        pure BatchResult with stateCid = nextCid; receiptCids = receipts; amountsOut
 
-    nonconsuming choice Pool_AddLiquidity : DepositResult
+    -- | Return expired allocations to their trader without requiring current pool access.
+    nonconsuming choice Pool_WithdrawSwap : [A.AllocationResult]
+      with
+        trader : Party
+        withdrawals : [AllocationWithdrawal]
+      controller trader
+      do
+        let allocationCids = map (.allocationCid) withdrawals
+        assertMsg "Withdrawal accepts one or two allocations" (not (null allocationCids) && length allocationCids <= 2)
+        assertMsg "Duplicate withdrawal allocation" (length allocationCids == length (dedup allocationCids))
+        forA withdrawals $ \withdrawal -> do
+          allocation <- view <$> fetch withdrawal.allocationCid
+          assertMsg "Withdrawal allocation belongs to another account" (allocation.allocation.authorizer == basicAccount trader)
+          assertMsg "Withdrawal allocation belongs to another pool" (allocation.settlement.cid == Some (toAnyContractId self))
+          case allocation.allocation.settlementDeadline of
+            Some deadline -> assertDeadlineExceeded "allocation settlement deadline" deadline
+            None -> abort "Withdrawal requires an allocation settlement deadline"
+          result <- exercise withdrawal.allocationCid A.Allocation_Withdraw with actors = [trader]; extraArgs = withdrawal.extraArgs
+          assertMsg "Token withdrawal did not finish" (result.output == A.AllocationResult_Withdrawn)
+          pure result
+
+    nonconsuming choice Pool_Fund : ContractId PoolState
       with
         configCid : ContractId PoolConfig
         stateCid : ContractId PoolState
-        request : DepositRequest
-      controller dvv
+        funding : PoolFunding
+      controller dvo
       do
         (_, state) <- loadComponents this self configCid stateCid
-        assertMsg "Deposit pool mismatch" (request.poolCid == state.poolCid)
-        assertMsg "Invalid deposit amounts"
-          (request.baseAmount > 0.0 && request.quoteAmount > 0.0 && request.minLpTokens >= 0.0)
-        assertMsg "Deposit must be proportional"
-          (request.baseAmount * state.quoteReserve == request.quoteAmount * state.baseReserve)
-        let lpTokens = liquidityMinted state.baseReserve state.quoteReserve state.lpTokenSupply
-              request.baseAmount request.quoteAmount
-        assertMsg "Deposit below minimum LP output" (lpTokens > 0.0 && lpTokens >= request.minLpTokens)
+        assertMsg "Pool is already funded" (isNone state.funding)
+        assertMsg "Funding instrument mismatch"
+          (funding.baseToken.instrument == baseInstrumentId && funding.quoteToken.instrument == quoteInstrumentId)
+        validateToken dvo funding.baseToken
+        validateToken dvo funding.quoteToken
+        validateBacking this state funding
         archive stateCid
-        nextCid <- create state with
-          baseReserve = state.baseReserve + request.baseAmount
-          quoteReserve = state.quoteReserve + request.quoteAmount
-          lpTokenSupply = state.lpTokenSupply + lpTokens
-        pure DepositResult with stateCid = nextCid; lpTokens
+        create state with funding = Some funding
 
-    nonconsuming choice Pool_WithdrawLiquidity : WithdrawalResult
-      with
-        configCid : ContractId PoolConfig
-        stateCid : ContractId PoolState
-        request : WithdrawalRequest
-      controller dvv
-      do
-        (_, state) <- loadComponents this self configCid stateCid
-        assertMsg "Withdrawal pool mismatch" (request.poolCid == state.poolCid)
-        assertMsg "Withdrawal must be positive and partial"
-          (request.lpTokens > 0.0 && request.lpTokens < state.lpTokenSupply)
-        assertMsg "Invalid withdrawal limits" (request.minBase >= 0.0 && request.minQuote >= 0.0)
-        let (baseAmount, quoteAmount) = liquidityWithdrawn state.baseReserve state.quoteReserve
-              state.lpTokenSupply request.lpTokens
-        assertMsg "Withdrawal below minimum output"
-          (baseAmount > 0.0 && quoteAmount > 0.0
-            && baseAmount >= request.minBase && quoteAmount >= request.minQuote)
-        archive stateCid
-        nextCid <- create state with
-          baseReserve = state.baseReserve - baseAmount
-          quoteReserve = state.quoteReserve - quoteAmount
-          lpTokenSupply = state.lpTokenSupply - request.lpTokens
-        pure WithdrawalResult with stateCid = nextCid; baseAmount; quoteAmount
-
+-- | Stores the swap fee, which the pool authority (dvo) can update.
 template PoolConfig
   with
     poolCid : ContractId Pool
-    dvv : Party
+    dvo : Party
     venueOperator : Party
     feeBps : Decimal
   where
-    signatory dvv
+    signatory dvo
     observer venueOperator
-    ensure dvv /= venueOperator && validFee feeBps
+    ensure dvo /= venueOperator && validFee feeBps
 
     choice PoolConfig_Update : ContractId PoolConfig
       with newFeeBps : Decimal
-      controller dvv
+      controller dvo
       do
         assertMsg "Fee must be between 0 and 10000 bps" (validFee newFeeBps)
         create this with feeBps = newFeeBps
 
+-- | Tracks the current reserves, recorded LP supply and token holdings backing the pool.
 template PoolState
   with
     poolCid : ContractId Pool
-    dvv : Party
+    dvo : Party
     venueOperator : Party
     baseReserve : Decimal
     quoteReserve : Decimal
     lpTokenSupply : Decimal
+    funding : Optional PoolFunding
   where
-    signatory dvv
+    signatory dvo
     observer venueOperator
-    ensure dvv /= venueOperator
+    ensure dvo /= venueOperator
       && baseReserve > 0.0 && quoteReserve > 0.0 && lpTokenSupply > 0.0
 
-validFee : Decimal -> Bool
-validFee feeBps = feeBps >= 0.0 && feeBps < 10000.0
-
+-- | Load the current configuration and state, requiring the same pool and authority.
 loadComponents : Pool -> ContractId Pool -> ContractId PoolConfig -> ContractId PoolState
   -> Update (PoolConfig, PoolState)
 loadComponents pool poolCid configCid stateCid = do
@@ -168,27 +170,38 @@ loadComponents pool poolCid configCid stateCid = do
   assertMsg "Configuration pool mismatch" (config.poolCid == poolCid)
   assertMsg "State pool mismatch" (state.poolCid == poolCid)
   assertMsg "Configuration authority mismatch"
-    (config.dvv == pool.dvv && config.venueOperator == pool.venueOperator)
+    (config.dvo == pool.dvo && config.venueOperator == pool.venueOperator)
   assertMsg "State authority mismatch"
-    (state.dvv == pool.dvv && state.venueOperator == pool.venueOperator)
+    (state.dvo == pool.dvo && state.venueOperator == pool.venueOperator)
   pure (config, state)
 
-applySwaps : Decimal -> PoolState -> [SwapRequest] -> Update (PoolState, [Decimal])
-applySwaps _ state [] = pure (state, [])
-applySwaps feeBps state (request :: rest) = do
-  assertMsg "Swap pool mismatch" (request.poolCid == state.poolCid)
-  assertMsg "Invalid swap amounts" (request.amountIn > 0.0 && request.minOut >= 0.0)
-  let (reserveIn, reserveOut) = case request.direction of
-        BaseToQuote -> (state.baseReserve, state.quoteReserve)
-        QuoteToBase -> (state.quoteReserve, state.baseReserve)
-      amountOut = swapOutput feeBps reserveIn reserveOut request.amountIn
-  assertMsg "Swap below minimum output" (amountOut > 0.0 && amountOut >= request.minOut)
-  let nextState = case request.direction of
-        BaseToQuote -> state with
-          baseReserve = reserveIn + request.amountIn
-          quoteReserve = reserveOut - amountOut
-        QuoteToBase -> state with
-          baseReserve = reserveOut - amountOut
-          quoteReserve = reserveIn + request.amountIn
-  (finalState, amountsOut) <- applySwaps feeBps nextState rest
-  pure (finalState, amountOut :: amountsOut)
+-- | Require token backing before settlement.
+requireFunding : PoolState -> Update PoolFunding
+requireFunding state = case state.funding of
+  Some funding -> pure funding
+  None -> abort "Pool has no token backing"
+
+-- | Verify that the actual holdings exactly match both recorded reserves.
+validateBacking : Pool -> PoolState -> PoolFunding -> Update ()
+validateBacking pool state funding = do
+  baseTotal <- holdingTotal funding.baseToken pool.baseAccount funding.baseHoldingCids
+  quoteTotal <- holdingTotal funding.quoteToken pool.quoteAccount funding.quoteHoldingCids
+  assertMsg "Base reserve is not backed" (baseTotal == state.baseReserve)
+  assertMsg "Quote reserve is not backed" (quoteTotal == state.quoteReserve)
+
+-- | Price each request against the previous result and collect receipts; leave state replacement to Pool_Swap.
+settleRequests : SwapRoute Pool -> Decimal -> Text -> PoolState -> PoolFunding -> [BatchRequest Pool]
+  -> Update (PoolState, PoolFunding, [ContractId SwapReceipt], [Decimal])
+settleRequests _ _ _ state funding [] = pure (state, funding, [], [])
+settleRequests route feeBps batchId state funding (item :: rest) = do
+  result <- settleRequest route feeBps state.baseReserve state.quoteReserve funding.baseHoldingCids funding.quoteHoldingCids item
+  settledAt <- getTime
+  let request = item.request
+  receipt <- create SwapReceipt with
+    dvo = route.dvo; venueOperator = route.venueOperator; trader = request.trader; poolCid = route.poolCid
+    inputAllocation = request.inputAllocation; outputAllocation = request.outputAllocation
+    batchId; terms = request.terms; amountOut = result.amountOut; settledAt
+  let nextState = state with baseReserve = result.baseReserve; quoteReserve = result.quoteReserve
+      nextFunding = funding with baseHoldingCids = result.baseHoldingCids; quoteHoldingCids = result.quoteHoldingCids
+  (finalState, finalFunding, receipts, amounts) <- settleRequests route feeBps batchId nextState nextFunding rest
+  pure (finalState, finalFunding, receipt :: receipts, result.amountOut :: amounts)

@@ -1,14 +1,43 @@
+-- | Pure constant-product pricing with conservative rounding.
 module Lib.Math where
 
+import DA.Numeric qualified as Numeric
+
+-- | Accept whole basis points in [0, 10000), so the input fee stays below 100%.
+validFee : Decimal -> Bool
+validFee feeBps = feeBps >= 0.0 && feeBps < 10000.0
+  && Numeric.roundNumeric 0 Numeric.RoundingFloor feeBps == feeBps
+
+-- | Check output precision, fee and positive amounts before pricing.
+validSwapInputs : Int -> Decimal -> Decimal -> Decimal -> Decimal -> Bool
+validSwapInputs outputScale feeBps reserveIn reserveOut amountIn =
+  outputScale >= 0 && outputScale <= 10
+    && validFee feeBps
+    && all (> 0.0) [reserveIn, reserveOut, amountIn]
+
+-- | Price a swap at Decimal precision (10 places), rounding the output down.
+-- Arguments are fee basis points, input reserve, output reserve and input amount.
 swapOutput : Decimal -> Decimal -> Decimal -> Decimal -> Decimal
-swapOutput feeBps reserveIn reserveOut amountIn =
-  let netInput = amountIn * (10000.0 - feeBps) / 10000.0
-  in reserveOut * netInput / (reserveIn + netInput)
+swapOutput = swapOutputAtScale 10
 
-liquidityMinted : Decimal -> Decimal -> Decimal -> Decimal -> Decimal -> Decimal
-liquidityMinted baseReserve quoteReserve supply baseAmount quoteAmount =
-  min (baseAmount * supply / baseReserve) (quoteAmount * supply / quoteReserve)
-
-liquidityWithdrawn : Decimal -> Decimal -> Decimal -> Decimal -> (Decimal, Decimal)
-liquidityWithdrawn baseReserve quoteReserve supply lpTokens =
-  (baseReserve * lpTokens / supply, quoteReserve * lpTokens / supply)
+-- | Price a swap after the input fee, rounding down to the output token precision.
+-- Integer atoms preserve input precision; correct nearest-rounded division before
+-- converting back so a result just below a quantum floors. Native numeric
+-- overflow aborts the calculation if an intermediate exceeds 38 digits.
+swapOutputAtScale : Int -> Decimal -> Decimal -> Decimal -> Decimal -> Decimal
+swapOutputAtScale outputScale feeBps reserveIn reserveOut amountIn =
+  if not (validSwapInputs outputScale feeBps reserveIn reserveOut amountIn)
+  then error "Swap requires scale 0..10, integer fee bps, and positive amounts"
+  else
+    let inputAtoms = Numeric.shift @0 amountIn
+        reserveInAtoms = Numeric.shift @0 reserveIn
+        reserveOutAtoms = Numeric.shift @0 reserveOut
+        feeMultiplier = 10000.0 - Numeric.cast @0 feeBps
+        quantumAtoms = intToNumeric @0 (10 ^ (10 - outputScale))
+        numerator = reserveOutAtoms * inputAtoms * feeMultiplier
+        denominator = (reserveInAtoms * 10000.0 + inputAtoms * feeMultiplier) * quantumAtoms
+        roundedQuanta = Numeric.div @0 numerator denominator
+        quanta = if roundedQuanta * denominator > numerator
+          then roundedQuanta - 1.0
+          else roundedQuanta
+    in Numeric.shift @10 (quanta * quantumAtoms)

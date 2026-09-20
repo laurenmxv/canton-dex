@@ -1,0 +1,63 @@
+module MathTests where
+
+import DA.Assert ((===))
+import DA.Foldable (forA_)
+import DA.Numeric qualified as Numeric
+import Daml.Script
+import Lib.Math
+
+referenceVectors : Script ()
+referenceVectors = script do
+  -- Expected values are floors of exact rational arithmetic, calculated offline.
+  swapOutputAtScale 6 30.0 1000000.0 500.0 1000.0 === 0.498003
+  swapOutputAtScale 8 30.0 1000000.0 500.0 1000.0 === 0.49800349
+  swapOutputAtScale 10 30.0 1000000.0 500.0 1000.0 === 0.4980034905
+  swapOutputAtScale 10 0.0 1.0 1.0 2.0 === 0.6666666666
+  swapOutputAtScale 0 0.0 1.0 1.0 2.0 === 0.0
+  swapOutputAtScale 0 0.0 1.0 2.0 1.0 === 1.0
+  swapOutput 30.0 997.0 1000.0 1000.0 === 500.0
+  swapOutput 0.0 1000000.0 1000000.0 1000000.0 === 500000.0
+
+dustAndQuantumBoundaries : Script ()
+dustAndQuantumBoundaries = script do
+  swapOutputAtScale 6 30.0 1.0 1.0 0.000001 === 0.0
+  swapOutputAtScale 8 30.0 1.0 1.0 0.000001 === 0.00000099
+  swapOutputAtScale 10 30.0 1.0 1.0 0.000001 === 0.0000009969
+  -- Decimal division rounds this up to one quantum; the exact result is below it.
+  swapOutputAtScale 6 0.0 1000000.0 1000000.0 0.000001 === 0.0
+  swapOutputAtScale 10 0.0 1000000.0 1000000.0 0.0000000001 === 0.0
+  swapOutputAtScale 6 30.0 1000.0 1000.0 0.0000000001 === 0.0
+
+inputValidation : Script ()
+inputValidation = script do
+  forA_ [0, 6, 8, 10] $ \scale ->
+    validSwapInputs scale 9999.0 1000000.0 1000000.0 1000000.0 === True
+  validSwapInputs 10 30.0 1000000.0000000001 2000000.0 1000000000.0 === True
+  forA_ [-1, 11] $ \scale ->
+    validSwapInputs scale 30.0 1.0 1.0 1.0 === False
+  forA_ [-1.0, 30.5, 10000.0] $ \fee ->
+    validSwapInputs 10 fee 1.0 1.0 1.0 === False
+  forA_ [-1.0, 0.0] $ \amount -> do
+    validSwapInputs 10 30.0 amount 1.0 1.0 === False
+    validSwapInputs 10 30.0 1.0 amount 1.0 === False
+    validSwapInputs 10 30.0 1.0 1.0 amount === False
+
+feePreservesCurve : Script ()
+feePreservesCurve = script do
+  forA_
+    [ (1000.0, 1000.0, 10.0)
+    , (1000000.0, 500.0, 1000.0)
+    , (500.0, 1000000.0, 0.0012345678)
+    ] $ \(reserveIn, reserveOut, amountIn) -> do
+      let amountOut = swapOutputAtScale 8 30.0 reserveIn reserveOut amountIn
+          before = Numeric.mul @20 reserveIn reserveOut
+          after = Numeric.mul @20 (reserveIn + amountIn) (reserveOut - amountOut)
+      assertMsg "A positive fee must increase the reserve product" (after > before)
+      assertMsg "Output must remain below the output reserve"
+        (amountOut > 0.0 && amountOut < reserveOut)
+
+largeAmounts : Script ()
+largeAmounts = script do
+  swapOutput 0.0 2000000.0 6000000.0 2000000.0 === 3000000.0
+  swapOutput 30.0 2991000.0 6000000.0 3000000.0 === 3000000.0
+  swapOutputAtScale 6 30.0 997.0 1000.0 1000000000.0 === 999.999

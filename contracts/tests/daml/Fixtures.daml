@@ -8,7 +8,7 @@ import PoolAccess
 import PoolFactory
 
 data Parties = Parties with
-    dvv : Party
+    dvo : Party
     venueOperator : Party
     baseRegistrar : Party
     quoteRegistrar : Party
@@ -16,7 +16,7 @@ data Parties = Parties with
 
 allocateParties : () -> Script Parties
 allocateParties () = do
-  dvv <- allocateParty "DVV"
+  dvo <- allocateParty "DVO"
   venueOperator <- allocateParty "VENUE_OPERATOR"
   baseRegistrar <- allocateParty "BASE_REGISTRAR"
   quoteRegistrar <- allocateParty "QUOTE_REGISTRAR"
@@ -24,12 +24,12 @@ allocateParties () = do
 
 settingsFor : Parties -> PoolSettings
 settingsFor parties = PoolSettings with
-  dvv = parties.dvv
+  dvo = parties.dvo
   baseInstrumentId = InstrumentId with admin = parties.baseRegistrar; id = "BASE"
   quoteInstrumentId = InstrumentId with admin = parties.quoteRegistrar; id = "QUOTE"
-  baseAccount = Account with owner = Some parties.dvv; provider = None; id = "base"
-  quoteAccount = Account with owner = Some parties.dvv; provider = None; id = "quote"
-  lpTokenInstrumentId = InstrumentId with admin = parties.dvv; id = "LP"
+  baseAccount = Account with owner = Some parties.dvo; provider = None; id = "base"
+  quoteAccount = Account with owner = Some parties.dvo; provider = None; id = "quote"
+  lpTokenInstrumentId = InstrumentId with admin = parties.dvo; id = "LP"
   feeBps = 30.0
   baseReserve = 997.0
   quoteReserve = 1000.0
@@ -39,9 +39,9 @@ settingsFor parties = PoolSettings with
 poolFixture : Parties -> Script (ContractId PoolFactory, PoolContracts)
 poolFixture parties = do
   let settings = settingsFor parties
-  factoryCid <- submit parties.dvv $ createCmd PoolFactory with
-    dvv = parties.dvv; venueOperator = parties.venueOperator
-  contracts <- submit parties.dvv $
+  factoryCid <- submit parties.dvo $ createCmd PoolFactory with
+    dvo = parties.dvo; venueOperator = parties.venueOperator
+  contracts <- submit parties.dvo $
     exerciseCmd factoryCid PoolFactory_CreatePool with settings
   pure (factoryCid, contracts)
 

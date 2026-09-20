@@ -1,12 +1,12 @@
 sdk-version: 3.5.7
-name: canton-dex-ri
+name: canton-dex-test-faucet
 version: 0.1.0
 source: daml
 dependencies:
   - daml-prim
   - daml-stdlib
 data-dependencies:
-  - dars/splice-token-standard-utils-2.0.0.dar
+  - ../dars/openzeppelin-tokenCIP112-v1-0.1.0.dar
 build-options:
   - --target=2.3
   - --package=splice-api-token-allocation-v2-1.0.0

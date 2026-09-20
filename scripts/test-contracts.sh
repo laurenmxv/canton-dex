@@ -27,11 +27,6 @@ fi
 printf '\nBuilding contracts and tests...\n'
 "$dpm_bin" build --all
 
-for module in Onboarding PoolCreation Swaps; do
-  printf '\n%s\n' "$module"
-  "$dpm_bin" script \
-    --dar tests/.daml/dist/oz-dex-ri-tests-0.0.0.dar \
-    --ide-ledger --static-time --script-name "$module:main"
-done
+DAML_PACKAGE=tests "$dpm_bin" test
 
 printf '\nTests passed.\n'

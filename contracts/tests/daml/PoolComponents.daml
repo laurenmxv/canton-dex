@@ -1,0 +1,60 @@
+module PoolComponents where
+
+import DA.Assert ((===))
+import DA.Foldable (forA_)
+import Daml.Script
+import Fixtures
+import FundedSwaps
+import Pool
+import Lib.Swap
+import VenueDelegation
+
+feeUpdatesRequireDvo : Script ()
+feeUpdatesRequireDvo = script do
+  f <- setup ()
+  trader <- allocateParty "FeeTrader"
+  Some config <- queryContractId f.parties.dvo f.pool.configCid
+  forA_ [f.parties.venueOperator, trader] $ \actor ->
+    submitMustFail (actAs actor <> readAs f.parties.dvo) $
+      exerciseCmd f.pool.configCid PoolConfig_Update with newFeeBps = 50.0
+  forA_ [-1.0, 30.5, 10000.0] $ \fee ->
+    submitMustFail f.parties.dvo $
+      exerciseCmd f.pool.configCid PoolConfig_Update with newFeeBps = fee
+  queryContractId f.parties.dvo f.pool.configCid >>= (=== Some config)
+  next <- submit f.parties.dvo $
+    exerciseCmd f.pool.configCid PoolConfig_Update with newFeeBps = 50.0
+  queryContractId f.parties.venueOperator next >>= (=== Some (config with feeBps = 50.0))
+  queryContractId f.parties.dvo f.pool.configCid >>= (=== None)
+
+settlementRejectsMismatchedComponents : Script ()
+settlementRejectsMismatchedComponents = script do
+  f <- setup ()
+  trader <- allocateParty "ComponentTrader"
+  request <- prepare f trader "component-swap" BaseToQuote 10.0 0.0
+  Some state <- queryContractId f.parties.dvo f.pool.stateCid
+  Some config <- queryContractId f.parties.dvo f.pool.configCid
+  (_, otherPool) <- poolFixture f.parties
+  otherDvo <- allocateParty "OtherComponentDvo"
+  otherOperator <- allocateParty "OtherComponentOperator"
+  wrongAuthorityConfig <- submit otherDvo $ createCmd (config with dvo = otherDvo)
+  wrongAuthorityState <- submit otherDvo $ createCmd (state with dvo = otherDvo)
+  wrongOperatorConfig <- submit f.parties.dvo $ createCmd (config with venueOperator = otherOperator)
+  wrongOperatorState <- submit f.parties.dvo $ createCmd (state with venueOperator = otherOperator)
+  disclosures <- settlementDisclosures f f.pool.stateCid
+  forA_
+    [ (otherPool.configCid, f.pool.stateCid)
+    , (f.pool.configCid, otherPool.stateCid)
+    , (wrongAuthorityConfig, f.pool.stateCid)
+    , (f.pool.configCid, wrongAuthorityState)
+    , (wrongOperatorConfig, f.pool.stateCid)
+    , (f.pool.configCid, wrongOperatorState)
+    ] $ \(configCid, stateCid) -> do
+      submitMustFail (actAs f.parties.venueOperator <> readAs f.parties.dvo <> readAs otherDvo <> discloseMany disclosures) $
+        exerciseCmd f.delegationCid VenueDelegation_SettleBatch with
+          configCid; stateCid; batchId = "component-batch"
+          requests = [settlementRequest request]
+      queryContractId f.parties.dvo f.pool.stateCid >>= (=== Some state)
+      queryContractId f.parties.dvo f.pool.configCid >>= (=== Some config)
+      availableBalance trader f.route.quoteToken.instrument >>= (=== 0.0)
+  _ <- settle f f.pool.stateCid "valid-components" [request]
+  pure ()

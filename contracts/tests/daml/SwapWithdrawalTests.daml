@@ -1,0 +1,131 @@
+module SwapWithdrawalTests where
+
+import DA.Assert ((===))
+import DA.Foldable (forA_)
+import DA.Time (addRelTime, seconds)
+import Daml.Script
+import Fixtures (poolFixture)
+import FundedSwaps
+import Lib.Tokens (emptyArgs)
+import OpenZeppelin.TokenCIP112V1.Allocation (TokenAllocation)
+import OpenZeppelin.TokenCIP112V1.Holding (TokenHolding)
+import Pool
+import Splice.Api.Token.AllocationV2 qualified as A
+import Lib.Swap
+
+withdraw : FundedFixture -> Party -> [ContractId A.Allocation] -> Script [A.AllocationResult]
+withdraw f trader allocationCids = do
+  disclosures <- rulesDisclosures f
+  submit (actAs trader <> discloseMany disclosures) $
+    exerciseCmd f.pool.poolCid Pool_WithdrawSwap with
+      trader; withdrawals = map withdrawal allocationCids
+
+partialWalletWithdrawalRecoversRemainingAllocation : Script ()
+partialWalletWithdrawalRecoversRemainingAllocation = script do
+  f <- setup ()
+  trader <- allocateParty "PartialWithdrawalTrader"
+  prepared <- prepare f trader "partial-withdrawal" BaseToQuote 10.0 0.0
+  let request = prepared.request
+  setTime (addRelTime request.terms.settlementDeadline (seconds 1))
+  inputResult <- submit trader $ exerciseCmd request.inputAllocation A.Allocation_Withdraw with
+    actors = [trader]; extraArgs = emptyArgs
+  inputResult.output === A.AllocationResult_Withdrawn
+  availableBalance trader f.route.baseToken.instrument >>= (=== 10.0)
+  results <- withdraw f trader [request.outputAllocation]
+  map (.output) results === [A.AllocationResult_Withdrawn]
+  queryInterfaceContractId @A.Allocation trader request.inputAllocation >>= (=== None)
+  queryInterfaceContractId @A.Allocation trader request.outputAllocation >>= (=== None)
+  availableBalance trader f.route.baseToken.instrument >>= (=== 10.0)
+  availableBalance trader f.route.quoteToken.instrument >>= (=== 0.0)
+
+withdrawalRejectsPrematureRecovery : Script ()
+withdrawalRejectsPrematureRecovery = script do
+  f <- setup ()
+  trader <- allocateParty "PrematureWithdrawalTrader"
+  prepared <- prepare f trader "premature-withdrawal" BaseToQuote 10.0 0.0
+  let request = prepared.request
+  inputBefore <- queryInterfaceContractId @A.Allocation trader request.inputAllocation
+  outputBefore <- queryInterfaceContractId @A.Allocation trader request.outputAllocation
+  disclosures <- rulesDisclosures f
+  submitMustFail (actAs trader <> discloseMany disclosures) $
+    exerciseCmd f.pool.poolCid Pool_WithdrawSwap with
+      trader; withdrawals = map withdrawal [request.inputAllocation, request.outputAllocation]
+  queryInterfaceContractId @A.Allocation trader request.inputAllocation >>= (=== inputBefore)
+  queryInterfaceContractId @A.Allocation trader request.outputAllocation >>= (=== outputBefore)
+  availableBalance trader f.route.baseToken.instrument >>= (=== 0.0)
+  setTime (addRelTime request.terms.settlementDeadline (seconds 1))
+  results <- withdraw f trader [request.inputAllocation, request.outputAllocation]
+  map (.output) results === [A.AllocationResult_Withdrawn, A.AllocationResult_Withdrawn]
+  availableBalance trader f.route.baseToken.instrument >>= (=== 10.0)
+
+withdrawalRejectsOtherOwnerWithDisclosure : Script ()
+withdrawalRejectsOtherOwnerWithDisclosure = script do
+  f <- setup ()
+  owner <- allocateParty "WithdrawalOwner"
+  let stranger = f.parties.venueOperator
+  prepared <- prepare f owner "owner-only-withdrawal" BaseToQuote 10.0 0.0
+  let request = prepared.request
+  Some inputView <- queryInterfaceContractId @A.Allocation owner request.inputAllocation
+  Some allocationDisclosure <- queryDisclosure @TokenAllocation owner
+    (fromInterfaceContractId request.inputAllocation)
+  holdingDisclosures <- forA inputView.holdingCids $ \cid -> do
+    Some disclosure <- queryDisclosure @TokenHolding owner (fromInterfaceContractId cid)
+    pure disclosure
+  setTime (addRelTime request.terms.settlementDeadline (seconds 1))
+  -- Visibility is explicit: this rejection must enforce the trader boundary.
+  submitMustFail (actAs stranger <> discloseMany (allocationDisclosure :: holdingDisclosures)) $
+    exerciseCmd f.pool.poolCid Pool_WithdrawSwap with
+      trader = stranger; withdrawals = [withdrawal request.inputAllocation]
+  queryInterfaceContractId @A.Allocation owner request.inputAllocation >>= (=== Some inputView)
+  availableBalance owner f.route.baseToken.instrument >>= (=== 0.0)
+  availableBalance stranger f.route.baseToken.instrument >>= (=== 0.0)
+  _ <- withdraw f owner [request.inputAllocation, request.outputAllocation]
+  availableBalance owner f.route.baseToken.instrument >>= (=== 10.0)
+
+withdrawalRejectsAllocationFromAnotherPool : Script ()
+withdrawalRejectsAllocationFromAnotherPool = script do
+  f <- setup ()
+  trader <- allocateParty "ForeignPoolAllocationTrader"
+  (_, pool) <- poolFixture f.parties
+  let candidate = f with pool; route = (f.route with poolCid = pool.poolCid)
+  prepared <- prepare candidate trader "other-pool" BaseToQuote 10.0 0.0
+  let request = prepared.request
+  before <- queryInterfaceContractId @A.Allocation trader request.inputAllocation
+  setTime (addRelTime request.terms.settlementDeadline (seconds 1))
+  disclosures <- rulesDisclosures f
+  submitMustFail (actAs trader <> discloseMany disclosures) $
+    exerciseCmd f.pool.poolCid Pool_WithdrawSwap with
+      trader; withdrawals = [withdrawal request.inputAllocation]
+  queryInterfaceContractId @A.Allocation trader request.inputAllocation >>= (=== before)
+  availableBalance trader f.route.baseToken.instrument >>= (=== 0.0)
+  _ <- withdraw candidate trader [request.inputAllocation, request.outputAllocation]
+  availableBalance trader f.route.baseToken.instrument >>= (=== 10.0)
+
+withdrawalRejectsInvalidAllocationLists : Script ()
+withdrawalRejectsInvalidAllocationLists = script do
+  f <- setup ()
+  trader <- allocateParty "WithdrawalListTrader"
+  first <- prepare f trader "list-first" BaseToQuote 10.0 0.0
+  second <- prepare f trader "list-second" QuoteToBase 11.0 0.0
+  let firstRequest = first.request
+      secondRequest = second.request
+  inputBefore <- queryInterfaceContractId @A.Allocation trader firstRequest.inputAllocation
+  setTime (addRelTime firstRequest.terms.settlementDeadline (seconds 1))
+  disclosures <- rulesDisclosures f
+  forA_
+    [ []
+    , [firstRequest.inputAllocation, firstRequest.inputAllocation]
+    , [firstRequest.inputAllocation, firstRequest.outputAllocation, secondRequest.inputAllocation]
+    ] $ \allocationCids ->
+      submitMustFail (actAs trader <> discloseMany disclosures) $
+        exerciseCmd f.pool.poolCid Pool_WithdrawSwap with
+          trader; withdrawals = map withdrawal allocationCids
+  assertPending first
+  assertPending second
+  queryInterfaceContractId @A.Allocation trader firstRequest.inputAllocation >>= (=== inputBefore)
+  availableBalance trader f.route.baseToken.instrument >>= (=== 0.0)
+  availableBalance trader f.route.quoteToken.instrument >>= (=== 0.0)
+  _ <- withdraw f trader [firstRequest.inputAllocation, firstRequest.outputAllocation]
+  _ <- withdraw f trader [secondRequest.inputAllocation, secondRequest.outputAllocation]
+  availableBalance trader f.route.baseToken.instrument >>= (=== 10.0)
+  availableBalance trader f.route.quoteToken.instrument >>= (=== 11.0)

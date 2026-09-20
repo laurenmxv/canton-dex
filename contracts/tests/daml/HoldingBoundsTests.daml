@@ -1,0 +1,93 @@
+module HoldingBoundsTests where
+
+import DA.Assert ((===))
+import DA.Time (addRelTime, minutes)
+import Daml.Script
+import Fixtures
+import FundedSwaps
+import Lib.Tokens (emptyArgs)
+import Pool
+import PoolAccess
+import Splice.TokenStandard.Utils (basicAccount)
+import Lib.Swap
+import VenueDelegation
+import Splice.Api.Token.AllocationV2 qualified as A
+
+sameDirectionBatchesPreserveBacking : Script ()
+sameDirectionBatchesPreserveBacking = script do
+  f <- setup ()
+  trader <- allocateParty "RepeatedTrader"
+  stateCid <- repeatBatches f trader f.pool.stateCid [1, 2, 3]
+  state <- assertBacking f stateCid
+  state.baseReserve === 1012.0
+  received <- availableBalance trader f.route.quoteToken.instrument
+  (state.quoteReserve + received) === 1000.0
+  availableBalance trader f.route.baseToken.instrument >>= (=== 0.0)
+
+repeatBatches : FundedFixture -> Party -> ContractId PoolState -> [Int] -> Script (ContractId PoolState)
+repeatBatches _ _ stateCid [] = pure stateCid
+repeatBatches f trader stateCid (batch :: remaining) = do
+  requests <- forA [1..5] $ \index ->
+    prepare f trader ("repeated-" <> show batch <> "-" <> show index) BaseToQuote 1.0 0.0
+  result <- settle f stateCid ("repeated-batch-" <> show batch) requests
+  length result.amountsOut === 5
+  _ <- assertBacking f result.stateCid
+  repeatBatches f trader result.stateCid remaining
+
+fundingAcceptsThreeDistinctHoldings : Script ()
+fundingAcceptsThreeDistinctHoldings = script do
+  f <- setup ()
+  (_, pool) <- poolFixture f.parties
+  base <- forA [300.0, 300.0, 397.0] $ \amount ->
+    mint f.baseRulesCid f.parties.baseRegistrar f.route.baseAccount "BASE" amount
+  quote <- forA [300.0, 300.0, 400.0] $ \amount ->
+    mint f.quoteRulesCid f.parties.quoteRegistrar f.route.quoteAccount "QUOTE" amount
+  let funding = PoolFunding with
+        baseToken = f.route.baseToken; quoteToken = f.route.quoteToken
+        baseHoldingCids = base; quoteHoldingCids = quote
+  disclosures <- rulesDisclosures f
+  stateCid <- submit (actAs f.parties.dvo <> discloseMany disclosures) $
+    exerciseCmd pool.poolCid Pool_Fund with
+      configCid = pool.configCid; stateCid = pool.stateCid; funding
+  state <- assertBacking f stateCid
+  let Some finalFunding = state.funding
+  finalFunding.baseHoldingCids === base
+  finalFunding.quoteHoldingCids === quote
+  state.baseReserve === 997.0
+  state.quoteReserve === 1000.0
+  delegationCid <- submit f.parties.dvo $ createCmd VenueDelegation with
+    dvo = f.parties.dvo; venueOperator = f.parties.venueOperator; poolCid = pool.poolCid
+  let candidate = f with
+        pool = (pool with stateCid); delegationCid; route = (f.route with poolCid = pool.poolCid)
+  trader <- allocateParty "FragmentedBackingTrader"
+  request <- prepare candidate trader "fragmented-reserves" BaseToQuote 1000.0 500.0
+  result <- settle candidate stateCid "fragmented-backing" [request]
+  result.amountsOut === [500.0]
+  next <- assertBacking candidate result.stateCid
+  next.baseReserve === 1997.0
+  next.quoteReserve === 500.0
+
+traderInputLimitUsesDistinctRealHoldings : Script ()
+traderInputLimitUsesDistinctRealHoldings = script do
+  f <- setup ()
+  trader <- allocateParty "ManyHoldingsTrader"
+  (_, accessCid) <- accessFixture f.parties.venueOperator trader f.pool.poolCid
+  inputs <- forA [1..17] $ \_ ->
+    mint f.baseRulesCid f.parties.baseRegistrar (basicAccount trader) "BASE" 1.0
+  requestedAt <- getTime
+  let terms = SwapTerms with
+        requestId = "seventeen-inputs"; direction = BaseToQuote; amountIn = 17.0; minOut = 0.0
+        settlementDeadline = addRelTime requestedAt (minutes 10)
+      preparation = PoolAccess_RequestSwap with
+        route = f.route; terms; requestedAt; inputHoldingCids = inputs
+        inputAllocationArgs = emptyArgs; outputAllocationArgs = emptyArgs
+  disclosures <- rulesDisclosures f
+  submitMustFail (actAs trader <> discloseMany disclosures) $
+    exerciseCmd accessCid preparation
+  availableBalance trader f.route.baseToken.instrument >>= (=== 17.0)
+  request <- submit (actAs trader <> discloseMany disclosures) $
+    exerciseCmd accessCid (preparation with
+      terms = (terms with requestId = "sixteen-inputs"; amountIn = 16.0)
+      inputHoldingCids = take 16 inputs)
+  Some _ <- queryInterfaceContractId @A.Allocation trader request.inputAllocation
+  availableBalance trader f.route.baseToken.instrument >>= (=== 1.0)

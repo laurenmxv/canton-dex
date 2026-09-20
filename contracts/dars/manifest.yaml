@@ -1,8 +1,24 @@
-package: splice-api-token-holding-v2
-version: 1.0.0
-file: contracts/dars/splice-api-token-holding-v2-1.0.0.dar
-main-package-id: dcf74571dd11e678637924e9f10a61a15727801c83c0f21d3218656b7e6039f8
-sha256: 1773772d230ae7331dc24b0055db91e65943e1beb879436b52288365f156868f
-source: https://github.com/hyperledger-labs/splice/tree/69b43eb761e38695052c983715aa855c8cb207fc/token-standard/splice-api-token-holding-v2
-license: Apache-2.0
-license-file: contracts/dars/LICENSE-Apache-2.0.txt
+schema-version: 1
+artifacts:
+  - package: openzeppelin-tokenCIP112-v1
+    version: 0.1.0
+    file: contracts/dars/openzeppelin-tokenCIP112-v1-0.1.0.dar
+    main-package-id: dbb1f220559dd1d2e505a56449ded609f5f49708678316cf74fc37760da27f6a
+    sha256: 997a6e0dd308f73eabfd18f377833d45a27723f045172a1a81aac66df6059595
+    source: https://github.com/OpenZeppelin/canton-contracts/tree/535fa7cdab11a82c0476a6f9e9ecc7ebb90d3eaf/experiments/token/tokenCIP112-v1
+    source-commit: 535fa7cdab11a82c0476a6f9e9ecc7ebb90d3eaf
+    license: MIT
+    license-file: contracts/dars/LICENSE-OpenZeppelin-MIT.txt
+    modified: false
+    sdk-version: 3.4.11
+    lf-version: '2.1'
+    status: unmodified-experimental-draft-PR-45
+  - package: splice-token-standard-utils
+    version: 2.0.0
+    file: contracts/dars/splice-token-standard-utils-2.0.0.dar
+    main-package-id: 59fb226dc6dc896f15c89d6399d20241760328f84f9da6e11a83ee0c2d0b7108
+    sha256: 2985466cd8f55460ecc4cb6486e018017818d745273fe398a9b68a5acc8a34fc
+    source: https://github.com/hyperledger-labs/splice/tree/69b43eb761e38695052c983715aa855c8cb207fc/token-standard/splice-token-standard-utils
+    source-commit: 69b43eb761e38695052c983715aa855c8cb207fc
+    license: Apache-2.0
+    license-file: contracts/dars/LICENSE-Apache-2.0.txt

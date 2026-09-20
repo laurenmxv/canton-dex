@@ -1,0 +1,97 @@
+-- | Gives developers test tokens through an issuer-approved grant.
+-- The recipient claims the grant; a receipt records what was minted.
+module TestTokenFaucet where
+
+import DA.List (dedupSort)
+import DA.Optional (isNone)
+import OpenZeppelin.TokenCIP112V1.Registry (TokenRules(..), TokenRules_Mint(..))
+import Splice.Api.Token.HoldingV2 qualified as HoldingV2
+
+data TestTokenAmount = TestTokenAmount with
+    instrumentId : Text
+    amount : Decimal
+  deriving (Eq, Show)
+
+data TestTokenClaim = TestTokenClaim with
+    receiptCid : ContractId TestTokenReceipt
+    holdingCids : [ContractId HoldingV2.Holding]
+  deriving (Eq, Show)
+
+-- | Lets the operator offer the fixed test-token bundle approved by the issuer.
+template TestTokenFaucet with
+    issuer : Party
+    operator : Party
+    rulesCid : ContractId TokenRules
+    amounts : [TestTokenAmount]
+  where
+    signatory issuer
+    observer operator
+    ensure validAmounts amounts
+
+    nonconsuming choice TestTokenFaucet_IssueGrant : ContractId TestTokenGrant
+      with
+        recipient : Party
+        grantId : Text
+      controller operator
+      do
+        create TestTokenGrant with
+          issuer; operator; grantId; rulesCid; recipient; amounts
+          account = HoldingV2.Account with
+            owner = Some recipient
+            provider = None
+            id = ""
+
+-- | A one-use grant that the named recipient can claim to mint the offered tokens.
+template TestTokenGrant with
+    issuer : Party
+    operator : Party
+    grantId : Text
+    rulesCid : ContractId TokenRules
+    recipient : Party
+    account : HoldingV2.Account
+    amounts : [TestTokenAmount]
+  where
+    signatory issuer
+    observer recipient, operator
+    ensure grantId /= ""
+      && account.owner == Some recipient
+      && isNone account.provider
+      && validAmounts amounts
+
+    choice TestTokenGrant_Claim : TestTokenClaim
+      controller recipient
+      do
+        rules <- fetch rulesCid
+        assertMsg "test-token registry issuer mismatch" (rules.admin == issuer)
+        holdingCids <- forA amounts $ \token -> do
+          holdingCid <- exercise rulesCid TokenRules_Mint with
+            account
+            instrumentId = token.instrumentId
+            amount = token.amount
+            reason = "Local test-token grant " <> grantId
+          pure (toInterfaceContractId @HoldingV2.Holding holdingCid)
+        receiptCid <- create TestTokenReceipt with
+          issuer; operator; grantId; rulesCid; recipient; account; amounts; holdingCids
+        pure TestTokenClaim with receiptCid; holdingCids
+
+-- | Records a completed claim so the backend can recover without minting again.
+template TestTokenReceipt with
+    issuer : Party
+    operator : Party
+    grantId : Text
+    rulesCid : ContractId TokenRules
+    recipient : Party
+    account : HoldingV2.Account
+    amounts : [TestTokenAmount]
+    holdingCids : [ContractId HoldingV2.Holding]
+  where
+    signatory issuer
+    observer recipient, operator
+
+validAmounts : [TestTokenAmount] -> Bool
+validAmounts amounts =
+  not (null amounts)
+    && all (\token -> token.instrumentId /= "" && token.amount > 0.0) amounts
+    && length instruments == length (dedupSort instruments)
+  where
+    instruments = map (.instrumentId) amounts

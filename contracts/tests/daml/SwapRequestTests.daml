@@ -1,0 +1,369 @@
+module SwapRequestTests where
+
+import DA.Action ((>=>), when, unless)
+import DA.Foldable (forA_)
+import DA.Optional (mapOptional)
+import DA.Assert ((===))
+import DA.TextMap qualified as TextMap
+import DA.Time (addRelTime, minutes, seconds)
+import Daml.Script
+import Fixtures (accessFixture, createdContracts, poolFixture)
+import FundedSwaps
+import Lib.Tokens (allocationSpec, emptyArgs)
+import Pool
+import PoolAccess
+import VenueDelegation
+import Splice.Api.Token.AllocationInstructionV2 qualified as AI
+import Splice.Api.Token.AllocationV2 qualified as A
+import Splice.Api.Token.MetadataV1 (emptyMetadata)
+import Splice.TokenStandard.Utils (basicAccount, senderSide, receiverSide, toAnyContractId)
+import Lib.Swap
+
+template OperatorMarker
+  with operator : Party
+  where signatory operator
+
+template HostileAllocation
+  with
+    owner : Party
+    operator : Party
+    allocationView : A.AllocationView
+  where
+    signatory owner
+    interface instance A.Allocation for HostileAllocation where
+      view = allocationView
+      allocation_settleExtraObservers _ = []
+      allocation_withdrawExtraObservers _ = []
+      allocation_cancelExtraObservers _ = []
+      allocation_settleImpl _ _ = abort "Settlement is outside this withdrawal fixture"
+      allocation_cancelImpl _ _ = abort "Cancellation is outside this withdrawal fixture"
+      allocation_withdrawImpl _ _ = do
+        _ <- create OperatorMarker with operator
+        pure (A.AllocationResult with
+          output = A.AllocationResult_Withdrawn; authorizerHoldingCids = TextMap.empty; meta = emptyMetadata)
+
+-- Only the trader signs this test factory. Its views do not grant the operator's authority.
+template HostileFactory
+  with
+    owner : Party
+    operator : Party
+    admin : Party
+    attackOnFetch : Bool
+    delegate : ContractId AI.AllocationFactory
+  where
+    signatory owner
+
+    interface instance AI.AllocationFactory for HostileFactory where
+      view = AI.AllocationFactoryView with admin; meta = emptyMetadata
+      allocationFactory_allocateExtraObservers _ = []
+      allocationFactory_publicFetchImpl _ _ = do
+        when attackOnFetch $ do
+          _ <- create OperatorMarker with operator
+          pure ()
+        pure (AI.AllocationFactoryView with admin; meta = emptyMetadata)
+      allocationFactory_allocateImpl _ arg = do
+        unless attackOnFetch $ do
+          _ <- create OperatorMarker with operator
+          pure ()
+        exercise delegate (arg with actors = [owner])
+
+    interface instance A.SettlementFactory for HostileFactory where
+      view = A.SettlementFactoryView with admin; meta = emptyMetadata
+      settlementFactory_publicFetchImpl _ _ = pure (A.SettlementFactoryView with admin; meta = emptyMetadata)
+      settlementFactory_settleBatchExtraObservers _ = []
+      settlementFactory_settleBatchImpl _ _ = abort "Settlement is outside this request fixture"
+
+prepareArgs : FundedFixture -> Party -> Text -> Script (ContractId PoolAccess, PoolAccess_RequestSwap)
+prepareArgs f trader requestId = do
+  (_, accessCid) <- accessFixture f.parties.venueOperator trader f.pool.poolCid
+  input <- mint f.baseRulesCid f.parties.baseRegistrar (basicAccount trader) "BASE" 10.0
+  requestedAt <- getTime
+  let terms = SwapTerms with
+        requestId; direction = BaseToQuote; amountIn = 10.0; minOut = 0.0
+        settlementDeadline = addRelTime requestedAt (minutes 10)
+  pure (accessCid, PoolAccess_RequestSwap with
+    route = f.route; terms; requestedAt; inputHoldingCids = [input]
+    inputAllocationArgs = emptyArgs; outputAllocationArgs = emptyArgs)
+
+requestRequiresTraderAndUsesOneExerciseRoot : Script ()
+requestRequiresTraderAndUsesOneExerciseRoot = script do
+  f <- setup ()
+  trader <- allocateParty "RequestTrader"
+  (accessCid, args) <- prepareArgs f trader "request-roundtrip"
+  disclosures <- rulesDisclosures f
+  submitMustFail (actAs f.parties.venueOperator <> discloseMany disclosures) $ exerciseCmd accessCid args
+  (request, prepareTree) <- submitResultAndTree (actAs trader <> discloseMany disclosures) $ exerciseCmd accessCid args
+  [ExercisedEvent prepareRoot] <- pure prepareTree.rootEvents
+  prepareRoot.choice === "PoolAccess_RequestSwap"
+  request.trader === trader
+  request.poolCid === f.pool.poolCid
+  availableBalance trader f.route.baseToken.instrument >>= (=== 0.0)
+  setTime (addRelTime request.terms.settlementDeadline (seconds 1))
+  let withdrawArgs = Pool_WithdrawSwap with
+        trader; withdrawals = map withdrawal [request.inputAllocation, request.outputAllocation]
+  submitMustFail (actAs f.parties.venueOperator <> discloseMany disclosures) $ exerciseCmd f.pool.poolCid withdrawArgs
+  (results, withdrawTree) <- submitResultAndTree (actAs trader <> discloseMany disclosures) $
+    exerciseCmd f.pool.poolCid withdrawArgs
+  [ExercisedEvent withdrawRoot] <- pure withdrawTree.rootEvents
+  withdrawRoot.choice === "Pool_WithdrawSwap"
+  map (.output) results === [A.AllocationResult_Withdrawn, A.AllocationResult_Withdrawn]
+  availableBalance trader f.route.baseToken.instrument >>= (=== 10.0)
+  Some _ <- queryContractId trader accessCid
+  Some _ <- queryContractId f.parties.dvo f.pool.poolCid
+  pure ()
+
+requestRejectsAnotherOperatorRoute : Script ()
+requestRejectsAnotherOperatorRoute = script do
+  f <- setup ()
+  trader <- allocateParty "WrongRouteTrader"
+  otherOperator <- allocateParty "OtherOperator"
+  (accessCid, args) <- prepareArgs f trader "wrong-route"
+  disclosures <- rulesDisclosures f
+  submitMustFail (actAs trader <> discloseMany disclosures) $
+    exerciseCmd accessCid (args with route = (args.route with venueOperator = otherOperator))
+  availableBalance trader f.route.baseToken.instrument >>= (=== 10.0)
+  request <- submit (actAs trader <> discloseMany disclosures) $ exerciseCmd accessCid args
+  Some _ <- queryInterfaceContractId @A.Allocation trader request.inputAllocation
+  pure ()
+
+requestDropsOperatorBeforePublicFetch : Script ()
+requestDropsOperatorBeforePublicFetch = hostileCallbackNeedsOperator True
+
+requestDropsOperatorBeforeAllocate : Script ()
+requestDropsOperatorBeforeAllocate = hostileCallbackNeedsOperator False
+
+hostileCallbackNeedsOperator : Bool -> Script ()
+hostileCallbackNeedsOperator attackOnFetch = do
+  f <- setup ()
+  trader <- allocateParty "CallbackTrader"
+  (accessCid, args) <- prepareArgs f trader "callback-authority"
+  let operator = f.parties.venueOperator
+      token = f.route.baseToken
+  hostile <- submit trader $ createCmd HostileFactory with
+    owner = trader; operator; admin = token.instrument.admin; attackOnFetch; delegate = token.allocationFactory
+  let factory = toInterfaceContractId @AI.AllocationFactory hostile
+      hostileToken = token with
+        allocationFactory = factory; settlementFactory = toInterfaceContractId @A.SettlementFactory hostile
+      hostileArgs = args with route = (args.route with baseToken = hostileToken)
+  rules <- rulesDisclosures f
+  rejected <- trySubmit (actAs trader <> discloseMany rules) $ exerciseCmd accessCid hostileArgs
+  case rejected of
+    Left AuthorizationError {} -> pure ()
+    _ -> abort "Hostile factory must fail because operator authority is absent"
+  query @OperatorMarker operator >>= (=== [])
+  availableBalance trader token.instrument >>= (=== 10.0)
+
+  -- The same callback succeeds when the operator actually authorizes it.
+  if attackOnFetch then do
+    result <- submit (actAs trader <> actAs operator) $
+      exerciseCmd factory AI.AllocationFactory_PublicFetch with actors = [trader, operator]
+    result.admin === token.instrument.admin
+  else do
+    result <- submit (actAs trader <> actAs operator <> discloseMany rules) $
+      exerciseCmd factory AI.AllocationFactory_Allocate with
+        settlement = swapSettlement f.route args.terms
+        requestedAt = args.requestedAt; inputHoldingCids = args.inputHoldingCids
+        allocation = allocationSpec token (basicAccount trader) args.terms.settlementDeadline
+          [senderSide (inputLeg f.route trader args.terms)] None
+        actors = [trader, operator]; extraArgs = emptyArgs
+    let AI.AllocationInstructionResult_Completed allocationCid = result.output
+    Some _ <- queryInterfaceContractId @A.Allocation trader allocationCid
+    pure ()
+  markers <- query @OperatorMarker operator
+  length markers === 1
+
+withdrawalDropsPoolAuthorityBeforeTokenCallback : Script ()
+withdrawalDropsPoolAuthorityBeforeTokenCallback = script do
+  f <- setup ()
+  trader <- allocateParty "WithdrawalCallbackTrader"
+  let operator = f.parties.dvo
+  prepared <- prepare f trader "withdrawal-callback" BaseToQuote 10.0 0.0
+  let request = prepared.request
+  Some allocationView <- queryInterfaceContractId @A.Allocation trader request.inputAllocation
+  setTime (addRelTime request.terms.settlementDeadline (seconds 1))
+  hostile <- submit trader $ createCmd HostileAllocation with owner = trader; operator; allocationView
+  disclosures <- rulesDisclosures f
+  let allocation = toInterfaceContractId @A.Allocation hostile
+  rejected <- trySubmit (actAs trader <> discloseMany disclosures) $
+    exerciseCmd f.pool.poolCid Pool_WithdrawSwap with
+      trader; withdrawals = [AllocationWithdrawal with allocationCid = allocation; extraArgs = emptyArgs]
+  case rejected of
+    Left AuthorizationError {} -> pure ()
+    _ -> abort "Hostile withdrawal must fail because DVO authority is absent"
+  query @OperatorMarker operator >>= (=== [])
+  queryInterfaceContractId @A.Allocation trader allocation >>= (=== Some allocationView)
+  queryInterfaceContractId @A.Allocation trader request.inputAllocation >>= (=== Some allocationView)
+  result <- submit (actAs trader <> actAs operator) $
+    exerciseCmd allocation A.Allocation_Withdraw with actors = [trader, operator]; extraArgs = emptyArgs
+  result.output === A.AllocationResult_Withdrawn
+  markers <- query @OperatorMarker operator
+  length markers === 1
+
+-- Repeated labels remain distinct requests because native allocations are one-use contracts.
+repeatedRequestIdKeepsAllocationsSeparate : Script ()
+repeatedRequestIdKeepsAllocationsSeparate = script do
+  f <- setup ()
+  trader <- allocateParty "RepeatedRequestTrader"
+  first <- prepare f trader "same-request-id" BaseToQuote 10.0 0.0
+  second <- prepare f trader "same-request-id" BaseToQuote 10.0 0.0
+  assertMsg "Input allocations must differ" (first.request.inputAllocation /= second.request.inputAllocation)
+  assertMsg "Output allocations must differ" (first.request.outputAllocation /= second.request.outputAllocation)
+  result <- settle f f.pool.stateCid "shared-anchor" [first, second]
+  length result.receiptCids === 2
+  forA_ [first.request, second.request] $ \request -> do
+    forA_ [request.inputAllocation, request.outputAllocation]
+      (queryInterfaceContractId @A.Allocation trader >=> (=== None))
+  receipts <- query @SwapReceipt trader
+  forA_ [first.request, second.request] $ \request -> do
+    let matches = filter (\(_, receipt) -> receipt.inputAllocation == request.inputAllocation
+          && receipt.outputAllocation == request.outputAllocation) receipts
+    length matches === 1
+
+signedNativeLegsRejectAlteredTerms : Script ()
+signedNativeLegsRejectAlteredTerms = script do
+  f <- setup ()
+  trader <- allocateParty "SignedTermsTrader"
+  prepared <- prepare f trader "signed-terms" BaseToQuote 1000.0 490.0
+  let request = prepared.request
+      terms = request.terms
+  Some input <- queryInterfaceContractId @A.Allocation trader request.inputAllocation
+  Some output <- queryInterfaceContractId @A.Allocation trader request.outputAllocation
+  input.settlement.cid === Some (toAnyContractId f.pool.poolCid)
+  input.settlement === output.settlement
+  input.allocation === allocationSpec f.route.baseToken (basicAccount trader) terms.settlementDeadline
+    [senderSide (inputLeg f.route trader terms)] None
+  output.allocation === allocationSpec f.route.quoteToken (basicAccount trader) terms.settlementDeadline
+    (map receiverSide (minimumOutputLegs f.route trader terms)) (Some TextMap.empty)
+  disclosures <- settlementDisclosures f f.pool.stateCid
+  before <- queryContractId f.parties.dvo f.pool.stateCid
+  forA_
+    [ (terms with requestId = "changed-label")
+    , (terms with direction = QuoteToBase)
+    , (terms with amountIn = 999.0)
+    , (terms with minOut = 480.0)
+    , (terms with settlementDeadline = addRelTime terms.settlementDeadline (seconds 1))
+    ] $ \changed -> do
+      submitMustFail (actAs f.parties.venueOperator <> discloseMany disclosures) $
+        exerciseCmd f.delegationCid VenueDelegation_SettleBatch with
+          configCid = f.pool.configCid; stateCid = f.pool.stateCid; batchId = "tampered"
+          requests = [settlementRequest (prepared with request = (request with terms = changed))]
+      queryContractId f.parties.dvo f.pool.stateCid >>= (=== before)
+      assertPending prepared
+  (_, otherPool) <- poolFixture f.parties
+  stranger <- allocateParty "AlteredTrader"
+  forA_ [(request with poolCid = otherPool.poolCid), (request with trader = stranger)] $ \changed -> do
+    submitMustFail (actAs f.parties.venueOperator <> discloseMany disclosures) $
+      exerciseCmd f.delegationCid VenueDelegation_SettleBatch with
+        configCid = f.pool.configCid; stateCid = f.pool.stateCid; batchId = "changed-route"
+        requests = [settlementRequest (prepared with request = changed)]
+    assertPending prepared
+  result <- settle f f.pool.stateCid "signed-original" [prepared]
+  result.amountsOut === [500.0]
+  availableBalance trader f.route.quoteToken.instrument >>= (=== 500.0)
+
+settlementUsesStablePoolAndOneStateSuccessor : Script ()
+settlementUsesStablePoolAndOneStateSuccessor = script do
+  f <- setup ()
+  trader <- allocateParty "StablePoolTrader"
+  prepared <- prepare f trader "stable-pool" BaseToQuote 1000.0 500.0
+  Some poolBefore <- queryContractId f.parties.dvo f.pool.poolCid
+  disclosures <- settlementDisclosures f f.pool.stateCid
+  (result, tree) <- submitResultAndTree (actAs f.parties.venueOperator <> discloseMany disclosures) $
+    exerciseCmd f.delegationCid VenueDelegation_SettleBatch with
+      configCid = f.pool.configCid; stateCid = f.pool.stateCid; batchId = "one-successor"
+      requests = [settlementRequest prepared]
+  [ExercisedEvent root] <- pure tree.rootEvents
+  root.choice === "VenueDelegation_SettleBatch"
+  let poolCalls = [event | ExercisedEvent event <- root.childEvents, event.choice == "Pool_Swap"]
+  length poolCalls === 1
+  let creates = createdContracts tree.rootEvents
+  mapOptional (\event -> fromAnyContractId @PoolState event.contractId) creates === [result.stateCid]
+  mapOptional (\event -> fromAnyContractId @Pool event.contractId) creates === []
+  queryContractId f.parties.dvo f.pool.poolCid >>= (=== Some poolBefore)
+  queryContractId f.parties.dvo f.pool.stateCid >>= (=== None)
+  states <- query @PoolState f.parties.dvo
+  map fst (filter (\(_, state) -> state.poolCid == f.pool.poolCid) states) === [result.stateCid]
+  nextDisclosures <- settlementDisclosures f result.stateCid
+  -- A new batch ID cannot reuse the consumed native allocation pair.
+  submitMustFail (actAs f.parties.venueOperator <> discloseMany nextDisclosures) $
+    exerciseCmd f.delegationCid VenueDelegation_SettleBatch with
+      configCid = f.pool.configCid; stateCid = result.stateCid; batchId = "replay"
+      requests = [settlementRequest prepared]
+  receipts <- query @SwapReceipt trader
+  length receipts === 1
+
+revokedAccessPreventsSettlementButNotRecovery : Script ()
+revokedAccessPreventsSettlementButNotRecovery = script do
+  f <- setup ()
+  trader <- allocateParty "RevokedAccessTrader"
+  prepared <- prepare f trader "revoked-access" BaseToQuote 10.0 0.0
+  submit f.parties.venueOperator $ archiveCmd prepared.accessCid
+  disclosures <- settlementDisclosures f f.pool.stateCid
+  submitMustFail (actAs f.parties.venueOperator <> discloseMany disclosures) $
+    exerciseCmd f.delegationCid VenueDelegation_SettleBatch with
+      configCid = f.pool.configCid; stateCid = f.pool.stateCid; batchId = "revoked-access"
+      requests = [settlementRequest prepared]
+  assertPending prepared
+  setTime (addRelTime prepared.request.terms.settlementDeadline (seconds 1))
+  results <- submit (actAs trader <> discloseMany disclosures) $
+    exerciseCmd f.pool.poolCid Pool_WithdrawSwap with
+      trader; withdrawals = map withdrawal [prepared.request.inputAllocation, prepared.request.outputAllocation]
+  map (.output) results === [A.AllocationResult_Withdrawn, A.AllocationResult_Withdrawn]
+  availableBalance trader f.route.baseToken.instrument >>= (=== 10.0)
+
+settlementIdCommitsEverySignedTerm : Script ()
+settlementIdCommitsEverySignedTerm = script do
+  f <- setup ()
+  trader <- allocateParty "CanonicalIdTrader"
+  prepared <- prepare f trader "request" BaseToQuote 10.0 0.5
+  settlementId prepared.request.terms === "swap:request:BaseToQuote:100000000000:5000000000:1767226200000000"
+  settlementId (prepared.request.terms with amountIn = 9999999999999999999999999999.9999999999; minOut = 1000000000.0)
+    === "swap:request:BaseToQuote:99999999999999999999999999999999999999:10000000000000000000:1767226200000000"
+
+allocationPairCannotMixDifferentSignedTerms : Script ()
+allocationPairCannotMixDifferentSignedTerms = script do
+  f <- setup ()
+  trader <- allocateParty "AllocationPairTrader"
+  expensive <- prepare f trader "same-label" BaseToQuote 10.0 900.0
+  cheap <- prepare f trader "same-label" BaseToQuote 1.0 0.0
+  let original = expensive.request
+      forged = original with
+        outputAllocation = cheap.request.outputAllocation
+        terms = (original.terms with minOut = 0.0)
+  before <- queryContractId f.parties.dvo f.pool.stateCid
+  disclosures <- settlementDisclosures f f.pool.stateCid
+  -- Each leg is genuine and belongs to this trader, but the user never signed this pair.
+  submitMustFail (actAs f.parties.venueOperator <> discloseMany disclosures) $
+    exerciseCmd f.delegationCid VenueDelegation_SettleBatch with
+      configCid = f.pool.configCid; stateCid = f.pool.stateCid; batchId = "mixed-pair"
+      requests = [settlementRequest (expensive with request = forged)]
+  queryContractId f.parties.dvo f.pool.stateCid >>= (=== before)
+  assertPending expensive
+  assertPending cheap
+  availableBalance trader f.route.baseToken.instrument >>= (=== 0.0)
+  availableBalance trader f.route.quoteToken.instrument >>= (=== 0.0)
+  query @SwapReceipt trader >>= (=== [])
+  result <- settle f f.pool.stateCid "original-cheap" [cheap]
+  length result.amountsOut === 1
+  assertPending expensive
+
+revokedAttestationPreventsRequestsAndSettlement : Script ()
+revokedAttestationPreventsRequestsAndSettlement = script do
+  f <- setup ()
+  trader <- allocateParty "RevokedKycTrader"
+  prepared <- prepare f trader "before-kyc-revocation" BaseToQuote 10.0 0.0
+  Some access <- queryContractId trader prepared.accessCid
+  submit f.parties.venueOperator $ archiveCmd access.attestationCid
+  disclosures <- settlementDisclosures f f.pool.stateCid
+  submitMustFail (actAs f.parties.venueOperator <> discloseMany disclosures) $
+    exerciseCmd f.delegationCid VenueDelegation_SettleBatch with
+      configCid = f.pool.configCid; stateCid = f.pool.stateCid; batchId = "revoked-kyc"
+      requests = [settlementRequest prepared]
+  assertPending prepared
+  (accessCid, args) <- prepareArgs f trader "after-kyc-revocation"
+  Some nextAccess <- queryContractId trader accessCid
+  submit f.parties.venueOperator $ archiveCmd nextAccess.attestationCid
+  submitMustFail (actAs trader <> discloseMany disclosures) $ exerciseCmd accessCid args
+  availableBalance trader f.route.baseToken.instrument >>= (=== 10.0)
+  availableBalance trader f.route.quoteToken.instrument >>= (=== 0.0)
+  query @SwapReceipt trader >>= (=== [])

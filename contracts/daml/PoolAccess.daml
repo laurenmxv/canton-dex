@@ -2,10 +2,19 @@
 -- Original work: Copyright (c) 2026 Moonsong Labs.
 -- https://github.com/Moonsong-Labs/canton-vaults/tree/main/patterns/01-vault-access
 
+-- | Gives a trader permission to request swaps in one pool.
+-- Checks their KYC approval and locks their input tokens for later settlement.
 module PoolAccess where
 
 import KycAttestation
 import Pool
+import Lib.Swap
+import Lib.Tokens
+import DA.Assert (assertWithinDeadline)
+import DA.TextMap qualified as TextMap
+import Splice.Api.Token.HoldingV2 qualified as H
+import Splice.Api.Token.MetadataV1 (ExtraArgs)
+import Splice.TokenStandard.Utils (basicAccount, senderSide, receiverSide)
 
 template PoolAccess
   with
@@ -17,40 +26,35 @@ template PoolAccess
     signatory venueOperator
     observer trader
 
-    nonconsuming choice PoolAccess_RequestSwap : SwapRequest
+    -- | Check access and lock the trader's CIP-0112 legs before returning the request record.
+    nonconsuming choice PoolAccess_RequestSwap : SwapRequest Pool
       with
-        direction : SwapDirection
-        amountIn : Decimal
-        minOut : Decimal
+        route : SwapRoute Pool
+        terms : SwapTerms
+        requestedAt : Time
+        inputHoldingCids : [ContractId H.Holding]
+        inputAllocationArgs : ExtraArgs
+        outputAllocationArgs : ExtraArgs
       controller trader
       do
         validateAttestation this
-        assertMsg "Invalid swap amounts" (amountIn > 0.0 && minOut >= 0.0)
-        pure SwapRequest with poolCid; trader; direction; amountIn; minOut
-
-    nonconsuming choice PoolAccess_RequestDeposit : DepositRequest
-      with
-        baseAmount : Decimal
-        quoteAmount : Decimal
-        minLpTokens : Decimal
-      controller trader
-      do
-        validateAttestation this
-        assertMsg "Invalid deposit amounts"
-          (baseAmount > 0.0 && quoteAmount > 0.0 && minLpTokens >= 0.0)
-        pure DepositRequest with poolCid; trader; baseAmount; quoteAmount; minLpTokens
-
-    nonconsuming choice PoolAccess_RequestWithdrawal : WithdrawalRequest
-      with
-        lpTokens : Decimal
-        minBase : Decimal
-        minQuote : Decimal
-      controller trader
-      do
-        validateAttestation this
-        assertMsg "Invalid withdrawal amounts"
-          (lpTokens > 0.0 && minBase >= 0.0 && minQuote >= 0.0)
-        pure WithdrawalRequest with poolCid; trader; lpTokens; minBase; minQuote
+        assertMsg "Swap route does not match access" (route.poolCid == poolCid && route.venueOperator == venueOperator)
+        assertMsg "Invalid swap terms" (validTerms terms && requestedAt < terms.settlementDeadline)
+        assertMsg "Trader must differ from pool executors" (trader /= route.dvo && trader /= venueOperator)
+        assertMsg "Swap input exceeds the holding limit" (length inputHoldingCids <= maxSwapInputHoldings)
+        assertWithinDeadline "settlement deadline" terms.settlementDeadline
+        validateToken trader route.baseToken
+        validateToken trader route.quoteToken
+        let (inputToken, outputToken, _, _) = directionRoute route terms.direction
+            settlement = swapSettlement route terms
+        assertMsg "Invalid input precision or amount" (validAmount inputToken terms.amountIn)
+        assertMsg "Invalid minimum output precision or amount" (validAmount outputToken terms.minOut)
+        (inputAllocation, _) <- allocate inputToken settlement (basicAccount trader)
+          requestedAt terms.settlementDeadline [senderSide (inputLeg route trader terms)] None inputHoldingCids inputAllocationArgs
+        (outputAllocation, _) <- allocate outputToken settlement (basicAccount trader)
+          requestedAt terms.settlementDeadline (map receiverSide (minimumOutputLegs route trader terms))
+          (Some TextMap.empty) [] outputAllocationArgs
+        pure SwapRequest with poolCid; trader; terms; inputAllocation; outputAllocation
 
 -- Before accepting a request, check that its KYC attestation is still active,
 -- was issued by this operator, and covers this trader and pool.

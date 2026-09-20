@@ -1,0 +1,71 @@
+-- | Shared operations over the CIP-0112 interfaces used by the DEX.
+module Lib.Tokens where
+
+import DA.List (dedup)
+import DA.Numeric qualified as Numeric
+import DA.TextMap qualified as TextMap
+import Splice.Api.Token.AllocationV2 qualified as A
+import Splice.Api.Token.AllocationInstructionV2 qualified as AI
+import Splice.Api.Token.HoldingV2 qualified as H
+import Splice.Api.Token.MetadataV1
+import Splice.TokenStandard.Utils (accountParties)
+
+-- | Instrument, factory references and precision fixed when the pool is funded.
+data Token = Token with
+    instrument : H.InstrumentId
+    allocationFactory : ContractId AI.AllocationFactory
+    settlementFactory : ContractId A.SettlementFactory
+    decimals : Int
+  deriving (Eq, Show)
+
+-- | Empty context and metadata, for issuers that require neither.
+emptyArgs : ExtraArgs
+emptyArgs = ExtraArgs with context = emptyChoiceContext; meta = emptyMetadata
+
+-- | Require supported precision and factories with the same admin as the instrument.
+validateToken : Party -> Token -> Update ()
+validateToken actor token = do
+  assertMsg "Unsupported token precision" (token.decimals >= 0 && token.decimals <= 10)
+  -- Funding fixes the approved factories; signed allocations must match them.
+  allocationFactory <- exercise token.allocationFactory AI.AllocationFactory_PublicFetch with actors = [actor]
+  settlementFactory <- exercise token.settlementFactory A.SettlementFactory_PublicFetch with actors = [actor]
+  assertMsg "Allocation factory admin mismatch" (allocationFactory.admin == token.instrument.admin)
+  assertMsg "Settlement factory admin mismatch" (settlementFactory.admin == token.instrument.admin)
+
+-- | Sum distinct holdings for this account and instrument; reject precision mismatches.
+holdingTotal : Token -> H.Account -> [ContractId H.Holding] -> Update Decimal
+holdingTotal token account cids = do
+  assertMsg "Duplicate holding" (length cids == length (dedup cids))
+  amounts <- forA cids $ \cid -> do
+    h <- view <$> fetch cid
+    assertMsg "Holding account mismatch" (h.account == account)
+    assertMsg "Holding instrument mismatch" (h.instrumentId == token.instrument)
+    assertMsg "Holding exceeds instrument precision" (quantized token h.amount)
+    pure h.amount
+  pure (sum amounts)
+
+-- | Whether the amount is exactly representable at the configured token precision.
+quantized : Token -> Decimal -> Bool
+quantized token amount = Numeric.roundNumeric token.decimals Numeric.RoundingFloor amount == amount
+
+-- | Build a committed allocation with a deadline and the supplied legs and funding.
+allocationSpec : Token -> H.Account -> Time -> [A.TransferLegSide]
+  -> Optional (TextMap.TextMap Decimal) -> A.AllocationSpecification
+allocationSpec token authorizer deadline transferLegSides nextIterationFunding = A.AllocationSpecification with
+  admin = token.instrument.admin; authorizer; transferLegSides; nextIterationFunding
+  settlementDeadline = Some deadline; committed = True; meta = emptyMetadata
+
+-- | Allocate through the issuer factory and return the allocation plus change holdings.
+-- Abort unless allocation completes synchronously.
+allocate : Token -> A.SettlementInfo -> H.Account -> Time -> Time
+  -> [A.TransferLegSide] -> Optional (TextMap.TextMap Decimal) -> [ContractId H.Holding]
+  -> ExtraArgs -> Update (ContractId A.Allocation, [ContractId H.Holding])
+allocate token settlement authorizer requestedAt deadline sides reserve inputs extraArgs = do
+  result <- exercise token.allocationFactory AI.AllocationFactory_Allocate with
+    settlement; requestedAt; inputHoldingCids = inputs
+    allocation = allocationSpec token authorizer deadline sides reserve
+    actors = accountParties token.instrument.admin authorizer; extraArgs
+  cid <- case result.output of
+    AI.AllocationInstructionResult_Completed cid -> pure cid
+    _ -> abort "Token factory did not synchronously allocate"
+  pure (cid, concatMap snd (TextMap.toList result.authorizerChangeCids))

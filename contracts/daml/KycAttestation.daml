@@ -1,3 +1,5 @@
+-- | Records the operator's KYC approval for a trader and a set of pools.
+-- Pool access and settlement check that this approval is still active.
 module KycAttestation where
 
 import Pool

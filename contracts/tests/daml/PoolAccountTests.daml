@@ -3,6 +3,8 @@ module PoolAccountTests where
 import DA.Assert ((===))
 import DA.Foldable (forA_)
 import Daml.Script
+import Errors
+import Test.Assertions
 import Fixtures
 import FundedSwaps
 import Pool
@@ -30,7 +32,7 @@ providerAccountsSupportFundedSwap = script do
   Some unfunded <- queryContractId f.parties.dvo pool.stateCid
   disclosures <- rulesDisclosures f
   -- The owner, instrument, id, and amount match; a different provider is a different account.
-  submitMustFail (actAs f.parties.dvo <> discloseMany disclosures) $
+  submitFailsWith eHoldingAccountMismatch (actAs f.parties.dvo <> discloseMany disclosures) $
     exerciseCmd pool.poolCid Pool_Fund with
       configCid = pool.configCid; stateCid = pool.stateCid
       funding = funding with baseHoldingCids = [wrongBase]

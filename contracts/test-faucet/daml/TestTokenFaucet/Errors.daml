@@ -1,0 +1,5 @@
+-- | Test-token faucet errors shared with its tests.
+module TestTokenFaucet.Errors where
+
+eRegistryIssuerMismatch : Text
+eRegistryIssuerMismatch = "test-token registry issuer mismatch"

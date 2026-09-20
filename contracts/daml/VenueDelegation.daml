@@ -2,6 +2,7 @@
 -- Rechecks each trader's access and KYC before calling the pool.
 module VenueDelegation where
 
+import Errors
 import DA.Foldable (forA_)
 import Pool
 import PoolAccess
@@ -32,17 +33,24 @@ template VenueDelegation
         batchId : Text
       controller venueOperator
       do
-        pool <- fetch poolCid
-        assertMsg "Delegation pool authority mismatch" (pool.dvo == dvo && pool.venueOperator == venueOperator)
-        forA_ requests $ \item -> do
-          access <- fetch item.accessCid
-          let request = item.request.request
-          assertMsg "Access does not match swap request"
-            (access.trader == request.trader && access.poolCid == poolCid && access.venueOperator == venueOperator)
-          validateAttestation access
+        validateDelegatedRequests this requests
         exercise poolCid Pool_Swap with configCid; stateCid; requests = map (.request) requests; batchId
 
     -- | Remove this operator grant without changing the pool or its allocations.
     choice VenueDelegation_Revoke : ()
       controller dvo
       do pure ()
+
+-- | Match the pool authority and every trader's active access before delegation.
+validateDelegatedRequests : VenueDelegation -> [SettlementRequest] -> Update ()
+validateDelegatedRequests delegation requests = do
+  pool <- fetch delegation.poolCid
+  assertMsg eDelegationAuthorityMismatch
+    (pool.dvo == delegation.dvo && pool.venueOperator == delegation.venueOperator)
+  forA_ requests $ \item -> do
+    access <- fetch item.accessCid
+    let request = item.request.request
+    assertMsg eAccessRequestMismatch
+      (access.trader == request.trader && access.poolCid == delegation.poolCid
+        && access.venueOperator == delegation.venueOperator)
+    validateAttestation access

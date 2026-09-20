@@ -1,6 +1,9 @@
 module TestTokenFaucetTests where
 
+import Test.Errors
 import Daml.Script
+import Test.Assertions
+import TestTokenFaucet.Errors
 import DA.Foldable (forA_)
 import DA.Optional (isNone)
 import DA.Time (days, minutes)
@@ -35,30 +38,30 @@ ownerClaimsExactGrantOnce = script do
     exerciseCmd grantCid TestTokenGrant_Claim
   case rejected of
     Left AuthorizationError {} -> pure ()
-    _ -> abort "Claiming a grant requires recipient authority"
+    _ -> abort eExpectedRecipientAuthorizationFailure
   result <- submit (actAs trader <> discloseMany [rulesDisclosure]) $
     exerciseCmd grantCid TestTokenGrant_Claim
-  assertMsg "one holding per granted instrument" (length result.holdingCids == 3)
+  assertMsg eGrantHoldingCountMismatch (length result.holdingCids == 3)
   forA_ (zip testAmounts result.holdingCids) $ \(expected, holdingCid) -> do
     Some actual <- queryContractId trader (fromInterfaceContractId @TokenHolding holdingCid)
-    assertMsg "minted amount matches grant" (actual.holding.amount == expected.amount)
-    assertMsg "minted instrument matches grant"
+    assertMsg eGrantAmountMismatch (actual.holding.amount == expected.amount)
+    assertMsg eGrantInstrumentMismatch
       (actual.holding.instrumentId == HoldingV2.InstrumentId issuer expected.instrumentId)
-    assertMsg "minted owner account matches grant" (actual.holding.account == account)
-    assertMsg "claimed tokens are spendable" (isNone actual.holding.lock)
+    assertMsg eGrantAccountMismatch (actual.holding.account == account)
+    assertMsg eGrantedTokensNotSpendable (isNone actual.holding.lock)
   submitMustFail (actAs trader <> discloseMany [rulesDisclosure]) $
     exerciseCmd grantCid TestTokenGrant_Claim
   None <- queryContractId trader grantCid
   forA_ [issuer, operator, trader] $ \reader -> do
     Some receipt <- queryContractId reader result.receiptCid
-    assertMsg "receipt preserves grant identity" (receipt.grantId == "trader-onboarding")
-    assertMsg "receipt preserves exact holdings" (receipt.holdingCids == result.holdingCids)
+    assertMsg eReceiptGrantIdMismatch (receipt.grantId == "trader-onboarding")
+    assertMsg eReceiptHoldingsMismatch (receipt.holdingCids == result.holdingCids)
   None <- queryContractId stranger result.receiptCid
   submitMustFail trader $ exerciseCmd result.receiptCid Archive
   submitMustFail operator $ exerciseCmd result.receiptCid Archive
   Some _ <- queryContractId operator result.receiptCid
   holdings <- query @TokenHolding trader
-  assertMsg "replay did not mint again" (length holdings == 3)
+  assertMsg eReplayMintedAgain (length holdings == 3)
 
 operatorIssuesOnlyConfiguredBundle : Script ()
 operatorIssuesOnlyConfiguredBundle = script do
@@ -74,13 +77,13 @@ operatorIssuesOnlyConfiguredBundle = script do
       recipient = trader; grantId = "unauthorized"
   case rejected of
     Left AuthorizationError {} -> pure ()
-    _ -> abort "Issuing a grant requires operator authority"
+    _ -> abort eExpectedOperatorAuthorizationFailure
   grantCid <- submit operator $ exerciseCmd faucetCid TestTokenFaucet_IssueGrant with
     recipient = trader; grantId = "one-time-grant"
   Some grant <- queryContractId trader grantCid
-  assertMsg "factory uses exact configured registry" (grant.rulesCid == rulesCid)
-  assertMsg "factory uses exact configured amounts" (grant.amounts == testAmounts)
-  assertMsg "factory uses the recipient's default account"
+  assertMsg eFaucetRegistryMismatch (grant.rulesCid == rulesCid)
+  assertMsg eFaucetAmountsMismatch (grant.amounts == testAmounts)
+  assertMsg eFaucetAccountMismatch
     (grant.account == HoldingV2.Account (Some trader) None "")
   submitMustFail operator $ exerciseCmd faucetCid TestTokenFaucet_IssueGrant with
     recipient = trader; grantId = ""
@@ -101,10 +104,20 @@ rejectsWrongRegistryAndOwner = script do
         account = HoldingV2.Account (Some trader) None ""
         grantId = "wrong-registry"; amounts = testAmounts
   grantCid <- submit issuer $ createCmd grant
+  -- A foreign registry cannot be fetched with only the grant issuer's authority.
   submitMustFail (actAs trader <> readAs [issuer, otherIssuer]) $
     exerciseCmd grantCid TestTokenGrant_Claim
   Some _ <- queryContractId trader grantCid
   [] <- query @TokenHolding trader
+  -- Making the registry owner the recipient authorizes the fetch, so the
+  -- issuer mismatch itself must reject the claim before any minting occurs.
+  registryOwnerGrantCid <- submit issuer $ createCmd grant with
+    recipient = otherIssuer
+    account = HoldingV2.Account (Some otherIssuer) None ""
+  submitFailsWith eRegistryIssuerMismatch (actAs otherIssuer) $
+    exerciseCmd registryOwnerGrantCid TestTokenGrant_Claim
+  Some _ <- queryContractId otherIssuer registryOwnerGrantCid
+  [] <- query @TokenHolding otherIssuer
   submitMustFail issuer $ createCmd grant with
     account = HoldingV2.Account (Some otherOwner) None ""
   submitMustFail issuer $ createCmd grant with
@@ -131,5 +144,5 @@ isolatesNamedPoolAccounts = script do
       result <- submit (actAs dvo <> readAs issuer) $ exerciseCmd grantCid TestTokenGrant_Claim
       [holdingCid] <- pure result.holdingCids
       Some actual <- queryContractId dvo (fromInterfaceContractId @TokenHolding holdingCid)
-      assertMsg "pool funding stays in its named account" (actual.holding.account == account)
-      assertMsg "pool funding matches its exact reserve" (actual.holding.amount == amount)
+      assertMsg ePoolFundingAccountMismatch (actual.holding.account == account)
+      assertMsg ePoolFundingReserveMismatch (actual.holding.amount == amount)

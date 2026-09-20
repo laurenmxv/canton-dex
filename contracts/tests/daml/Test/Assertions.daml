@@ -1,0 +1,14 @@
+-- | Match the exact contract error instead of accepting an unrelated rejection.
+module Test.Assertions where
+
+import DA.Assert ((===))
+import DA.Stack (HasCallStack)
+import Daml.Script
+import Test.Errors
+
+submitFailsWith : HasCallStack => Text -> SubmitOptions -> Commands a -> Script ()
+submitFailsWith expected options commands = do
+  failure <- submitWithError options commands
+  case failure of
+    FailureStatusError status -> status.message === expected
+    _ -> abort (eExpectedContractError <> show failure)

@@ -2,6 +2,7 @@
 -- Connects reserves to token holdings and settles each swap batch as one transaction.
 module Pool where
 
+import Errors
 import Splice.Api.Token.HoldingV2 (Account, InstrumentId)
 import Lib.Math
 import Lib.Tokens
@@ -73,11 +74,7 @@ template Pool
       do
         (config, state) <- loadComponents this self configCid stateCid
         funding <- requireFunding state
-        assertMsg "Batch id is required" (batchId /= "")
-        assertMsg "Batch must contain between one and twenty requests"
-          (not (null requests) && length requests <= 20)
-        let allocationCids = concatMap (\item -> [item.request.inputAllocation, item.request.outputAllocation]) requests
-        assertMsg "Duplicate allocation" (length allocationCids == length (dedup allocationCids))
+        validateBatch batchId requests
         let route = SwapRoute with
               poolCid = self; dvo; venueOperator
               baseToken = funding.baseToken; quoteToken = funding.quoteToken; baseAccount; quoteAccount
@@ -95,18 +92,12 @@ template Pool
         withdrawals : [AllocationWithdrawal]
       controller trader
       do
-        let allocationCids = map (.allocationCid) withdrawals
-        assertMsg "Withdrawal accepts one or two allocations" (not (null allocationCids) && length allocationCids <= 2)
-        assertMsg "Duplicate withdrawal allocation" (length allocationCids == length (dedup allocationCids))
+        validateWithdrawals withdrawals
         forA withdrawals $ \withdrawal -> do
           allocation <- view <$> fetch withdrawal.allocationCid
-          assertMsg "Withdrawal allocation belongs to another account" (allocation.allocation.authorizer == basicAccount trader)
-          assertMsg "Withdrawal allocation belongs to another pool" (allocation.settlement.cid == Some (toAnyContractId self))
-          case allocation.allocation.settlementDeadline of
-            Some deadline -> assertDeadlineExceeded "allocation settlement deadline" deadline
-            None -> abort "Withdrawal requires an allocation settlement deadline"
+          validateWithdrawal self trader allocation
           result <- exercise withdrawal.allocationCid A.Allocation_Withdraw with actors = [trader]; extraArgs = withdrawal.extraArgs
-          assertMsg "Token withdrawal did not finish" (result.output == A.AllocationResult_Withdrawn)
+          requireWithdrawalComplete result
           pure result
 
     nonconsuming choice Pool_Fund : ContractId PoolState
@@ -117,12 +108,7 @@ template Pool
       controller dvo
       do
         (_, state) <- loadComponents this self configCid stateCid
-        assertMsg "Pool is already funded" (isNone state.funding)
-        assertMsg "Funding instrument mismatch"
-          (funding.baseToken.instrument == baseInstrumentId && funding.quoteToken.instrument == quoteInstrumentId)
-        validateToken dvo funding.baseToken
-        validateToken dvo funding.quoteToken
-        validateBacking this state funding
+        validateInitialFunding this state funding
         archive stateCid
         create state with funding = Some funding
 
@@ -142,7 +128,7 @@ template PoolConfig
       with newFeeBps : Decimal
       controller dvo
       do
-        assertMsg "Fee must be between 0 and 10000 bps" (validFee newFeeBps)
+        requireValidFee newFeeBps
         create this with feeBps = newFeeBps
 
 -- | Tracks the current reserves, recorded LP supply and token holdings backing the pool.
@@ -161,17 +147,58 @@ template PoolState
     ensure dvo /= venueOperator
       && baseReserve > 0.0 && quoteReserve > 0.0 && lpTokenSupply > 0.0
 
+-- | Require a named, bounded batch with no reused allocation.
+validateBatch : Text -> [BatchRequest pool] -> Update ()
+validateBatch batchId requests = do
+  assertMsg eBatchIdRequired (batchId /= "")
+  assertMsg eInvalidBatchSize (not (null requests) && length requests <= 20)
+  let allocationCids = concatMap (\item -> [item.request.inputAllocation, item.request.outputAllocation]) requests
+  assertMsg eDuplicateAllocation (length allocationCids == length (dedup allocationCids))
+
+-- | Accept one or two distinct allocations for recovery.
+validateWithdrawals : [AllocationWithdrawal] -> Update ()
+validateWithdrawals withdrawals = do
+  let allocationCids = map (.allocationCid) withdrawals
+  assertMsg eInvalidWithdrawalSize (not (null allocationCids) && length allocationCids <= 2)
+  assertMsg eDuplicateWithdrawalAllocation (length allocationCids == length (dedup allocationCids))
+
+-- | The trader may recover only their expired allocations for this pool.
+validateWithdrawal : ContractId Pool -> Party -> A.AllocationView -> Update ()
+validateWithdrawal poolCid trader allocation = do
+  assertMsg eWithdrawalAccountMismatch (allocation.allocation.authorizer == basicAccount trader)
+  assertMsg eWithdrawalPoolMismatch (allocation.settlement.cid == Some (toAnyContractId poolCid))
+  case allocation.allocation.settlementDeadline of
+    Some deadline -> assertDeadlineExceeded allocationSettlementDeadlineLabel deadline
+    None -> abort eWithdrawalDeadlineRequired
+
+requireWithdrawalComplete : A.AllocationResult -> Update ()
+requireWithdrawalComplete result =
+  assertMsg eTokenWithdrawalIncomplete (result.output == A.AllocationResult_Withdrawn)
+
+-- | Initial backing must match the unfunded pool's instruments and reserves.
+validateInitialFunding : Pool -> PoolState -> PoolFunding -> Update ()
+validateInitialFunding pool state funding = do
+  assertMsg ePoolAlreadyFunded (isNone state.funding)
+  assertMsg eFundingInstrumentMismatch
+    (funding.baseToken.instrument == pool.baseInstrumentId && funding.quoteToken.instrument == pool.quoteInstrumentId)
+  validateToken pool.dvo funding.baseToken
+  validateToken pool.dvo funding.quoteToken
+  validateBacking pool state funding
+
+requireValidFee : Decimal -> Update ()
+requireValidFee feeBps = assertMsg eInvalidFee (validFee feeBps)
+
 -- | Load the current configuration and state, requiring the same pool and authority.
 loadComponents : Pool -> ContractId Pool -> ContractId PoolConfig -> ContractId PoolState
   -> Update (PoolConfig, PoolState)
 loadComponents pool poolCid configCid stateCid = do
   config <- fetch configCid
   state <- fetch stateCid
-  assertMsg "Configuration pool mismatch" (config.poolCid == poolCid)
-  assertMsg "State pool mismatch" (state.poolCid == poolCid)
-  assertMsg "Configuration authority mismatch"
+  assertMsg eConfigurationPoolMismatch (config.poolCid == poolCid)
+  assertMsg eStatePoolMismatch (state.poolCid == poolCid)
+  assertMsg eConfigurationAuthorityMismatch
     (config.dvo == pool.dvo && config.venueOperator == pool.venueOperator)
-  assertMsg "State authority mismatch"
+  assertMsg eStateAuthorityMismatch
     (state.dvo == pool.dvo && state.venueOperator == pool.venueOperator)
   pure (config, state)
 
@@ -179,15 +206,15 @@ loadComponents pool poolCid configCid stateCid = do
 requireFunding : PoolState -> Update PoolFunding
 requireFunding state = case state.funding of
   Some funding -> pure funding
-  None -> abort "Pool has no token backing"
+  None -> abort ePoolNotFunded
 
 -- | Verify that the actual holdings exactly match both recorded reserves.
 validateBacking : Pool -> PoolState -> PoolFunding -> Update ()
 validateBacking pool state funding = do
   baseTotal <- holdingTotal funding.baseToken pool.baseAccount funding.baseHoldingCids
   quoteTotal <- holdingTotal funding.quoteToken pool.quoteAccount funding.quoteHoldingCids
-  assertMsg "Base reserve is not backed" (baseTotal == state.baseReserve)
-  assertMsg "Quote reserve is not backed" (quoteTotal == state.quoteReserve)
+  assertMsg eBaseReserveNotBacked (baseTotal == state.baseReserve)
+  assertMsg eQuoteReserveNotBacked (quoteTotal == state.quoteReserve)
 
 -- | Price each request against the previous result and collect receipts; leave state replacement to Pool_Swap.
 settleRequests : SwapRoute Pool -> Decimal -> Text -> PoolState -> PoolFunding -> [BatchRequest Pool]

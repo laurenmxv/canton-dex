@@ -1,6 +1,7 @@
 -- | Swap terms and CIP-0112 operations shared by request and settlement choices.
 module Lib.Swap where
 
+import Errors
 import DA.Assert (assertWithinDeadline)
 import DA.Date (date, Month(Jan))
 import DA.Numeric qualified as Numeric
@@ -131,12 +132,7 @@ settleRequest route feeBps baseReserve quoteReserve baseHoldings quoteHoldings b
       amountOut = swapOutputAtScale outputToken.decimals feeBps reserveIn reserveOut terms.amountIn
       input = inputLeg route request.trader terms
       minimumOutput = minimumOutputLegs route request.trader terms
-  assertMsg "Swap pool mismatch" (request.poolCid == route.poolCid)
-  assertMsg "Invalid swap terms" (validTerms terms)
-  assertMsg "Trader must differ from pool executors" (request.trader /= route.dvo && request.trader /= route.venueOperator)
-  assertWithinDeadline "settlement deadline" terms.settlementDeadline
-  assertMsg "Invalid signed amount precision" (validAmount inputToken terms.amountIn && validAmount outputToken terms.minOut)
-  assertMsg "Swap below minimum output" (amountOut > 0.0 && amountOut >= terms.minOut)
+  validateSettlementRequest route request amountOut
   checkSwapAllocation inputToken settlement (basicAccount request.trader) terms.settlementDeadline
     [senderSide input] None request.inputAllocation
   checkSwapAllocation outputToken settlement (basicAccount request.trader) terms.settlementDeadline
@@ -156,8 +152,7 @@ settleRequest route feeBps baseReserve quoteReserve baseHoldings quoteHoldings b
       nextOutput = outputChange <> receivedOutput
   inputTotal <- holdingTotal inputToken poolInput nextInput
   outputTotal <- holdingTotal outputToken poolOutput nextOutput
-  assertMsg "Pool input delta mismatch" (inputTotal == reserveIn + terms.amountIn)
-  assertMsg "Pool output delta mismatch" (outputTotal == reserveOut - amountOut)
+  validateReserveDeltas terms amountOut (reserveIn, reserveOut) (inputTotal, outputTotal)
   let (nextBase, nextQuote, nextBaseHoldings, nextQuoteHoldings) = case terms.direction of
         BaseToQuote -> (inputTotal, outputTotal, nextInput, nextOutput)
         QuoteToBase -> (outputTotal, inputTotal, nextOutput, nextInput)
@@ -165,16 +160,39 @@ settleRequest route feeBps baseReserve quoteReserve baseHoldings quoteHoldings b
     amountOut; baseReserve = nextBase; quoteReserve = nextQuote
     baseHoldingCids = nextBaseHoldings; quoteHoldingCids = nextQuoteHoldings
 
+-- | Recheck the signed request and quoted output before settlement.
+validateSettlementRequest : SwapRoute pool -> SwapRequest pool -> Decimal -> Update ()
+validateSettlementRequest route request amountOut = do
+  let terms = request.terms
+      (inputToken, outputToken, _, _) = directionRoute route terms.direction
+  assertMsg eSwapPoolMismatch (request.poolCid == route.poolCid)
+  assertMsg eInvalidSwapTerms (validTerms terms)
+  requireTraderDistinct route request.trader
+  assertWithinDeadline settlementDeadlineLabel terms.settlementDeadline
+  assertMsg eInvalidSignedAmountPrecision (validAmount inputToken terms.amountIn && validAmount outputToken terms.minOut)
+  assertMsg eSwapBelowMinimumOutput (amountOut > 0.0 && amountOut >= terms.minOut)
+
+-- | Input/output holdings must reflect exactly the amounts traded.
+validateReserveDeltas : SwapTerms -> Decimal -> (Decimal, Decimal) -> (Decimal, Decimal) -> Update ()
+validateReserveDeltas terms amountOut (reserveIn, reserveOut) (inputTotal, outputTotal) = do
+  assertMsg ePoolInputDeltaMismatch (inputTotal == reserveIn + terms.amountIn)
+  assertMsg ePoolOutputDeltaMismatch (outputTotal == reserveOut - amountOut)
+
+-- | The trader must be independent of both pool executors.
+requireTraderDistinct : SwapRoute pool -> Party -> Update ()
+requireTraderDistinct route trader =
+  assertMsg eTraderIsPoolExecutor (trader /= route.dvo && trader /= route.venueOperator)
+
 -- | Require an uniterated trader allocation matching the expected settlement and terms.
 -- Match the trader-approved legs and any permission to add receiver legs.
 checkSwapAllocation : Token -> A.SettlementInfo -> H.Account -> Time
   -> [A.TransferLegSide] -> Optional (TextMap.TextMap Decimal) -> ContractId A.Allocation -> Update ()
 checkSwapAllocation token settlement account deadline sides reserve cid = do
   a <- view <$> fetch cid
-  assertMsg "Allocation settlement mismatch" (a.settlement == settlement)
-  assertMsg "Allocation terms mismatch"
+  assertMsg eAllocationSettlementMismatch (a.settlement == settlement)
+  assertMsg eAllocationTermsMismatch
     (a.allocation == allocationSpec token account deadline sides reserve)
-  assertMsg "Allocation already iterated" (a.numIterations == 0)
+  assertMsg eAllocationAlreadyIterated (a.numIterations == 0)
 
 -- | Settle one token's transfer legs and return the pool holdings produced by settlement.
 -- Both allocations must finish with no continuation.
@@ -190,9 +208,13 @@ settleSwapLeg token settlement legs traderAllocation extraSides poolAllocation e
     allocations =
       [traderFinal, nonIteratedAllocation poolAllocation]
     actors = settlement.executors; extraArgs
-  case result.allocationSettleResults of
-    [traderResult, poolResult] -> do
-      assertMsg "Trader allocation did not finish" (traderResult.output == A.AllocationResult_Settled None)
-      assertMsg "Pool allocation did not finish" (poolResult.output == A.AllocationResult_Settled None)
-      pure (concatMap snd (TextMap.toList poolResult.authorizerHoldingCids))
-    _ -> abort "Unexpected allocation settlement results"
+  requireSettledHoldings result.allocationSettleResults
+
+-- | Both allocations must finish; only the pool's resulting holdings back reserves.
+requireSettledHoldings : [A.AllocationResult] -> Update [ContractId H.Holding]
+requireSettledHoldings results = case results of
+  [traderResult, poolResult] -> do
+    assertMsg eTraderAllocationIncomplete (traderResult.output == A.AllocationResult_Settled None)
+    assertMsg ePoolAllocationIncomplete (poolResult.output == A.AllocationResult_Settled None)
+    pure (concatMap snd (TextMap.toList poolResult.authorizerHoldingCids))
+  _ -> abort eUnexpectedSettlementResults

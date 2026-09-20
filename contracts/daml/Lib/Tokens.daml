@@ -1,6 +1,7 @@
 -- | Shared operations over the CIP-0112 interfaces used by the DEX.
 module Lib.Tokens where
 
+import Errors
 import DA.List (dedup)
 import DA.Numeric qualified as Numeric
 import DA.TextMap qualified as TextMap
@@ -25,24 +26,29 @@ emptyArgs = ExtraArgs with context = emptyChoiceContext; meta = emptyMetadata
 -- | Require supported precision and factories with the same admin as the instrument.
 validateToken : Party -> Token -> Update ()
 validateToken actor token = do
-  assertMsg "Unsupported token precision" (token.decimals >= 0 && token.decimals <= 10)
+  assertMsg eUnsupportedTokenPrecision (token.decimals >= 0 && token.decimals <= 10)
   -- Funding fixes the approved factories; signed allocations must match them.
   allocationFactory <- exercise token.allocationFactory AI.AllocationFactory_PublicFetch with actors = [actor]
   settlementFactory <- exercise token.settlementFactory A.SettlementFactory_PublicFetch with actors = [actor]
-  assertMsg "Allocation factory admin mismatch" (allocationFactory.admin == token.instrument.admin)
-  assertMsg "Settlement factory admin mismatch" (settlementFactory.admin == token.instrument.admin)
+  assertMsg eAllocationFactoryAdminMismatch (allocationFactory.admin == token.instrument.admin)
+  assertMsg eSettlementFactoryAdminMismatch (settlementFactory.admin == token.instrument.admin)
 
 -- | Sum distinct holdings for this account and instrument; reject precision mismatches.
 holdingTotal : Token -> H.Account -> [ContractId H.Holding] -> Update Decimal
 holdingTotal token account cids = do
-  assertMsg "Duplicate holding" (length cids == length (dedup cids))
+  assertMsg eDuplicateHolding (length cids == length (dedup cids))
   amounts <- forA cids $ \cid -> do
     h <- view <$> fetch cid
-    assertMsg "Holding account mismatch" (h.account == account)
-    assertMsg "Holding instrument mismatch" (h.instrumentId == token.instrument)
-    assertMsg "Holding exceeds instrument precision" (quantized token h.amount)
+    validateHolding token account h
     pure h.amount
   pure (sum amounts)
+
+-- | Holdings must belong to the exact account and instrument at its precision.
+validateHolding : Token -> H.Account -> H.HoldingView -> Update ()
+validateHolding token account holding = do
+  assertMsg eHoldingAccountMismatch (holding.account == account)
+  assertMsg eHoldingInstrumentMismatch (holding.instrumentId == token.instrument)
+  assertMsg eHoldingPrecisionMismatch (quantized token holding.amount)
 
 -- | Whether the amount is exactly representable at the configured token precision.
 quantized : Token -> Decimal -> Bool
@@ -65,7 +71,10 @@ allocate token settlement authorizer requestedAt deadline sides reserve inputs e
     settlement; requestedAt; inputHoldingCids = inputs
     allocation = allocationSpec token authorizer deadline sides reserve
     actors = accountParties token.instrument.admin authorizer; extraArgs
-  cid <- case result.output of
-    AI.AllocationInstructionResult_Completed cid -> pure cid
-    _ -> abort "Token factory did not synchronously allocate"
+  cid <- requireCompletedAllocation result.output
   pure (cid, concatMap snd (TextMap.toList result.authorizerChangeCids))
+
+requireCompletedAllocation : AI.AllocationInstructionResult_Output -> Update (ContractId A.Allocation)
+requireCompletedAllocation output = case output of
+  AI.AllocationInstructionResult_Completed cid -> pure cid
+  _ -> abort eTokenAllocationIncomplete

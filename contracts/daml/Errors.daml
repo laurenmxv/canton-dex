@@ -1,0 +1,179 @@
+-- | DEX error messages shared by contracts and their tests.
+module Errors where
+
+-- Pool creation and access
+
+eFactoryAuthorityMismatch : Text
+eFactoryAuthorityMismatch = "Factory authority mismatch"
+
+eFactoryOperatorMismatch : Text
+eFactoryOperatorMismatch = "Factory operator mismatch"
+
+eInvalidPoolSettings : Text
+eInvalidPoolSettings = "Invalid pool settings"
+
+eSwapRouteMismatch : Text
+eSwapRouteMismatch = "Swap route does not match access"
+
+eInvalidSwapTerms : Text
+eInvalidSwapTerms = "Invalid swap terms"
+
+eTraderIsPoolExecutor : Text
+eTraderIsPoolExecutor = "Trader must differ from pool executors"
+
+eSwapInputHoldingLimit : Text
+eSwapInputHoldingLimit = "Swap input exceeds the holding limit"
+
+eInvalidInputAmount : Text
+eInvalidInputAmount = "Invalid input precision or amount"
+
+eInvalidMinimumOutput : Text
+eInvalidMinimumOutput = "Invalid minimum output precision or amount"
+
+eKycIssuerMismatch : Text
+eKycIssuerMismatch = "KYC issuer mismatch"
+
+eKycTraderMismatch : Text
+eKycTraderMismatch = "KYC trader mismatch"
+
+eKycPoolMismatch : Text
+eKycPoolMismatch = "KYC does not cover this pool"
+
+eDelegationAuthorityMismatch : Text
+eDelegationAuthorityMismatch = "Delegation pool authority mismatch"
+
+eAccessRequestMismatch : Text
+eAccessRequestMismatch = "Access does not match swap request"
+
+-- Pool state, funding and batches
+
+eBatchIdRequired : Text
+eBatchIdRequired = "Batch id is required"
+
+eInvalidBatchSize : Text
+eInvalidBatchSize = "Batch must contain between one and twenty requests"
+
+eDuplicateAllocation : Text
+eDuplicateAllocation = "Duplicate allocation"
+
+ePoolAlreadyFunded : Text
+ePoolAlreadyFunded = "Pool is already funded"
+
+eFundingInstrumentMismatch : Text
+eFundingInstrumentMismatch = "Funding instrument mismatch"
+
+eInvalidFee : Text
+eInvalidFee = "Fee must be between 0 and 10000 bps"
+
+eConfigurationPoolMismatch : Text
+eConfigurationPoolMismatch = "Configuration pool mismatch"
+
+eStatePoolMismatch : Text
+eStatePoolMismatch = "State pool mismatch"
+
+eConfigurationAuthorityMismatch : Text
+eConfigurationAuthorityMismatch = "Configuration authority mismatch"
+
+eStateAuthorityMismatch : Text
+eStateAuthorityMismatch = "State authority mismatch"
+
+ePoolNotFunded : Text
+ePoolNotFunded = "Pool has no token backing"
+
+eBaseReserveNotBacked : Text
+eBaseReserveNotBacked = "Base reserve is not backed"
+
+eQuoteReserveNotBacked : Text
+eQuoteReserveNotBacked = "Quote reserve is not backed"
+
+-- Withdrawals
+
+eInvalidWithdrawalSize : Text
+eInvalidWithdrawalSize = "Withdrawal accepts one or two allocations"
+
+eDuplicateWithdrawalAllocation : Text
+eDuplicateWithdrawalAllocation = "Duplicate withdrawal allocation"
+
+eWithdrawalAccountMismatch : Text
+eWithdrawalAccountMismatch = "Withdrawal allocation belongs to another account"
+
+eWithdrawalPoolMismatch : Text
+eWithdrawalPoolMismatch = "Withdrawal allocation belongs to another pool"
+
+eWithdrawalDeadlineRequired : Text
+eWithdrawalDeadlineRequired = "Withdrawal requires an allocation settlement deadline"
+
+eTokenWithdrawalIncomplete : Text
+eTokenWithdrawalIncomplete = "Token withdrawal did not finish"
+
+-- Token validation and allocation
+
+eUnsupportedTokenPrecision : Text
+eUnsupportedTokenPrecision = "Unsupported token precision"
+
+eAllocationFactoryAdminMismatch : Text
+eAllocationFactoryAdminMismatch = "Allocation factory admin mismatch"
+
+eSettlementFactoryAdminMismatch : Text
+eSettlementFactoryAdminMismatch = "Settlement factory admin mismatch"
+
+eDuplicateHolding : Text
+eDuplicateHolding = "Duplicate holding"
+
+eHoldingAccountMismatch : Text
+eHoldingAccountMismatch = "Holding account mismatch"
+
+eHoldingInstrumentMismatch : Text
+eHoldingInstrumentMismatch = "Holding instrument mismatch"
+
+eHoldingPrecisionMismatch : Text
+eHoldingPrecisionMismatch = "Holding exceeds instrument precision"
+
+eTokenAllocationIncomplete : Text
+eTokenAllocationIncomplete = "Token factory did not synchronously allocate"
+
+-- Swap pricing and settlement
+
+eInvalidSwapInputs : Text
+eInvalidSwapInputs = "Swap requires scale 0..10, integer fee bps, and positive amounts"
+
+eSwapPoolMismatch : Text
+eSwapPoolMismatch = "Swap pool mismatch"
+
+eInvalidSignedAmountPrecision : Text
+eInvalidSignedAmountPrecision = "Invalid signed amount precision"
+
+eSwapBelowMinimumOutput : Text
+eSwapBelowMinimumOutput = "Swap below minimum output"
+
+ePoolInputDeltaMismatch : Text
+ePoolInputDeltaMismatch = "Pool input delta mismatch"
+
+ePoolOutputDeltaMismatch : Text
+ePoolOutputDeltaMismatch = "Pool output delta mismatch"
+
+eAllocationSettlementMismatch : Text
+eAllocationSettlementMismatch = "Allocation settlement mismatch"
+
+eAllocationTermsMismatch : Text
+eAllocationTermsMismatch = "Allocation terms mismatch"
+
+eAllocationAlreadyIterated : Text
+eAllocationAlreadyIterated = "Allocation already iterated"
+
+eTraderAllocationIncomplete : Text
+eTraderAllocationIncomplete = "Trader allocation did not finish"
+
+ePoolAllocationIncomplete : Text
+ePoolAllocationIncomplete = "Pool allocation did not finish"
+
+eUnexpectedSettlementResults : Text
+eUnexpectedSettlementResults = "Unexpected allocation settlement results"
+
+-- Labels included in standard-library deadline errors
+
+settlementDeadlineLabel : Text
+settlementDeadlineLabel = "settlement deadline"
+
+allocationSettlementDeadlineLabel : Text
+allocationSettlementDeadlineLabel = "allocation settlement deadline"

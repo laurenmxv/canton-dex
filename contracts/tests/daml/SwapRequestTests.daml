@@ -1,5 +1,6 @@
 module SwapRequestTests where
 
+import Test.Errors
 import DA.Action ((>=>), when, unless)
 import DA.Foldable (forA_)
 import DA.Optional (mapOptional)
@@ -7,6 +8,8 @@ import DA.Assert ((===))
 import DA.TextMap qualified as TextMap
 import DA.Time (addRelTime, minutes, seconds)
 import Daml.Script
+import Errors
+import Test.Assertions
 import Fixtures (accessFixture, createdContracts, poolFixture)
 import FundedSwaps
 import Lib.Tokens (allocationSpec, emptyArgs)
@@ -35,8 +38,8 @@ template HostileAllocation
       allocation_settleExtraObservers _ = []
       allocation_withdrawExtraObservers _ = []
       allocation_cancelExtraObservers _ = []
-      allocation_settleImpl _ _ = abort "Settlement is outside this withdrawal fixture"
-      allocation_cancelImpl _ _ = abort "Cancellation is outside this withdrawal fixture"
+      allocation_settleImpl _ _ = abort eWithdrawalFixtureSettlementUnsupported
+      allocation_cancelImpl _ _ = abort eWithdrawalFixtureCancellationUnsupported
       allocation_withdrawImpl _ _ = do
         _ <- create OperatorMarker with operator
         pure (A.AllocationResult with
@@ -71,7 +74,7 @@ template HostileFactory
       view = A.SettlementFactoryView with admin; meta = emptyMetadata
       settlementFactory_publicFetchImpl _ _ = pure (A.SettlementFactoryView with admin; meta = emptyMetadata)
       settlementFactory_settleBatchExtraObservers _ = []
-      settlementFactory_settleBatchImpl _ _ = abort "Settlement is outside this request fixture"
+      settlementFactory_settleBatchImpl _ _ = abort eRequestFixtureSettlementUnsupported
 
 prepareArgs : FundedFixture -> Party -> Text -> Script (ContractId PoolAccess, PoolAccess_RequestSwap)
 prepareArgs f trader requestId = do
@@ -119,7 +122,7 @@ requestRejectsAnotherOperatorRoute = script do
   otherOperator <- allocateParty "OtherOperator"
   (accessCid, args) <- prepareArgs f trader "wrong-route"
   disclosures <- rulesDisclosures f
-  submitMustFail (actAs trader <> discloseMany disclosures) $
+  submitFailsWith eSwapRouteMismatch (actAs trader <> discloseMany disclosures) $
     exerciseCmd accessCid (args with route = (args.route with venueOperator = otherOperator))
   availableBalance trader f.route.baseToken.instrument >>= (=== 10.0)
   request <- submit (actAs trader <> discloseMany disclosures) $ exerciseCmd accessCid args
@@ -149,7 +152,7 @@ hostileCallbackNeedsOperator attackOnFetch = do
   rejected <- trySubmit (actAs trader <> discloseMany rules) $ exerciseCmd accessCid hostileArgs
   case rejected of
     Left AuthorizationError {} -> pure ()
-    _ -> abort "Hostile factory must fail because operator authority is absent"
+    _ -> abort eExpectedFactoryAuthorizationFailure
   query @OperatorMarker operator >>= (=== [])
   availableBalance trader token.instrument >>= (=== 10.0)
 
@@ -189,7 +192,7 @@ withdrawalDropsPoolAuthorityBeforeTokenCallback = script do
       trader; withdrawals = [AllocationWithdrawal with allocationCid = allocation; extraArgs = emptyArgs]
   case rejected of
     Left AuthorizationError {} -> pure ()
-    _ -> abort "Hostile withdrawal must fail because DVO authority is absent"
+    _ -> abort eExpectedWithdrawalAuthorizationFailure
   query @OperatorMarker operator >>= (=== [])
   queryInterfaceContractId @A.Allocation trader allocation >>= (=== Some allocationView)
   queryInterfaceContractId @A.Allocation trader request.inputAllocation >>= (=== Some allocationView)
@@ -206,8 +209,8 @@ repeatedRequestIdKeepsAllocationsSeparate = script do
   trader <- allocateParty "RepeatedRequestTrader"
   first <- prepare f trader "same-request-id" BaseToQuote 10.0 0.0
   second <- prepare f trader "same-request-id" BaseToQuote 10.0 0.0
-  assertMsg "Input allocations must differ" (first.request.inputAllocation /= second.request.inputAllocation)
-  assertMsg "Output allocations must differ" (first.request.outputAllocation /= second.request.outputAllocation)
+  assertMsg eInputAllocationsMustDiffer (first.request.inputAllocation /= second.request.inputAllocation)
+  assertMsg eOutputAllocationsMustDiffer (first.request.outputAllocation /= second.request.outputAllocation)
   result <- settle f f.pool.stateCid "shared-anchor" [first, second]
   length result.receiptCids === 2
   forA_ [first.request, second.request] $ \request -> do
@@ -243,7 +246,7 @@ signedNativeLegsRejectAlteredTerms = script do
     , (terms with minOut = 480.0)
     , (terms with settlementDeadline = addRelTime terms.settlementDeadline (seconds 1))
     ] $ \changed -> do
-      submitMustFail (actAs f.parties.venueOperator <> discloseMany disclosures) $
+      submitFailsWith eAllocationSettlementMismatch (actAs f.parties.venueOperator <> discloseMany disclosures) $
         exerciseCmd f.delegationCid VenueDelegation_SettleBatch with
           configCid = f.pool.configCid; stateCid = f.pool.stateCid; batchId = "tampered"
           requests = [settlementRequest (prepared with request = (request with terms = changed))]
@@ -251,12 +254,15 @@ signedNativeLegsRejectAlteredTerms = script do
       assertPending prepared
   (_, otherPool) <- poolFixture f.parties
   stranger <- allocateParty "AlteredTrader"
-  forA_ [(request with poolCid = otherPool.poolCid), (request with trader = stranger)] $ \changed -> do
-    submitMustFail (actAs f.parties.venueOperator <> discloseMany disclosures) $
-      exerciseCmd f.delegationCid VenueDelegation_SettleBatch with
-        configCid = f.pool.configCid; stateCid = f.pool.stateCid; batchId = "changed-route"
-        requests = [settlementRequest (prepared with request = changed)]
-    assertPending prepared
+  forA_
+    [ ((request with poolCid = otherPool.poolCid), eSwapPoolMismatch)
+    , ((request with trader = stranger), eAccessRequestMismatch)
+    ] $ \(changed, expectedError) -> do
+      submitFailsWith expectedError (actAs f.parties.venueOperator <> discloseMany disclosures) $
+        exerciseCmd f.delegationCid VenueDelegation_SettleBatch with
+          configCid = f.pool.configCid; stateCid = f.pool.stateCid; batchId = "changed-route"
+          requests = [settlementRequest (prepared with request = changed)]
+      assertPending prepared
   result <- settle f f.pool.stateCid "signed-original" [prepared]
   result.amountsOut === [500.0]
   availableBalance trader f.route.quoteToken.instrument >>= (=== 500.0)
@@ -333,7 +339,7 @@ allocationPairCannotMixDifferentSignedTerms = script do
   before <- queryContractId f.parties.dvo f.pool.stateCid
   disclosures <- settlementDisclosures f f.pool.stateCid
   -- Each leg is genuine and belongs to this trader, but the user never signed this pair.
-  submitMustFail (actAs f.parties.venueOperator <> discloseMany disclosures) $
+  submitFailsWith eAllocationSettlementMismatch (actAs f.parties.venueOperator <> discloseMany disclosures) $
     exerciseCmd f.delegationCid VenueDelegation_SettleBatch with
       configCid = f.pool.configCid; stateCid = f.pool.stateCid; batchId = "mixed-pair"
       requests = [settlementRequest (expensive with request = forged)]

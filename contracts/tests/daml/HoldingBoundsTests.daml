@@ -3,6 +3,8 @@ module HoldingBoundsTests where
 import DA.Assert ((===))
 import DA.Time (addRelTime, minutes)
 import Daml.Script
+import Errors
+import Test.Assertions
 import Fixtures
 import FundedSwaps
 import Lib.Tokens (emptyArgs)
@@ -82,7 +84,7 @@ traderInputLimitUsesDistinctRealHoldings = script do
         route = f.route; terms; requestedAt; inputHoldingCids = inputs
         inputAllocationArgs = emptyArgs; outputAllocationArgs = emptyArgs
   disclosures <- rulesDisclosures f
-  submitMustFail (actAs trader <> discloseMany disclosures) $
+  submitFailsWith eSwapInputHoldingLimit (actAs trader <> discloseMany disclosures) $
     exerciseCmd accessCid preparation
   availableBalance trader f.route.baseToken.instrument >>= (=== 17.0)
   request <- submit (actAs trader <> discloseMany disclosures) $

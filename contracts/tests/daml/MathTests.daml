@@ -1,5 +1,6 @@
 module MathTests where
 
+import Test.Errors
 import DA.Assert ((===))
 import DA.Foldable (forA_)
 import DA.Numeric qualified as Numeric
@@ -52,8 +53,8 @@ feePreservesCurve = script do
       let amountOut = swapOutputAtScale 8 30.0 reserveIn reserveOut amountIn
           before = Numeric.mul @20 reserveIn reserveOut
           after = Numeric.mul @20 (reserveIn + amountIn) (reserveOut - amountOut)
-      assertMsg "A positive fee must increase the reserve product" (after > before)
-      assertMsg "Output must remain below the output reserve"
+      assertMsg eFeeMustIncreaseReserveProduct (after > before)
+      assertMsg eOutputMustRemainBelowReserve
         (amountOut > 0.0 && amountOut < reserveOut)
 
 largeAmounts : Script ()

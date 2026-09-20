@@ -2,6 +2,7 @@
 -- The recipient claims the grant; a receipt records what was minted.
 module TestTokenFaucet where
 
+import TestTokenFaucet.Errors
 import DA.List (dedupSort)
 import DA.Optional (isNone)
 import OpenZeppelin.TokenCIP112V1.Registry (TokenRules(..), TokenRules_Mint(..))
@@ -61,8 +62,7 @@ template TestTokenGrant with
     choice TestTokenGrant_Claim : TestTokenClaim
       controller recipient
       do
-        rules <- fetch rulesCid
-        assertMsg "test-token registry issuer mismatch" (rules.admin == issuer)
+        requireRegistryIssuer issuer rulesCid
         holdingCids <- forA amounts $ \token -> do
           holdingCid <- exercise rulesCid TokenRules_Mint with
             account
@@ -87,6 +87,11 @@ template TestTokenReceipt with
   where
     signatory issuer
     observer recipient, operator
+
+requireRegistryIssuer : Party -> ContractId TokenRules -> Update ()
+requireRegistryIssuer issuer rulesCid = do
+  rules <- fetch rulesCid
+  assertMsg eRegistryIssuerMismatch (rules.admin == issuer)
 
 validAmounts : [TestTokenAmount] -> Bool
 validAmounts amounts =

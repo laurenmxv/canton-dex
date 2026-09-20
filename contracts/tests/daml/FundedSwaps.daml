@@ -7,6 +7,8 @@ import DA.Foldable (forA_)
 import DA.Optional (isNone)
 import DA.Time (addRelTime, days, hours, minutes, seconds, time)
 import Daml.Script
+import Errors
+import Test.Assertions
 import Fixtures
 import Lib.Tokens (Token(..), emptyArgs)
 import OpenZeppelin.TokenCIP112V1.Holding (TokenHolding(..))
@@ -231,7 +233,7 @@ duplicateAllocationLeavesBackingUnchanged = script do
   beforeQuote <- query @TokenHolding f.parties.quoteRegistrar
   beforeState <- queryContractId f.parties.dvo f.pool.stateCid
   disclosures <- settlementDisclosures f f.pool.stateCid
-  submitMustFail (actAs f.parties.venueOperator <> discloseMany disclosures) $
+  submitFailsWith eDuplicateAllocation (actAs f.parties.venueOperator <> discloseMany disclosures) $
     exerciseCmd f.delegationCid VenueDelegation_SettleBatch with
       configCid = f.pool.configCid; stateCid = f.pool.stateCid; batchId = "duplicate"
       requests = map settlementRequest [request, request]
@@ -281,7 +283,7 @@ secondSlippageRollsBack = script do
   beforeQuote <- query @TokenHolding f.parties.quoteRegistrar
   beforeState <- queryContractId f.parties.dvo f.pool.stateCid
   disclosures <- settlementDisclosures f f.pool.stateCid
-  submitMustFail (actAs f.parties.venueOperator <> discloseMany disclosures) $
+  submitFailsWith eSwapBelowMinimumOutput (actAs f.parties.venueOperator <> discloseMany disclosures) $
       exerciseCmd f.delegationCid VenueDelegation_SettleBatch with
         configCid = f.pool.configCid; stateCid = f.pool.stateCid; batchId = "atomic-failure"
         requests = map settlementRequest [first, second]
@@ -361,7 +363,7 @@ unfundedPoolsCannotSettleRequests = script do
   Some before <- queryContractId f.parties.dvo pool.stateCid
   before.funding === None
   disclosures <- rulesDisclosures candidate
-  submitMustFail (actAs f.parties.venueOperator <> discloseMany disclosures) $
+  submitFailsWith ePoolNotFunded (actAs f.parties.venueOperator <> discloseMany disclosures) $
     exerciseCmd delegationCid VenueDelegation_SettleBatch with
       configCid = pool.configCid; stateCid = pool.stateCid
       requests = [settlementRequest request]; batchId = "unfunded"

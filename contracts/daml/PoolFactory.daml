@@ -2,6 +2,7 @@
 -- The operator can propose the settings; token backing is added separately.
 module PoolFactory where
 
+import Errors
 import Splice.Api.Token.HoldingV2 (Account, InstrumentId)
 import Pool
 import Lib.Math (validFee)
@@ -39,8 +40,7 @@ template PoolFactory
       with settings : PoolSettings
       controller venueOperator
       do
-        assertMsg "Factory authority mismatch" (settings.dvo == dvo)
-        assertMsg "Invalid pool settings" (validSettings settings)
+        requirePoolSettings dvo settings
         create PoolProposal with
           factoryCid = self
           venueOperator
@@ -50,8 +50,7 @@ template PoolFactory
       with settings : PoolSettings
       controller dvo
       do
-        assertMsg "Factory authority mismatch" (settings.dvo == dvo)
-        assertMsg "Invalid pool settings" (validSettings settings)
+        requirePoolSettings dvo settings
         poolCid <- create Pool with
           dvo
           venueOperator
@@ -89,9 +88,7 @@ template PoolProposal
     choice PoolProposal_Accept : PoolContracts
       controller settings.dvo
       do
-        factory <- fetch factoryCid
-        assertMsg "Factory operator mismatch" (factory.venueOperator == venueOperator)
-        assertMsg "Factory authority mismatch" (factory.dvo == settings.dvo)
+        validateProposalFactory this
         exercise factoryCid PoolFactory_CreatePool with settings
 
     choice PoolProposal_Reject : ()
@@ -101,6 +98,22 @@ template PoolProposal
     choice PoolProposal_Withdraw : ()
       controller venueOperator
       do pure ()
+
+requireFactoryAuthority : Party -> Party -> Update ()
+requireFactoryAuthority expected actual =
+  assertMsg eFactoryAuthorityMismatch (actual == expected)
+
+requirePoolSettings : Party -> PoolSettings -> Update ()
+requirePoolSettings dvo settings = do
+  requireFactoryAuthority dvo settings.dvo
+  assertMsg eInvalidPoolSettings (validSettings settings)
+
+-- | Acceptance must use the factory approved by both the operator and DVO.
+validateProposalFactory : PoolProposal -> Update ()
+validateProposalFactory proposal = do
+  factory <- fetch proposal.factoryCid
+  assertMsg eFactoryOperatorMismatch (factory.venueOperator == proposal.venueOperator)
+  requireFactoryAuthority factory.dvo proposal.settings.dvo
 
 validSettings : PoolSettings -> Bool
 validSettings settings =

@@ -6,6 +6,7 @@
 -- Checks their KYC approval and locks their input tokens for later settlement.
 module PoolAccess where
 
+import Errors
 import KycAttestation
 import Pool
 import Lib.Swap
@@ -37,18 +38,9 @@ template PoolAccess
         outputAllocationArgs : ExtraArgs
       controller trader
       do
-        validateAttestation this
-        assertMsg "Swap route does not match access" (route.poolCid == poolCid && route.venueOperator == venueOperator)
-        assertMsg "Invalid swap terms" (validTerms terms && requestedAt < terms.settlementDeadline)
-        assertMsg "Trader must differ from pool executors" (trader /= route.dvo && trader /= venueOperator)
-        assertMsg "Swap input exceeds the holding limit" (length inputHoldingCids <= maxSwapInputHoldings)
-        assertWithinDeadline "settlement deadline" terms.settlementDeadline
-        validateToken trader route.baseToken
-        validateToken trader route.quoteToken
+        validateSwapRequest this route terms requestedAt inputHoldingCids
         let (inputToken, outputToken, _, _) = directionRoute route terms.direction
             settlement = swapSettlement route terms
-        assertMsg "Invalid input precision or amount" (validAmount inputToken terms.amountIn)
-        assertMsg "Invalid minimum output precision or amount" (validAmount outputToken terms.minOut)
         (inputAllocation, _) <- allocate inputToken settlement (basicAccount trader)
           requestedAt terms.settlementDeadline [senderSide (inputLeg route trader terms)] None inputHoldingCids inputAllocationArgs
         (outputAllocation, _) <- allocate outputToken settlement (basicAccount trader)
@@ -56,11 +48,26 @@ template PoolAccess
           (Some TextMap.empty) [] outputAllocationArgs
         pure SwapRequest with poolCid; trader; terms; inputAllocation; outputAllocation
 
+-- | Check access, route, timing and token amounts before locking any input.
+validateSwapRequest : PoolAccess -> SwapRoute Pool -> SwapTerms -> Time -> [ContractId H.Holding] -> Update ()
+validateSwapRequest access route terms requestedAt inputHoldingCids = do
+  validateAttestation access
+  assertMsg eSwapRouteMismatch (route.poolCid == access.poolCid && route.venueOperator == access.venueOperator)
+  assertMsg eInvalidSwapTerms (validTerms terms && requestedAt < terms.settlementDeadline)
+  requireTraderDistinct route access.trader
+  assertMsg eSwapInputHoldingLimit (length inputHoldingCids <= maxSwapInputHoldings)
+  assertWithinDeadline settlementDeadlineLabel terms.settlementDeadline
+  validateToken access.trader route.baseToken
+  validateToken access.trader route.quoteToken
+  let (inputToken, outputToken, _, _) = directionRoute route terms.direction
+  assertMsg eInvalidInputAmount (validAmount inputToken terms.amountIn)
+  assertMsg eInvalidMinimumOutput (validAmount outputToken terms.minOut)
+
 -- Before accepting a request, check that its KYC attestation is still active,
 -- was issued by this operator, and covers this trader and pool.
 validateAttestation : PoolAccess -> Update ()
 validateAttestation access = do
   attestation <- fetch access.attestationCid
-  assertMsg "KYC issuer mismatch" (attestation.venueOperator == access.venueOperator)
-  assertMsg "KYC trader mismatch" (attestation.trader == access.trader)
-  assertMsg "KYC does not cover this pool" (access.poolCid `elem` attestation.pools)
+  assertMsg eKycIssuerMismatch (attestation.venueOperator == access.venueOperator)
+  assertMsg eKycTraderMismatch (attestation.trader == access.trader)
+  assertMsg eKycPoolMismatch (access.poolCid `elem` attestation.pools)

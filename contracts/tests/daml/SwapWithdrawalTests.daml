@@ -4,6 +4,8 @@ import DA.Assert ((===))
 import DA.Foldable (forA_)
 import DA.Time (addRelTime, seconds)
 import Daml.Script
+import Errors
+import Test.Assertions
 import Fixtures (poolFixture)
 import FundedSwaps
 import Lib.Tokens (emptyArgs)
@@ -73,7 +75,7 @@ withdrawalRejectsOtherOwnerWithDisclosure = script do
     pure disclosure
   setTime (addRelTime request.terms.settlementDeadline (seconds 1))
   -- Visibility is explicit: this rejection must enforce the trader boundary.
-  submitMustFail (actAs stranger <> discloseMany (allocationDisclosure :: holdingDisclosures)) $
+  submitFailsWith eWithdrawalAccountMismatch (actAs stranger <> discloseMany (allocationDisclosure :: holdingDisclosures)) $
     exerciseCmd f.pool.poolCid Pool_WithdrawSwap with
       trader = stranger; withdrawals = [withdrawal request.inputAllocation]
   queryInterfaceContractId @A.Allocation owner request.inputAllocation >>= (=== Some inputView)
@@ -93,7 +95,7 @@ withdrawalRejectsAllocationFromAnotherPool = script do
   before <- queryInterfaceContractId @A.Allocation trader request.inputAllocation
   setTime (addRelTime request.terms.settlementDeadline (seconds 1))
   disclosures <- rulesDisclosures f
-  submitMustFail (actAs trader <> discloseMany disclosures) $
+  submitFailsWith eWithdrawalPoolMismatch (actAs trader <> discloseMany disclosures) $
     exerciseCmd f.pool.poolCid Pool_WithdrawSwap with
       trader; withdrawals = [withdrawal request.inputAllocation]
   queryInterfaceContractId @A.Allocation trader request.inputAllocation >>= (=== before)
@@ -113,11 +115,11 @@ withdrawalRejectsInvalidAllocationLists = script do
   setTime (addRelTime firstRequest.terms.settlementDeadline (seconds 1))
   disclosures <- rulesDisclosures f
   forA_
-    [ []
-    , [firstRequest.inputAllocation, firstRequest.inputAllocation]
-    , [firstRequest.inputAllocation, firstRequest.outputAllocation, secondRequest.inputAllocation]
-    ] $ \allocationCids ->
-      submitMustFail (actAs trader <> discloseMany disclosures) $
+    [ ([], eInvalidWithdrawalSize)
+    , ([firstRequest.inputAllocation, firstRequest.inputAllocation], eDuplicateWithdrawalAllocation)
+    , ([firstRequest.inputAllocation, firstRequest.outputAllocation, secondRequest.inputAllocation], eInvalidWithdrawalSize)
+    ] $ \(allocationCids, expectedError) ->
+      submitFailsWith expectedError (actAs trader <> discloseMany disclosures) $
         exerciseCmd f.pool.poolCid Pool_WithdrawSwap with
           trader; withdrawals = map withdrawal allocationCids
   assertPending first

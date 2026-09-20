@@ -1,9 +1,12 @@
 module GenericTokenTests where
 
+import Test.Errors
 import DA.Assert ((===))
 import DA.TextMap qualified as TextMap
 import DA.Time (addRelTime, seconds)
 import Daml.Script
+import Errors
+import Test.Assertions
 import Fixtures
 import FundedSwaps
 import Lib.Tokens (emptyArgs)
@@ -29,7 +32,7 @@ template ContextAllocationFactory
       allocationFactory_publicFetchImpl _ _ = pure (AI.AllocationFactoryView with admin; meta = emptyMetadata)
       allocationFactory_allocateExtraObservers _ = []
       allocationFactory_allocateImpl _ arg = do
-        assertMsg "Allocation context must be forwarded unchanged" (arg.extraArgs == expectedArgs)
+        assertMsg eAllocationContextMismatch (arg.extraArgs == expectedArgs)
         exercise delegate arg
 
 template ContextSettlementFactory
@@ -44,7 +47,7 @@ template ContextSettlementFactory
       settlementFactory_publicFetchImpl _ _ = pure (A.SettlementFactoryView with admin; meta = emptyMetadata)
       settlementFactory_settleBatchExtraObservers _ = []
       settlementFactory_settleBatchImpl _ arg = do
-        assertMsg "Settlement context must be forwarded unchanged" (arg.extraArgs == expectedArgs)
+        assertMsg eSettlementContextMismatch (arg.extraArgs == expectedArgs)
         exercise delegate arg
 
 -- A withdrawal-only interface fixture; it does not represent a funded token.
@@ -61,10 +64,10 @@ template ContextAllocation
       allocation_settleExtraObservers _ = []
       allocation_withdrawExtraObservers _ = []
       allocation_cancelExtraObservers _ = []
-      allocation_settleImpl _ _ = abort "Settlement is outside this context fixture"
-      allocation_cancelImpl _ _ = abort "Cancellation is outside this context fixture"
+      allocation_settleImpl _ _ = abort eContextSettlementUnsupported
+      allocation_cancelImpl _ _ = abort eContextCancellationUnsupported
       allocation_withdrawImpl self arg = do
-        assertMsg "Withdrawal context must be forwarded unchanged" (arg.extraArgs == expectedArgs)
+        assertMsg eWithdrawalContextMismatch (arg.extraArgs == expectedArgs)
         archive (fromInterfaceContractId self : ContractId ContextAllocation)
         output <- if pending then do
             nextCid <- create this
@@ -123,7 +126,7 @@ separateFactoriesReceiveAllocationAndSettlementContext = script do
   candidateRules <- rulesDisclosures candidate
   let validArgs = args with inputAllocationArgs = baseAllocationArgs; outputAllocationArgs = quoteAllocationArgs
       traderOptions = actAs trader <> discloseMany (adapterDisclosures <> candidateRules)
-  submitMustFail traderOptions $ exerciseCmd accessCid (validArgs with inputAllocationArgs = emptyArgs)
+  submitFailsWith eAllocationContextMismatch traderOptions $ exerciseCmd accessCid (validArgs with inputAllocationArgs = emptyArgs)
   availableBalance trader baseToken.instrument >>= (=== 10.0)
   request <- submit traderOptions $ exerciseCmd accessCid validArgs
   disclosures <- settlementDisclosures candidate stateCid
@@ -132,7 +135,7 @@ separateFactoriesReceiveAllocationAndSettlementContext = script do
         inputSettlementArgs = baseSettlementArgs; outputSettlementArgs = quoteSettlementArgs
       operatorOptions = actAs f.parties.venueOperator <> discloseMany (adapterDisclosures <> disclosures)
   Some before <- queryContractId f.parties.dvo stateCid
-  submitMustFail operatorOptions $ exerciseCmd delegationCid VenueDelegation_SettleBatch with
+  submitFailsWith eSettlementContextMismatch operatorOptions $ exerciseCmd delegationCid VenueDelegation_SettleBatch with
     configCid = pool.configCid; stateCid; batchId = "missing-context"
     requests = [SettlementRequest with accessCid; request = (batch with outputSettlementArgs = emptyArgs)]
   queryContractId f.parties.dvo stateCid >>= (=== Some before)
@@ -162,7 +165,7 @@ genericAllocationReceivesWithdrawalContext = script do
   disclosures <- rulesDisclosures f
   let allocationCid = toInterfaceContractId @A.Allocation cid
       options = actAs trader <> discloseMany disclosures
-  submitMustFail options $ exerciseCmd f.pool.poolCid Pool_WithdrawSwap with
+  submitFailsWith eWithdrawalContextMismatch options $ exerciseCmd f.pool.poolCid Pool_WithdrawSwap with
     trader; withdrawals = [AllocationWithdrawal with allocationCid; extraArgs = emptyArgs]
   queryInterfaceContractId @A.Allocation trader allocationCid >>= (=== Some allocationView)
   results <- submit options $ exerciseCmd f.pool.poolCid Pool_WithdrawSwap with
@@ -187,7 +190,7 @@ pendingWithdrawalPreservesAllocation = script do
   setTime (addRelTime request.terms.settlementDeadline (seconds 1))
   before <- query @ContextAllocation trader
   disclosures <- rulesDisclosures f
-  submitMustFail (actAs trader <> discloseMany disclosures) $
+  submitFailsWith eTokenWithdrawalIncomplete (actAs trader <> discloseMany disclosures) $
     exerciseCmd f.pool.poolCid Pool_WithdrawSwap with
       trader; withdrawals = [withdrawal allocationCid]
   query @ContextAllocation trader >>= (=== before)
@@ -216,7 +219,7 @@ settlementRejectsAnotherTraderAllocation = script do
   Some stateBefore <- queryContractId f.parties.dvo f.pool.stateCid
   disclosures <- settlementDisclosures f f.pool.stateCid
   -- The issuer, amount, deadlines, and settlement match; the input belongs to Bob.
-  submitMustFail (actAs f.parties.venueOperator <> discloseMany disclosures) $
+  submitFailsWith eAllocationTermsMismatch (actAs f.parties.venueOperator <> discloseMany disclosures) $
     exerciseCmd f.delegationCid VenueDelegation_SettleBatch with
       configCid = f.pool.configCid; stateCid = f.pool.stateCid; batchId = "wrong-authorizer"
       requests = [SettlementRequest with accessCid = first.accessCid; request = batchRequest substituted]

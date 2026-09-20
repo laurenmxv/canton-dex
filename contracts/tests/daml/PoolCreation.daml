@@ -4,6 +4,8 @@ import DA.Assert ((===))
 import DA.Foldable (forA_)
 import DA.Optional (mapOptional)
 import Daml.Script
+import Errors
+import Test.Assertions
 import Fixtures
 import Pool
 import PoolFactory
@@ -147,9 +149,9 @@ invalidSettings parties factoryCid stranger = do
   beforePools <- query @Pool parties.dvo
   beforeProposals <- query @PoolProposal parties.venueOperator
   forA_ invalid $ \badSettings -> do
-    submitMustFail parties.venueOperator $
+    submitFailsWith eInvalidPoolSettings (actAs parties.venueOperator) $
       exerciseCmd factoryCid PoolFactory_ProposePool with settings = badSettings
-    submitMustFail parties.dvo $
+    submitFailsWith eInvalidPoolSettings (actAs parties.dvo) $
       exerciseCmd factoryCid PoolFactory_CreatePool with settings = badSettings
     submitMustFail parties.venueOperator $ createCmd PoolProposal with
       factoryCid; venueOperator = parties.venueOperator; settings = badSettings
@@ -168,20 +170,22 @@ mismatchedFactory parties factoryCid = do
         lpTokenInstrumentId = settings.lpTokenInstrumentId with admin = otherDvo
         baseAccount = settings.baseAccount with owner = Some otherDvo
         quoteAccount = settings.quoteAccount with owner = Some otherDvo
-  submitMustFail parties.venueOperator $
+  submitFailsWith eFactoryAuthorityMismatch (actAs parties.venueOperator) $
     exerciseCmd factoryCid PoolFactory_ProposePool with settings = otherSettings
-  submitMustFail parties.dvo $
+  submitFailsWith eFactoryAuthorityMismatch (actAs parties.dvo) $
     exerciseCmd factoryCid PoolFactory_CreatePool with settings = otherSettings
   -- Raw creates are possible: acceptance must validate the actual factory.
-  forA_ [(otherSettings, parties.venueOperator), (settings, otherOperator)] $
-    \(proposalSettings, proposer) -> do
+  forA_
+    [ (otherSettings, parties.venueOperator, eFactoryAuthorityMismatch)
+    , (settings, otherOperator, eFactoryOperatorMismatch)
+    ] $ \(proposalSettings, proposer, expectedError) -> do
       let proposal = PoolProposal with
             factoryCid; venueOperator = proposer; settings = proposalSettings
       cid <- submit proposer $ createCmd proposal
       beforePools <- query @Pool parties.dvo
       beforeConfigs <- query @PoolConfig parties.dvo
       beforeStates <- query @PoolState parties.dvo
-      submitMustFail (actAs proposalSettings.dvo <> readAs parties.dvo) $
+      submitFailsWith expectedError (actAs proposalSettings.dvo <> readAs parties.dvo) $
         exerciseCmd cid PoolProposal_Accept
       stillPending <- queryContractId proposer cid
       stillPending === Some proposal

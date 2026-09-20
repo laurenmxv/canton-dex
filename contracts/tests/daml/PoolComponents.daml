@@ -3,6 +3,8 @@ module PoolComponents where
 import DA.Assert ((===))
 import DA.Foldable (forA_)
 import Daml.Script
+import Errors
+import Test.Assertions
 import Fixtures
 import FundedSwaps
 import Pool
@@ -18,7 +20,7 @@ feeUpdatesRequireDvo = script do
     submitMustFail (actAs actor <> readAs f.parties.dvo) $
       exerciseCmd f.pool.configCid PoolConfig_Update with newFeeBps = 50.0
   forA_ [-1.0, 30.5, 10000.0] $ \fee ->
-    submitMustFail f.parties.dvo $
+    submitFailsWith eInvalidFee (actAs f.parties.dvo) $
       exerciseCmd f.pool.configCid PoolConfig_Update with newFeeBps = fee
   queryContractId f.parties.dvo f.pool.configCid >>= (=== Some config)
   next <- submit f.parties.dvo $
@@ -42,14 +44,14 @@ settlementRejectsMismatchedComponents = script do
   wrongOperatorState <- submit f.parties.dvo $ createCmd (state with venueOperator = otherOperator)
   disclosures <- settlementDisclosures f f.pool.stateCid
   forA_
-    [ (otherPool.configCid, f.pool.stateCid)
-    , (f.pool.configCid, otherPool.stateCid)
-    , (wrongAuthorityConfig, f.pool.stateCid)
-    , (f.pool.configCid, wrongAuthorityState)
-    , (wrongOperatorConfig, f.pool.stateCid)
-    , (f.pool.configCid, wrongOperatorState)
-    ] $ \(configCid, stateCid) -> do
-      submitMustFail (actAs f.parties.venueOperator <> readAs f.parties.dvo <> readAs otherDvo <> discloseMany disclosures) $
+    [ (otherPool.configCid, f.pool.stateCid, eConfigurationPoolMismatch)
+    , (f.pool.configCid, otherPool.stateCid, eStatePoolMismatch)
+    , (wrongAuthorityConfig, f.pool.stateCid, eConfigurationAuthorityMismatch)
+    , (f.pool.configCid, wrongAuthorityState, eStateAuthorityMismatch)
+    , (wrongOperatorConfig, f.pool.stateCid, eConfigurationAuthorityMismatch)
+    , (f.pool.configCid, wrongOperatorState, eStateAuthorityMismatch)
+    ] $ \(configCid, stateCid, expectedError) -> do
+      submitFailsWith expectedError (actAs f.parties.venueOperator <> readAs f.parties.dvo <> readAs otherDvo <> discloseMany disclosures) $
         exerciseCmd f.delegationCid VenueDelegation_SettleBatch with
           configCid; stateCid; batchId = "component-batch"
           requests = [settlementRequest request]

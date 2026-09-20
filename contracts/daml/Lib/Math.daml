@@ -1,6 +1,7 @@
 -- | Pure constant-product pricing with conservative rounding.
 module Lib.Math where
 
+import Errors
 import DA.Numeric qualified as Numeric
 
 -- | Accept whole basis points in [0, 10000), so the input fee stays below 100%.
@@ -27,7 +28,7 @@ swapOutput = swapOutputAtScale 10
 swapOutputAtScale : Int -> Decimal -> Decimal -> Decimal -> Decimal -> Decimal
 swapOutputAtScale outputScale feeBps reserveIn reserveOut amountIn =
   if not (validSwapInputs outputScale feeBps reserveIn reserveOut amountIn)
-  then error "Swap requires scale 0..10, integer fee bps, and positive amounts"
+  then error eInvalidSwapInputs
   else
     let inputAtoms = Numeric.shift @0 amountIn
         reserveInAtoms = Numeric.shift @0 reserveIn

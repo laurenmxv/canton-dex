@@ -2,7 +2,7 @@
 
 **Daml contracts · Java backend · TypeScript client · React app**
 
-[Quickstart](#quickstart) · [Onboarding](#onboarding) · [Pool creation](#pool-creation) · [Swaps](#swaps) · [Development](#development)
+[Quickstart](#quickstart) · [Onboarding](#onboarding-and-creating-users) · [Pool creation](#pool-creation) · [Swaps](#swaps) · [Development](#development)
 
 ---
 
@@ -10,6 +10,8 @@
 
 - **Docker** with Compose 2.27+.
 - **CLI tools:** Make and tar.
+- **DPM and Java** installed locally to run Daml tests with `make test`.
+- **[MetaMask Flask](https://docs.metamask.io/snaps/get-started/install-flask/)** for signing in this local development setup.
 
 ## Quickstart
 
@@ -19,8 +21,6 @@ From the repository root:
 make docker-run
 ```
 
-Extracts the bundled [LocalNet release](docker/artifacts/README.md), starts the stack, and configures Keycloak automatically. Docker downloads any missing container images.
-
 | App | Backend | Keycloak |
 | --- | --- | --- |
 | [localhost:5180](http://localhost:5180/) | [localhost:18080](http://localhost:18080/) | [localhost:18082](http://localhost:18082/) |
@@ -28,68 +28,44 @@ Extracts the bundled [LocalNet release](docker/artifacts/README.md), starts the 
 - **Operator login:** `operator` / `operator`
 - **Stop, keeping data:** `make docker-stop`
 
-## Onboarding
+## Onboarding and creating users
 
-> **Trader applies → Operator approves → Trader signs**
+Create a trader and approve access to the test pools.
+Use separate browser profiles: trader with Flask; operator signed in with `operator` / `operator`.
 
-1. **Prepare the wallet.** Install [MetaMask Flask](https://docs.metamask.io/snaps/get-started/install-flask/) in a separate Chrome profile. Unlock a test wallet without funds; disable regular MetaMask there.
-2. **Submit an application.** Open the app, create an account, and select test documents in **Onboarding**.
-3. **Approve as operator.** In another browser profile, open **Onboarding requests**, select the pools and party name, and approve.
-4. **Register as trader.** Click **Connect MetaMask**, approve the Snap installation, then **Prepare party** → **Sign and register with MetaMask**. Confirm the wallet requests.
-5. **Check the receipt.** Keep the page open until the attestation and CID appear.
-
-> Reconnect with the same wallet, key index (`0` by default), and Snap ID (`local:http://localhost:4040`).
+1. **Trader:** Open the [app](http://localhost:5180/), click **Create an account**, and complete the form.
+2. **Trader:** In **Onboarding**, enter a legal name and country code (`AR`), select test documents, and click **Submit application**.
+3. **Operator:** In **Onboarding requests**, open the application, select BTC/USDC or ETH/USDC, keep the suggested party name, and click **Accept with … pools**.
+4. **Trader:** Return to **Onboarding**, click **Connect MetaMask**, and approve the Canton Snap installation and wallet prompts.
+5. **Trader:** Click **Prepare party** → **Sign and register with MetaMask**, then confirm in the wallet.
+6. Wait for **Completed**; the trader is ready to swap.
 
 ## Pool creation
 
-> **Operator proposes → dvo accepts → Factory creates**
+A pool lets traders exchange two tokens. Skip this section to try the funded BTC/USDC and ETH/USDC test pools.
 
-1. Create a proposal from the operator's **Pools** page and copy its UUID.
-2. Run the local approver from the repository root:
+1. **Operator:** Open **Pools** → **New pool** and fill in token admins, token IDs, fee, reserves, and LP supply.
+2. Click **Review** → **Submit proposal**, then wait for pending approval.
+3. Open the proposal's **Details** and copy its **Proposal ID**.
+4. From the repository root, run `./scripts/decide-pool.sh accept PROPOSAL_UUID`, replacing `PROPOSAL_UUID` with the copied ID (approves the proposal as `dvo`).
+5. Return to **Pools** and wait for **Created**.
 
-   ```sh
-   # Accept
-   ./scripts/decide-pool.sh accept PROPOSAL_UUID
-
-   # Or reject
-   ./scripts/decide-pool.sh reject PROPOSAL_UUID
-   ```
-
-3. Watch the result in **Pools**. The script acts as `dvo`; acceptance creates the pool on Canton. Funding is outside this flow.
+New pools need separate funding and authorization for the operator to settle swaps; these steps only create the pool.
 
 ## Swaps
 
-Bootstrap funds BTC/USDC and ETH/USDC pools with local test tokens. A trader signs a request that locks its input; the operator settles queued requests atomically per pool.
+After onboarding, exchange local test tokens: the trader signs a request and the operator processes it.
 
-1. **Claim tokens as a trader.** Open **Swap**, select **Get test tokens**, then **Sign in MetaMask**. Each account can claim one bundle.
-2. **Request a swap.** Choose a pool and direction, enter an amount, and select **Get a quote**. Check the exact input, minimum output and deadline before **Request swap** opens the wallet. Track confirmation under **Your requests**.
-3. **Settle as operator.** Open **Settlement** and choose the pool. Set its batch target and **Save settings**. **Run batch** settles an eligible queue even below the target; **Automatic settlement** waits for the full target. Each pool saves its own settings.
-4. **Check the result.** A confirmed batch records actual outputs and reserve changes. An expired request can be withdrawn with **Reclaim**, which requires a wallet signature.
-
-See [token integration](docs/tokens.md) for the standard interfaces, package boundaries and supported settlement flow.
+1. **Trader:** Open **Swap** → **Get test tokens** → **Sign in MetaMask**, confirm, and wait for your balances.
+2. Choose a pool, swap direction, and amount, then click **Get a quote**.
+3. Review the quote, click **Request swap**, confirm in MetaMask, and wait for **Queued for settlement** under **Your requests**.
+4. **Operator:** Open **Settlement**, choose the same pool, and click **Run batch**.
+5. **Trader:** Check the final status and tokens received under **Your requests**.
 
 ## Development
 
-Docker mounts `frontend/`, `client/`, `backend/`, and `contracts/` from this checkout.
-Frontend and client source edits update through Vite automatically. Java changes
-are compiled when the backend restarts. Node dependencies stay in Docker volumes.
-
 | Task | Command |
 | --- | --- |
-| Refresh frontend / SDK dependencies after changing a lockfile | `docker compose restart frontend` |
-| Restart backend | `docker compose restart backend` |
-| Clear ledger and databases; keep containers stopped | `make docker-reset` |
-| Backend integration tests | `make test-backend` |
-| Swap integration scenario | `./scripts/test-backend.sh swaps` |
-| Daml tests (DPM + Java) | `make test` |
-| Reset script tests (Python 3, no Docker changes) | `python3 -m unittest discover -s scripts/tests -v` |
-| Validate database schema | `./scripts/test-backend.sh schema` |
-
-`make docker-reset` asks for confirmation, stops the project's containers and
-empties the database and ledger volumes, including Keycloak users and
-domain-upgrade snapshots. Containers,
-volumes, networks, images, builds, dependency caches and wallet keys are retained.
-Use `./scripts/dex-reset.sh --dry-run` to preview or `./scripts/dex-reset.sh --yes`
-to skip confirmation. Run `make docker-run` afterward to initialize the databases
-and bootstrap fresh fixtures, then sign in
-and onboard again.
+| Refresh frontend and backend | `docker compose restart frontend backend` |
+| Backend integration tests (Docker stack running) | `make test-backend` |
+| Daml tests (local DPM and Java required) | `make test` |

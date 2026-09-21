@@ -73,8 +73,8 @@ class TokenRegistryStoreIT {
                 "other:Token:Settler", "bob-settle", "BAUG", "sync-bob"));
     assertThat(restarted.instruments())
         .containsExactly(
-            new TokenRegistryStore.Instrument("alice", "USD", "USD", 6),
-            new TokenRegistryStore.Instrument("bob", "USD", "USD", 8));
+            new InstrumentCatalog.Instrument("alice", "USD", "USD", 6),
+            new InstrumentCatalog.Instrument("bob", "USD", "USD", 8));
     assertThat(restarted.source("unknown")).isEmpty();
   }
 }

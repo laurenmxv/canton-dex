@@ -12,9 +12,9 @@ import com.openzeppelin.dex.canton.generated.splice.api.token.holdingv2.HoldingV
 import com.openzeppelin.dex.canton.generated.testtokenfaucet.TestTokenFaucet;
 import com.openzeppelin.dex.canton.generated.testtokenfaucet.TestTokenGrant;
 import com.openzeppelin.dex.canton.generated.testtokenfaucet.TestTokenReceipt;
+import com.openzeppelin.dex.tokens.InstrumentCatalog;
 import com.openzeppelin.dex.tokens.TokenLedger;
 import com.openzeppelin.dex.tokens.TokenModels.*;
-import com.openzeppelin.dex.tokens.TokenRegistryStore;
 import com.openzeppelin.dex.tokens.TokenStore;
 import io.grpc.StatusRuntimeException;
 import java.math.BigDecimal;
@@ -34,18 +34,18 @@ public final class CantonTokenLedger implements TokenLedger {
   private final LedgerConnection ledger;
   private final InteractiveTransactions interactive;
   private final TokenStore store;
-  private final TokenRegistryStore registries;
+  private final InstrumentCatalog catalog;
   private final CantonOperatorCommands operatorCommands;
 
   public CantonTokenLedger(
       LedgerConnection ledger,
       TokenStore store,
-      TokenRegistryStore registries,
+      InstrumentCatalog catalog,
       CantonOperatorCommands operatorCommands) {
     this.ledger = ledger;
     this.interactive = new InteractiveTransactions(ledger);
     this.store = store;
-    this.registries = registries;
+    this.catalog = catalog;
     this.operatorCommands = operatorCommands;
   }
 
@@ -184,23 +184,23 @@ public final class CantonTokenLedger implements TokenLedger {
                         && h.account.provider.isEmpty()
                         && h.account.id.isEmpty())
             .toList();
-    return new Balances(balances(holdings, registries.instruments()), offset);
+    return new Balances(balances(holdings, catalog.instruments()), offset);
   }
 
   static List<Balance> balances(
-      List<HoldingView> holdings, List<TokenRegistryStore.Instrument> instruments) {
+      List<HoldingView> holdings, List<InstrumentCatalog.Instrument> instruments) {
     var balances = new ArrayList<Balance>();
     for (var token : instruments) {
       BigDecimal available = BigDecimal.ZERO, locked = BigDecimal.ZERO;
       for (var holding : holdings) {
         if (!holding.instrumentId.admin.equals(token.admin())
-            || !holding.instrumentId.id.equals(token.instrumentId())) continue;
+            || !holding.instrumentId.id.equals(token.id())) continue;
         if (holding.lock.isPresent()) locked = locked.add(holding.amount);
         else available = available.add(holding.amount);
       }
       balances.add(
           new Balance(
-              new Instrument(token.admin(), token.instrumentId()),
+              new Instrument(token.admin(), token.id()),
               token.symbol(),
               token.decimals(),
               decimal(available),

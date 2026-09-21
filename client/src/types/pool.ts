@@ -104,16 +104,29 @@ export interface PoolDetail {
   updatedAt: string;
 }
 
-/** A party that issues instruments, as the venue has it configured. */
-export interface InstrumentAdmin {
-  partyId: string;
-  label: string;
+/**
+ * An instrument the venue registers, as a proposal may choose it.
+ *
+ * `admin` and `id` name it together: two administrators may register the same
+ * `symbol`, and the same `id` under it. `decimals` is the precision the
+ * instrument accepts.
+ */
+export interface RegisteredInstrument {
+  admin: string;
+  id: string;
+  symbol: string;
+  decimals: number;
 }
 
-/** The parties a proposal is built against. The caller chooses none of them. */
+/**
+ * What a proposal is built against.
+ *
+ * The caller chooses none of the parties, and takes its pair out of
+ * `instruments`. An instrument outside that catalogue is refused.
+ */
 export interface PoolCreationOptions {
   factoryId: string;
   dvo: string;
   venueOperator: string;
-  instrumentAdmins: readonly InstrumentAdmin[];
+  instruments: readonly RegisteredInstrument[];
 }

@@ -1,9 +1,9 @@
 import { Banner, Button, LoadingButton, TextField } from '@openzeppelin/ui-components';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { useDexClient } from '../../app/runtime';
 import { useAction, useAsync } from '../../app/useAsync';
-import type { PoolProposalRecord } from '../../lib/api/types';
+import type { PoolProposalRecord, RegisteredInstrument } from '../../lib/api/types';
 import { errorCode } from '../../lib/api/types';
 import { Mono } from '../../ui/Mono';
 import { TextLink } from '../../ui/Link';
@@ -13,15 +13,23 @@ import { SelectControl } from '../../ui/Field';
 import { SkeletonRows } from '../../ui/States';
 import {
   emptyDraft,
+  instrumentChoices,
+  instrumentReading,
   proposalResolver,
+  proposedPool,
+  registeredInstrument,
   suggestedIds,
   toProposal,
   type DraftField,
   type ProposalDraft,
+  type ProposedPool,
 } from './poolForm';
 
 /** Fields the operator only fills in to override what the pair implies. */
 const SUGGESTED: DraftField[] = ['name', 'baseAccountId', 'quoteAccountId', 'lpTokenId'];
+
+/** One shared empty array, so the memos below hold while the venue has not answered. */
+const NO_INSTRUMENTS: readonly RegisteredInstrument[] = [];
 
 export function PoolProposalForm({
   onClose,
@@ -33,26 +41,32 @@ export function PoolProposalForm({
   const client = useDexClient();
   const options = useAsync((signal) => client.admin.poolCreationOptions({ signal }), [client]);
   /**
-   * The draft the operator last put through the venue's rules, or null while
-   * they are still editing. Holding the draft rather than a flag is what makes
-   * the summary and the submission provably the same values.
+   * The pair the operator last put through the venue's rules, with the draft it
+   * came from, or null while they are still editing. Holding the values rather
+   * than a flag is what makes the summary and the submission provably the same.
    */
-  const [reviewed, setReviewed] = useState<ProposalDraft | null>(null);
+  const [reviewed, setReviewed] = useState<ProposedPool | null>(null);
   /** Fields the operator wrote themselves, which a suggestion must not overwrite. */
   const [written, setWritten] = useState<Set<DraftField>>(new Set());
 
+  const instruments = options.data?.instruments ?? NO_INSTRUMENTS;
+  const choices = useMemo(() => instrumentChoices(instruments), [instruments]);
+  // The rules run against the catalogue as the venue last answered it. That
+  // answer is read once, so the venue refuses the pair again on its own side.
+  const resolver = useMemo(() => proposalResolver(instruments), [instruments]);
   const form = useForm<ProposalDraft>({
     defaultValues: emptyDraft(),
-    resolver: proposalResolver,
+    resolver,
     mode: 'onTouched',
   });
   const { control, getValues, setValue, handleSubmit } = form;
 
-  const admins = options.data?.instrumentAdmins ?? [];
-  const submit = useAction((draft: ProposalDraft) =>
-    client.admin.createPoolProposal(toProposal(draft)),
+  const submit = useAction((proposed: ProposedPool) =>
+    client.admin.createPoolProposal(toProposal(proposed)),
   );
   const reviewing = reviewed !== null;
+  const nothingToChoose = instruments.length === 0;
+  const empty = options.data !== undefined && nothingToChoose;
 
   /**
    * A suggestion only fills a field the operator has not written in.
@@ -62,7 +76,7 @@ export function PoolProposalForm({
    * into does not.
    */
   function suggest() {
-    const suggested = suggestedIds(getValues());
+    const suggested = suggestedIds(getValues(), instruments);
     for (const field of SUGGESTED) {
       if (written.has(field)) continue;
       const value = suggested[field as keyof typeof suggested];
@@ -85,36 +99,59 @@ export function PoolProposalForm({
         onUserEdit={() => {
           submit.clearError();
           if (SUGGESTED.includes(name)) claim(name);
-          if (name === 'baseId' || name === 'quoteId') queueMicrotask(suggest);
         }}
       />
     );
   }
 
   /**
-   * The instrument admin, on the kit's listbox.
+   * One side of the pair, out of what the venue registers.
    *
-   * The kit's own `SelectField` gives no way to hand React Hook Form the
-   * blur and the ref it needs to mark the field touched and to focus it as a
-   * first error, so this composes the same listbox parts around a controller.
+   * The value a row carries is the whole instrument, its administrator and that
+   * administrator's own id, so the operator never names a party by hand and
+   * never writes an instrument the venue has not registered. The hint repeats
+   * both parts, because the row's own text is only as long as it needs to be.
+   *
+   * The kit's own `SelectField` gives no way to hand React Hook Form the blur
+   * and the ref it needs to mark the field touched and to focus it as a first
+   * error, so this composes the same listbox parts around a controller.
    */
-  function adminField(name: 'baseAdmin' | 'quoteAdmin', label: string) {
+  function instrumentField(name: 'base' | 'quote', label: string) {
     return (
       <Controller
         control={control}
         name={name}
-        render={({ field, fieldState }) => (
-          <SelectControl
-            label={label}
-            placeholder="Select an admin"
-            value={field.value}
-            onValueChange={field.onChange}
-            onBlur={field.onBlur}
-            ref={field.ref}
-            {...(fieldState.error ? { error: fieldState.error.message } : {})}
-            options={admins.map((admin) => ({ value: admin.partyId, label: admin.label }))}
-          />
-        )}
+        render={({ field, fieldState }) => {
+          const chosen = registeredInstrument(instruments, field.value);
+          return (
+            <SelectControl
+              label={label}
+              placeholder={empty ? 'Nothing registered' : 'Select an instrument'}
+              disabled={nothingToChoose}
+              value={field.value}
+              onValueChange={(value) => {
+                submit.clearError();
+                field.onChange(value);
+                queueMicrotask(suggest);
+              }}
+              onBlur={field.onBlur}
+              ref={field.ref}
+              {...(chosen
+                ? {
+                    hint: (
+                      <>
+                        <Mono>{chosen.id}</Mono>, {chosen.decimals} decimals
+                        <br />
+                        Admin <Mono>{chosen.admin}</Mono>
+                      </>
+                    ),
+                  }
+                : {})}
+              {...(fieldState.error ? { error: fieldState.error.message } : {})}
+              options={choices}
+            />
+          );
+        }}
       />
     );
   }
@@ -125,14 +162,35 @@ export function PoolProposalForm({
    * Sends the proposal.
    *
    * Both steps run behind `handleSubmit`, so the rules decide again on the
-   * values as they stand. A draft that no longer passes them never reaches the
-   * venue, and the operator is put back in the form with the errors on the
-   * fields.
+   * values as they stand, against the catalogue the venue last answered with. A
+   * draft that no longer passes them never reaches the venue, and the operator
+   * is put back in the form with the errors on the fields.
    */
-  const startReview = handleSubmit((draft) => setReviewed(draft));
+  const startReview = handleSubmit((draft) => setReviewed(proposedPool(draft, instruments)));
+
+  /** The pair as the operator picked it, named the way the rows named it. */
+  function summary({ draft, base, quote }: ProposedPool) {
+    return [
+      { label: 'Pair', value: `${instrumentReading(base)} / ${instrumentReading(quote)}` },
+      { label: 'Base admin', value: <Mono>{base.admin}</Mono> },
+      { label: 'Quote admin', value: <Mono>{quote.admin}</Mono> },
+      { label: 'Name', value: draft.name },
+      { label: 'Fee', value: `${draft.feeBps} bps` },
+      { label: 'Reserves', value: `${draft.baseReserve} / ${draft.quoteReserve}` },
+      { label: 'LP supply', value: draft.lpTokenSupply },
+      { label: 'LP token', value: <Mono>{draft.lpTokenId}</Mono> },
+    ];
+  }
+
   const submitProposal = handleSubmit(
     async (draft) => {
-      const created = await submit.perform(draft);
+      // This resolves the pair against the catalogue the venue last answered
+      // with, which is what the review showed. The venue checks the current
+      // registration itself when the proposal arrives.
+      const proposed = proposedPool(draft, instruments);
+      setReviewed(proposed);
+      if (!proposed) return;
+      const created = await submit.perform(proposed);
       if (created) onProposed(created);
     },
     () => setReviewed(null),
@@ -152,7 +210,7 @@ export function PoolProposalForm({
         {options.error ? (
           <Banner
             variant="warning"
-            title="Could not load the instrument admins"
+            title="Could not load the registered instruments"
             size="compact"
             dismissible={false}
           >
@@ -161,6 +219,16 @@ export function PoolProposalForm({
           </Banner>
         ) : options.loading && !options.data ? (
           <SkeletonRows rows={2} label="Loading pool settings" />
+        ) : empty ? (
+          <Banner
+            variant="warning"
+            title="No registered instruments"
+            size="compact"
+            dismissible={false}
+          >
+            The venue registers no instrument yet, so a pool has nothing to hold. Register a token
+            first.
+          </Banner>
         ) : null}
 
         {/*
@@ -176,10 +244,8 @@ export function PoolProposalForm({
         */}
         <fieldset disabled={reviewing} className="contents">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            {adminField('baseAdmin', 'Base admin')}
-            {text('baseId', 'Base instrument', 'The admin’s own id, such as USDC.')}
-            {adminField('quoteAdmin', 'Quote admin')}
-            {text('quoteId', 'Quote instrument')}
+            {instrumentField('base', 'Base instrument')}
+            {instrumentField('quote', 'Quote instrument')}
           </div>
 
           {text('name', 'Pool name')}
@@ -229,19 +295,7 @@ export function PoolProposalForm({
 
         {reviewed ? (
           <Card padded>
-            <DataList
-              items={[
-                { label: 'Pair', value: `${reviewed.baseId} / ${reviewed.quoteId}` },
-                { label: 'Name', value: reviewed.name },
-                { label: 'Fee', value: `${reviewed.feeBps} bps` },
-                { label: 'Reserves', value: `${reviewed.baseReserve} / ${reviewed.quoteReserve}` },
-                { label: 'LP supply', value: reviewed.lpTokenSupply },
-                {
-                  label: 'LP token',
-                  value: <Mono>{reviewed.lpTokenId}</Mono>,
-                },
-              ]}
-            />
+            <DataList items={summary(reviewed)} />
             <div className="mt-3 flex items-center gap-3">
               <LoadingButton
                 type="button"

@@ -57,23 +57,31 @@ public final class PoolModels {
       @NotNull String quoteReserve,
       @NotNull String lpTokenSupply) {
     public Terms terms(Options options) {
+      // Both parts of an instrument are checked here too, and not only against
+      // the catalogue: pairKey joins them with a newline, so a newline inside
+      // either part would let two different pairs key the same claim.
       for (String value :
           List.of(
               name,
+              baseAccountId,
+              quoteAccountId,
+              lpTokenId,
               baseInstrumentId.admin(),
               baseInstrumentId.id(),
               quoteInstrumentId.admin(),
-              quoteInstrumentId.id(),
-              baseAccountId,
-              quoteAccountId,
-              lpTokenId))
+              quoteInstrumentId.id()))
         if (!value.equals(value.trim())
             || value.isBlank()
             || value.chars().anyMatch(Character::isISOControl))
           throw new IllegalArgumentException("Invalid pool identifier");
-      var admins = options.instrumentAdmins().stream().map(Admin::partyId).toList();
-      if (!admins.contains(baseInstrumentId.admin()) || !admins.contains(quoteInstrumentId.admin()))
-        throw new IllegalArgumentException("Unknown instrument administrator");
+      // An instrument is its administrator and that administrator's own
+      // identifier together, so both parts have to name a registered one.
+      var registered =
+          options.instruments().stream().map(RegisteredInstrument::instrument).toList();
+      if (!registered.contains(baseInstrumentId))
+        throw new IllegalArgumentException("The venue does not register the base instrument");
+      if (!registered.contains(quoteInstrumentId))
+        throw new IllegalArgumentException("The venue does not register the quote instrument");
       if (baseInstrumentId.equals(quoteInstrumentId))
         throw new IllegalArgumentException("Instruments must differ");
       BigDecimal fee = decimal(feeBps);
@@ -102,10 +110,20 @@ public final class PoolModels {
     return new BigDecimal(value);
   }
 
-  public record Admin(String partyId, String label) {}
+  /** An instrument the venue registers, as a proposal may choose it. */
+  public record RegisteredInstrument(String admin, String id, String symbol, int decimals) {
+    public Instrument instrument() {
+      return new Instrument(admin, id);
+    }
+  }
 
+  /**
+   * What a proposal is built against.
+   *
+   * <p>The caller chooses none of the parties, and picks its pair out of {@code instruments}.
+   */
   public record Options(
-      String factoryId, String dvo, String venueOperator, List<Admin> instrumentAdmins) {}
+      String factoryId, String dvo, String venueOperator, List<RegisteredInstrument> instruments) {}
 
   public enum Status {
     SUBMITTING,

@@ -7,7 +7,7 @@ import org.springframework.stereotype.Repository;
 
 /** Operator-configured token factories and instrument metadata. */
 @Repository
-public class TokenRegistryStore {
+public class TokenRegistryStore implements InstrumentCatalog {
   private final JdbcClient sql;
 
   public TokenRegistryStore(JdbcClient sql) {
@@ -34,6 +34,7 @@ public class TokenRegistryStore {
         .list();
   }
 
+  @Override
   public List<Instrument> instruments() {
     return sql.sql(
             "SELECT admin,instrument_id,symbol,decimals FROM token_instruments"
@@ -47,6 +48,4 @@ public class TokenRegistryStore {
 
   public record Disclosure(
       String templateId, String contractId, String createdEventBlob, String synchronizerId) {}
-
-  public record Instrument(String admin, String instrumentId, String symbol, int decimals) {}
 }

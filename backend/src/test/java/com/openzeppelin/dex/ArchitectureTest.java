@@ -52,5 +52,15 @@ class ArchitectureTest {
         .haveSimpleName("OnboardingStore")
         .allowEmptyShould(true)
         .check(classes);
+    // Every other module reads the registered instruments through InstrumentCatalog,
+    // so none of them can also reach the registry's sources and disclosures.
+    noClasses()
+        .that()
+        .resideOutsideOfPackages("..tokens..", "..canton..")
+        .should()
+        .dependOnClassesThat()
+        .haveSimpleName("TokenRegistryStore")
+        .allowEmptyShould(true)
+        .check(classes);
   }
 }

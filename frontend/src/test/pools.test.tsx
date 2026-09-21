@@ -41,9 +41,9 @@ const OPTIONS: PoolCreationOptions = {
   factoryId: '00factory0001',
   dvo: 'dvo::1220dvo',
   venueOperator: 'venue-operator::1220beef',
-  instrumentAdmins: [
-    { partyId: 'issuer-usdc::1220usdc', label: 'USDC issuer' },
-    { partyId: 'issuer-eurc::1220eurc', label: 'EURC issuer' },
+  instruments: [
+    { admin: 'issuer-usdc::1220usdc', id: 'USDC', symbol: 'USDC', decimals: 6 },
+    { admin: 'issuer-eurc::1220eurc', id: 'EURC', symbol: 'EURC', decimals: 6 },
   ],
 };
 
@@ -411,10 +411,8 @@ describe('the venue pools console', () => {
 
 describe('proposing a pool', () => {
   async function fillPair(user: ReturnType<typeof userEvent.setup>) {
-    await pick(user, 'Base admin', 'USDC issuer');
-    await user.type(screen.getByLabelText('Base instrument'), 'USDC');
-    await pick(user, 'Quote admin', 'EURC issuer');
-    await user.type(screen.getByLabelText('Quote instrument'), 'EURC');
+    await pick(user, 'Base instrument', 'USDC');
+    await pick(user, 'Quote instrument', 'EURC');
     await user.type(screen.getByLabelText('Base reserve'), '1000000');
     await user.type(screen.getByLabelText('Quote reserve'), '920000');
     await user.type(screen.getByLabelText('LP supply'), '959166.305');
@@ -483,7 +481,7 @@ describe('proposing a pool', () => {
     expect(await screen.findByText('A pool for USDC/EURC already exists')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Edit' }));
     expect(screen.getByLabelText('Base reserve')).toHaveValue('1000000');
-    expect(screen.getByLabelText('Base instrument')).toHaveValue('USDC');
+    expect(screen.getByLabelText('Base instrument')).toHaveTextContent('USDC');
   });
 
   it('sends one proposal however often the button is clicked', async () => {
@@ -512,7 +510,7 @@ describe('proposing a pool', () => {
     );
   });
 
-  it('reports instrument admins it could not load, and asks for no invented party', async () => {
+  it('reports a catalogue it could not load, and offers no instrument', async () => {
     const user = renderPools({
       admin: {
         poolCreationOptions: () => Promise.reject(new Error('The venue is unreachable')),
@@ -522,9 +520,11 @@ describe('proposing a pool', () => {
     await openPools(user);
     await user.click(screen.getByRole('button', { name: 'New pool' }));
 
-    expect(await screen.findByText('Could not load the instrument admins')).toBeInTheDocument();
-    // With no admins to offer, the listbox stands on its placeholder.
-    expect(screen.getByLabelText('Base admin')).toHaveTextContent('Select an admin');
+    expect(
+      await screen.findByText('Could not load the registered instruments'),
+    ).toBeInTheDocument();
+    // With nothing to offer, the listbox stands on its placeholder.
+    expect(screen.getByLabelText('Base instrument')).toHaveTextContent('Select an instrument');
   });
 });
 

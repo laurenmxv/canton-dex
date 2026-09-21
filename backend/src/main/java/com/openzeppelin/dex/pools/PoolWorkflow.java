@@ -3,6 +3,7 @@ package com.openzeppelin.dex.pools;
 import static com.openzeppelin.dex.pools.PoolModels.*;
 
 import com.openzeppelin.dex.iam.Account;
+import com.openzeppelin.dex.tokens.InstrumentCatalog;
 import java.time.Instant;
 import java.util.*;
 import org.slf4j.*;
@@ -14,25 +15,55 @@ public final class PoolWorkflow {
   private static final Logger LOG = LoggerFactory.getLogger(PoolWorkflow.class);
   private final PoolStore store;
   private final PoolLedger ledger;
+  private final InstrumentCatalog catalog;
   private Instant refreshed = Instant.EPOCH;
 
-  public PoolWorkflow(PoolStore store, PoolLedger ledger) {
+  public PoolWorkflow(PoolStore store, PoolLedger ledger, InstrumentCatalog catalog) {
     this.store = store;
     this.ledger = ledger;
+    this.catalog = catalog;
   }
 
+  /**
+   * What a proposal may be built from.
+   *
+   * <p>The instruments are the ones the venue has registered, which is the same catalogue every
+   * balance is read against.
+   */
   public Options options() {
-    return new Options(ledger.factory(store.dvo()), store.dvo(), ledger.operator(), store.admins());
+    try {
+      return new Options(
+          ledger.factory(store.dvo()),
+          store.dvo(),
+          ledger.operator(),
+          catalog.instruments().stream().map(PoolWorkflow::registered).toList());
+    } catch (RuntimeException e) {
+      LOG.warn("Pool settings could not be read: {}", e.toString());
+      throw new PoolUnavailable("Pool settings could not be read. Try again.");
+    }
+  }
+
+  private static RegisteredInstrument registered(InstrumentCatalog.Instrument instrument) {
+    return new RegisteredInstrument(
+        instrument.admin(), instrument.id(), instrument.symbol(), instrument.decimals());
   }
 
   public synchronized Proposal create(Create input, Account caller) {
     caller.requireRole(Account.Role.OPERATOR);
     var options = options();
-    var terms = input.terms(options);
-    refreshCatalog();
+    Terms terms;
+    try {
+      terms = input.terms(options);
+    } catch (IllegalArgumentException e) {
+      // The venue answers a caller error with one fixed sentence, so the reason
+      // the proposal was refused is only ever readable here.
+      LOG.info("Pool proposal refused: {}", e.getMessage());
+      throw e;
+    }
+    refreshPools();
     UUID id = UUID.randomUUID();
     long offset = ledger.offset();
-    var proposal = store.reserve(id, input, terms, options, caller.id(), offset);
+    var proposal = store.reserve(id, input, terms, options.factoryId(), caller.id(), offset);
     try {
       apply(id, ledger.propose(proposal, id));
     } catch (PoolLedger.Rejected e) {
@@ -65,7 +96,7 @@ public final class PoolWorkflow {
   }
 
   public synchronized List<Detail> pools() {
-    if (refreshed.isBefore(Instant.now().minusSeconds(10))) refreshCatalog();
+    if (refreshed.isBefore(Instant.now().minusSeconds(10))) refreshPools();
     return store.pools(ledger.packageId());
   }
 
@@ -74,12 +105,12 @@ public final class PoolWorkflow {
     return store.pool(id, ledger.packageId());
   }
 
-  private void refreshCatalog() {
+  private void refreshPools() {
     try {
       for (var pool : ledger.pools(store.names(), store.dvo())) store.save(pool);
       refreshed = Instant.now();
     } catch (RuntimeException e) {
-      LOG.warn("Pool catalogue refresh failed: {}", e.toString());
+      LOG.warn("Pool refresh failed: {}", e.toString());
       throw new PoolUnavailable("Pools could not be refreshed. Try again.");
     }
   }

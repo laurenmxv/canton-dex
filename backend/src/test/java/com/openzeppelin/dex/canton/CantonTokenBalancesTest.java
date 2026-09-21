@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.openzeppelin.dex.canton.generated.splice.api.token.holdingv2.*;
 import com.openzeppelin.dex.canton.generated.splice.api.token.metadatav1.Metadata;
-import com.openzeppelin.dex.tokens.TokenRegistryStore;
+import com.openzeppelin.dex.tokens.InstrumentCatalog;
 import java.math.BigDecimal;
 import java.util.*;
 import org.junit.jupiter.api.Test;
@@ -21,9 +21,9 @@ class CantonTokenBalancesTest {
                 holding("issuer-b", "USD", "30", Optional.empty()),
                 holding("unlisted", "USD", "100", Optional.empty())),
             List.of(
-                new TokenRegistryStore.Instrument("issuer-a", "USD", "USD-A", 6),
-                new TokenRegistryStore.Instrument("issuer-b", "USD", "USD-B", 8),
-                new TokenRegistryStore.Instrument("issuer-b", "BTC", "BTC-B", 8)));
+                new InstrumentCatalog.Instrument("issuer-a", "USD", "USD-A", 6),
+                new InstrumentCatalog.Instrument("issuer-b", "USD", "USD-B", 8),
+                new InstrumentCatalog.Instrument("issuer-b", "BTC", "BTC-B", 8)));
     assertThat(balances).hasSize(3);
     assertThat(balances.get(0).instrument().admin()).isEqualTo("issuer-a");
     assertThat(balances.get(0).available()).isEqualTo("10");

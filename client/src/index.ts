@@ -13,7 +13,6 @@ export type { DexClientErrorKind, ProblemDetails } from './errors.js';
 export type { DexClientConfig, RequestOptions } from './types/common.js';
 export type {
   CreatePoolProposal,
-  InstrumentAdmin,
   InstrumentId,
   PoolAccount,
   PoolCreationOptions,
@@ -22,6 +21,7 @@ export type {
   PoolProposalStatus,
   PoolSummary,
   PoolTerms,
+  RegisteredInstrument,
 } from './types/pool.js';
 export type { Profile, Role } from './types/profile.js';
 export type {

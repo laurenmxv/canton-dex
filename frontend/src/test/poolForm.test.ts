@@ -1,25 +1,42 @@
 import { describe, expect, it } from 'vitest';
+import type { RegisteredInstrument } from '../lib/api/types';
 import {
   draftErrors,
   emptyDraft,
+  instrumentChoices,
+  instrumentKey,
+  proposedPool,
   suggestedIds,
   toProposal,
   type ProposalDraft,
 } from '../features/pools/poolForm';
 
-const OPTIONS = {
-  factoryId: '00factory',
-  dvo: 'dvo::1220',
-  venueOperator: 'operator::1220',
-  instrumentAdmins: [{ partyId: 'issuer::1220', label: 'Issuer' }],
+const USDC: RegisteredInstrument = {
+  admin: 'issuer::1220',
+  id: 'USDC',
+  symbol: 'USDC',
+  decimals: 6,
 };
+const EURC: RegisteredInstrument = {
+  admin: 'issuer-eurc::1220',
+  id: 'EURC',
+  symbol: 'EURC',
+  decimals: 6,
+};
+/** The same symbol and the same id, from another administrator. */
+const OTHER_USDC: RegisteredInstrument = {
+  admin: 'other-issuer::1220',
+  id: 'USDC',
+  symbol: 'USDC',
+  decimals: 6,
+};
+const CATALOG: RegisteredInstrument[] = [USDC, EURC, OTHER_USDC];
 
 function draft(overrides: Partial<ProposalDraft> = {}): ProposalDraft {
   return {
-    ...emptyDraft(OPTIONS),
-    baseId: 'USDC',
-    quoteAdmin: 'issuer-eurc::1220',
-    quoteId: 'EURC',
+    ...emptyDraft(),
+    base: instrumentKey(USDC),
+    quote: instrumentKey(EURC),
     baseReserve: '1000000',
     quoteReserve: '920000',
     lpTokenSupply: '959166.305',
@@ -32,14 +49,18 @@ function draft(overrides: Partial<ProposalDraft> = {}): ProposalDraft {
 }
 
 describe('what a proposal may carry', () => {
-  it('accepts a complete draft', () => {
-    expect(draftErrors(draft())).toEqual({});
+  it('accepts a complete draft, and only while the venue still registers its pair', () => {
+    expect(draftErrors(draft(), CATALOG)).toEqual({});
+
+    const gone = draft({ base: instrumentKey({ admin: 'retired::1220', id: 'USDC' }) });
+    expect(draftErrors(gone, CATALOG).base).toBe('Base instrument is no longer registered');
+    expect(draftErrors(draft(), []).quote).toBe('Quote instrument is no longer registered');
   });
 
-  it('starts on the first admin the venue configured, and nothing invented', () => {
-    const fresh = emptyDraft(OPTIONS);
-    expect(fresh.baseAdmin).toBe('issuer::1220');
-    expect(emptyDraft().baseAdmin).toBe('');
+  it('starts on nothing chosen, and nothing invented', () => {
+    const fresh = emptyDraft();
+    expect(fresh.base).toBe('');
+    expect(fresh.quote).toBe('');
     expect(fresh.baseReserve).toBe('');
     expect(fresh.lpTokenSupply).toBe('');
   });
@@ -55,42 +76,39 @@ describe('what a proposal may carry', () => {
     ['an exponent', '1e6'],
     ['a thousands separator', '1,000'],
   ])('refuses %s as a reserve', (_name, value) => {
-    expect(draftErrors(draft({ baseReserve: value })).baseReserve).toBeDefined();
+    expect(draftErrors(draft({ baseReserve: value }), CATALOG).baseReserve).toBeDefined();
   });
 
   it('accepts the largest amount a Decimal holds', () => {
     const large = `${'9'.repeat(28)}.${'9'.repeat(10)}`;
-    expect(draftErrors(draft({ baseReserve: large })).baseReserve).toBeUndefined();
+    expect(draftErrors(draft({ baseReserve: large }), CATALOG).baseReserve).toBeUndefined();
   });
 
   it('refuses a left-padded amount, which the venue reads as malformed', () => {
-    expect(draftErrors(draft({ baseReserve: '01' })).baseReserve).toBeDefined();
-    expect(draftErrors(draft({ baseReserve: '00.5' })).baseReserve).toBeDefined();
-    expect(draftErrors(draft({ feeBps: '030' })).feeBps).toBeDefined();
+    expect(draftErrors(draft({ baseReserve: '01' }), CATALOG).baseReserve).toBeDefined();
+    expect(draftErrors(draft({ baseReserve: '00.5' }), CATALOG).baseReserve).toBeDefined();
+    expect(draftErrors(draft({ feeBps: '030' }), CATALOG).feeBps).toBeDefined();
     // A single leading zero before the point is the number zero, not padding.
-    expect(draftErrors(draft({ feeBps: '0.5' })).feeBps).toBeUndefined();
+    expect(draftErrors(draft({ feeBps: '0.5' }), CATALOG).feeBps).toBeUndefined();
   });
 
   it('takes identifiers as long as the venue does, and no longer', () => {
     const id = (length: number) => 'a'.repeat(length);
 
-    expect(draftErrors(draft({ baseId: id(65) })).baseId).toBeUndefined();
-    expect(draftErrors(draft({ baseId: id(128) })).baseId).toBeUndefined();
-    expect(draftErrors(draft({ baseId: id(129) })).baseId).toBeDefined();
-    expect(draftErrors(draft({ lpTokenId: id(128) })).lpTokenId).toBeUndefined();
-    expect(draftErrors(draft({ baseAccountId: id(129) })).baseAccountId).toBeDefined();
-    expect(draftErrors(draft({ quoteAdmin: `${id(255)}` })).quoteAdmin).toBeUndefined();
-    expect(draftErrors(draft({ quoteAdmin: `${id(256)}` })).quoteAdmin).toBeDefined();
+    expect(draftErrors(draft({ lpTokenId: id(128) }), CATALOG).lpTokenId).toBeUndefined();
+    expect(draftErrors(draft({ lpTokenId: id(129) }), CATALOG).lpTokenId).toBeDefined();
+    expect(draftErrors(draft({ baseAccountId: id(129) }), CATALOG).baseAccountId).toBeDefined();
+    expect(draftErrors(draft({ name: id(120) }), CATALOG).name).toBeUndefined();
+    expect(draftErrors(draft({ name: id(121) }), CATALOG).name).toBeDefined();
   });
 
   it('refuses a control character in any text the venue stores', () => {
-    expect(draftErrors(draft({ name: 'USDC \u0007 EURC' })).name).toBeDefined();
-    expect(draftErrors(draft({ baseId: 'US\u0000DC' })).baseId).toBeDefined();
-    expect(draftErrors(draft({ lpTokenId: 'LP\nX' })).lpTokenId).toBeDefined();
+    expect(draftErrors(draft({ name: 'USDC \u0007 EURC' }), CATALOG).name).toBeDefined();
+    expect(draftErrors(draft({ lpTokenId: 'LP\nX' }), CATALOG).lpTokenId).toBeDefined();
     // The C1 range the venue also refuses, which is not printable either.
-    expect(draftErrors(draft({ lpTokenId: 'LP\u0085X' })).lpTokenId).toBeDefined();
-    expect(draftErrors(draft({ baseAccountId: 'base\u009fid' })).baseAccountId).toBeDefined();
-    expect(draftErrors(draft({ name: 'USDC \u00a0 EURC' })).name).toBeUndefined();
+    expect(draftErrors(draft({ lpTokenId: 'LP\u0085X' }), CATALOG).lpTokenId).toBeDefined();
+    expect(draftErrors(draft({ baseAccountId: 'base\u009fid' }), CATALOG).baseAccountId).toBeDefined();
+    expect(draftErrors(draft({ name: 'USDC \u00a0 EURC' }), CATALOG).name).toBeUndefined();
   });
 
   it.each([
@@ -100,34 +118,41 @@ describe('what a proposal may carry', () => {
     ['', 'nothing'],
     ['-5', 'a negative fee'],
   ])('refuses %s as a fee, which is %s', (value) => {
-    expect(draftErrors(draft({ feeBps: value })).feeBps).toBeDefined();
+    expect(draftErrors(draft({ feeBps: value }), CATALOG).feeBps).toBeDefined();
   });
 
   it.each(['0', '0.5', '30', '9999.9999999999'])('accepts %s bps', (value) => {
-    expect(draftErrors(draft({ feeBps: value })).feeBps).toBeUndefined();
+    expect(draftErrors(draft({ feeBps: value }), CATALOG).feeBps).toBeUndefined();
   });
 
-  it('refuses a pair of the same instrument, and allows the same id from two admins', () => {
-    const same = draft({ quoteAdmin: 'issuer::1220', quoteId: 'USDC' });
-    expect(draftErrors(same).quoteId).toBeDefined();
+  it('tells two instruments apart by their whole identity, in a pair and on offer', () => {
+    const same = draft({ quote: instrumentKey(USDC) });
+    expect(draftErrors(same, CATALOG).quote).toBeDefined();
 
-    const twoAdmins = draft({ quoteAdmin: 'other-issuer::1220', quoteId: 'USDC' });
-    expect(draftErrors(twoAdmins).quoteId).toBeUndefined();
+    const twoAdmins = draft({ quote: instrumentKey(OTHER_USDC) });
+    expect(draftErrors(twoAdmins, CATALOG).quote).toBeUndefined();
+
+    // Only a row another row reads the same as carries its administrator.
+    expect(instrumentChoices(CATALOG)).toEqual([
+      { value: instrumentKey(USDC), label: `USDC (${USDC.admin})` },
+      { value: instrumentKey(EURC), label: 'EURC' },
+      { value: instrumentKey(OTHER_USDC), label: `USDC (${OTHER_USDC.admin})` },
+    ]);
+    const wrapped = { admin: USDC.admin, id: '0x01', symbol: 'WBTC', decimals: 8 };
+    expect(instrumentChoices([wrapped])[0]?.label).toBe('WBTC · 0x01');
   });
 
   it('names every field the venue requires', () => {
-    const errors = draftErrors(emptyDraft());
+    const errors = draftErrors(emptyDraft(), CATALOG);
     expect(Object.keys(errors).sort()).toEqual([
+      'base',
       'baseAccountId',
-      'baseAdmin',
-      'baseId',
       'baseReserve',
       'lpTokenId',
       'lpTokenSupply',
       'name',
+      'quote',
       'quoteAccountId',
-      'quoteAdmin',
-      'quoteId',
       'quoteReserve',
     ]);
   });
@@ -135,7 +160,7 @@ describe('what a proposal may carry', () => {
 
 describe('what the pair suggests', () => {
   it('fills the name and the identifiers from the instruments', () => {
-    expect(suggestedIds(draft({ name: '', baseAccountId: '', lpTokenId: '' }))).toEqual({
+    expect(suggestedIds(draft({ name: '', baseAccountId: '', lpTokenId: '' }), CATALOG)).toEqual({
       name: 'USDC / EURC',
       baseAccountId: 'usdc-eurc-base',
       quoteAccountId: 'usdc-eurc-quote',
@@ -144,7 +169,7 @@ describe('what the pair suggests', () => {
   });
 
   it('suggests nothing until both instruments are there', () => {
-    expect(suggestedIds(draft({ quoteId: '' }))).toEqual({
+    expect(suggestedIds(draft({ quote: '' }), CATALOG)).toEqual({
       name: '',
       baseAccountId: '',
       quoteAccountId: '',
@@ -153,11 +178,19 @@ describe('what the pair suggests', () => {
   });
 });
 
+/** The draft with its pair resolved, which is the only thing a proposal is built from. */
+function proposed(from: ProposalDraft) {
+  const resolved = proposedPool(from, CATALOG);
+  if (!resolved) throw new Error('The test catalogue does not register this pair');
+  return resolved;
+}
+
 describe('what goes on the wire', () => {
-  it('trims every value, and keeps each amount a string', () => {
-    const body = toProposal(draft({ baseId: '  USDC  ', baseReserve: ' 1000000 ' }));
+  it('carries each instrument whole, and keeps each amount a string', () => {
+    const body = toProposal(proposed(draft({ baseReserve: ' 1000000 ' })));
 
     expect(body.baseInstrumentId).toEqual({ admin: 'issuer::1220', id: 'USDC' });
+    expect(body.quoteInstrumentId).toEqual({ admin: 'issuer-eurc::1220', id: 'EURC' });
     expect(body.baseReserve).toBe('1000000');
     for (const amount of [body.feeBps, body.baseReserve, body.quoteReserve, body.lpTokenSupply]) {
       expect(typeof amount).toBe('string');
@@ -165,7 +198,7 @@ describe('what goes on the wire', () => {
   });
 
   it('carries nothing the venue assigns for itself', () => {
-    expect(Object.keys(toProposal(draft())).sort()).toEqual([
+    expect(Object.keys(toProposal(proposed(draft()))).sort()).toEqual([
       'baseAccountId',
       'baseInstrumentId',
       'baseReserve',

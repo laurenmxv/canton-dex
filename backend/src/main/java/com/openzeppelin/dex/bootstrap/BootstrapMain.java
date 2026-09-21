@@ -37,8 +37,6 @@ public final class BootstrapMain {
               DevelopmentFixtures.env("DEX_IAM_JWK_SET_URI"),
               "00000000-0000-0000-0000-000000000003");
       var dvo = fixtures.actor("dvo");
-      fixtures.actor("base-admin");
-      fixtures.actor("quote-admin");
       var issuer = fixtures.actor("test-token-issuer-cip112");
       var operator =
           fixtures.actor("operator", DevelopmentFixtures.operatorIdentity(), List.of(dvo.party()));

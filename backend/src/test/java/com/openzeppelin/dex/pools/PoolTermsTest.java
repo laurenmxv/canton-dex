@@ -8,7 +8,16 @@ import org.junit.jupiter.api.Test;
 
 class PoolTermsTest {
   private final Options options =
-      new Options("factory", "dvo", "operator", List.of(new Admin("a", "A"), new Admin("b", "B")));
+      new Options(
+          "factory",
+          "dvo",
+          "operator",
+          List.of(
+              new RegisteredInstrument("a", "A", "A", 6),
+              new RegisteredInstrument("a", "USD", "USD", 6),
+              new RegisteredInstrument("b", "B", "B", 8),
+              new RegisteredInstrument("b", "BTC", "BTC", 8),
+              new RegisteredInstrument("b", "USD", "USD", 8)));
 
   private Create input(Instrument a, Instrument b, String fee) {
     return new Create("A / B", a, b, "base", "quote", "LP", fee, "100", "200", "100");
@@ -44,7 +53,7 @@ class PoolTermsTest {
   }
 
   @Test
-  void unknownAdministratorsSameInstrumentsAndAmbiguousIdsAreRejected() {
+  void malformedUnregisteredAndDuplicateInstrumentsAreRejected() {
     for (var pair :
         List.of(
             List.of(new Instrument("outside", "A"), new Instrument("b", "B")),

@@ -44,7 +44,7 @@ Use separate browser profiles: trader with Flask; operator signed in with `opera
 
 A pool lets traders exchange two tokens. Skip this section to try the funded BTC/USDC and ETH/USDC test pools.
 
-1. **Operator:** Open **Pools** → **New pool** and fill in token admins, token IDs, fee, reserves, and LP supply.
+1. **Operator:** Open **Pools** → **New pool**, choose the **Base instrument** and **Quote instrument** from the registered tokens, and fill in fee, reserves, and LP supply. Each choice carries its own admin.
 2. Click **Review** → **Submit proposal**, then wait for pending approval.
 3. Open the proposal's **Details** and copy its **Proposal ID**.
 4. From the repository root, run `./scripts/decide-pool.sh accept PROPOSAL_UUID`, replacing `PROPOSAL_UUID` with the copied ID (approves the proposal as `dvo`).

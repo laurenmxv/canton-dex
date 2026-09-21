@@ -4,6 +4,7 @@ import static com.openzeppelin.dex.pools.PoolModels.*;
 import static org.assertj.core.api.Assertions.*;
 
 import com.openzeppelin.dex.iam.Account;
+import com.openzeppelin.dex.tokens.InstrumentCatalog;
 import java.time.Instant;
 import java.util.*;
 import org.junit.jupiter.api.Test;
@@ -25,7 +26,12 @@ class PoolWorkflowTest {
           "100");
   private final Progress store = new Progress();
   private final Ledger ledger = new Ledger();
-  private final PoolWorkflow workflow = new PoolWorkflow(store, ledger);
+  private final InstrumentCatalog catalog =
+      () ->
+          List.of(
+              new InstrumentCatalog.Instrument("admin", "A", "A", 6),
+              new InstrumentCatalog.Instrument("admin", "B", "B", 6));
+  private final PoolWorkflow workflow = new PoolWorkflow(store, ledger, catalog);
 
   @Test
   void rejectedProposalReleasesPairAndAllowsCorrectedAttempt() {
@@ -57,7 +63,7 @@ class PoolWorkflowTest {
     assertThat(store.claimed).isTrue();
     ledger.evidence =
         List.of(new PoolLedger.Confirmation("proposal-cid", Status.PENDING, "update", null));
-    new PoolWorkflow(store, ledger).reconcile();
+    new PoolWorkflow(store, ledger, catalog).reconcile();
     assertThat(store.get(p.proposalId()).status()).isEqualTo(Status.PENDING);
     assertThat(ledger.submissions).isEqualTo(1);
   }
@@ -128,10 +134,6 @@ class PoolWorkflowTest {
       super(null, null, null);
     }
 
-    public List<Admin> admins() {
-      return List.of(new Admin("admin", "Admin"));
-    }
-
     public String dvo() {
       return "dvo";
     }
@@ -141,7 +143,7 @@ class PoolWorkflowTest {
     }
 
     public Proposal reserve(
-        UUID id, Create input, Terms terms, Options options, UUID account, long offset) {
+        UUID id, Create input, Terms terms, String factoryId, UUID account, long offset) {
       if (claimed) throw new PoolConflict("Pair claimed");
       claimed = true;
       proposal =
@@ -154,7 +156,7 @@ class PoolWorkflowTest {
               Instant.EPOCH,
               "Operator",
               null,
-              options.factoryId(),
+              factoryId,
               null,
               null,
               null);

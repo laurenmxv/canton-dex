@@ -7,6 +7,7 @@ import com.openzeppelin.dex.bootstrap.*;
 import com.openzeppelin.dex.canton.*;
 import com.openzeppelin.dex.canton.generated.pool.*;
 import com.openzeppelin.dex.canton.generated.poolfactory.*;
+import com.openzeppelin.dex.pools.PoolModels.Instrument;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
@@ -19,17 +20,60 @@ import tools.jackson.databind.JsonNode;
 class PoolCreationIT {
   private static final String ROOT = "/v1/admin/pool-proposals";
 
-  private Map<String, Object> input(JsonNode options, String suffix) {
-    var admins = options.path("instrumentAdmins");
+  /** Every instrument this test registered, removed again once it ends. */
+  private final List<Instrument> registered = new ArrayList<>();
+
+  @AfterEach
+  void unregisterInstruments() {
+    try (var fixtures = new DevelopmentFixtures()) {
+      for (Instrument instrument : registered)
+        fixtures
+            .sql()
+            .sql("DELETE FROM token_instruments WHERE admin=? AND instrument_id=?")
+            .params(instrument.admin(), instrument.id())
+            .update();
+    }
+    registered.clear();
+  }
+
+  /**
+   * A proposal over a pair this registers first.
+   *
+   * <p>Only a registered instrument may be proposed, and every pair the venue already carries is
+   * claimed for good, so each run registers its own pair under an administrator that already runs a
+   * token registry. The administrator comes from the registry table rather than from the offered
+   * catalogue, so this never builds on what an earlier run left behind, and the insert carries no
+   * conflict clause, so a pair that already exists fails here instead of being adopted and then
+   * deleted by the cleanup.
+   */
+  private Map<String, Object> input(BackendFixture f, String suffix) {
+    String admin =
+        f.fixtures
+            .sql()
+            .sql("SELECT admin FROM token_registries ORDER BY admin LIMIT 1")
+            .query(String.class)
+            .optional()
+            .orElseThrow(
+                () ->
+                    new IllegalStateException(
+                        "No token registry is configured; run the bootstrap first"));
+    String base = "BASE-" + suffix;
+    String quote = "QUOTE-" + suffix;
+    for (String id : List.of(base, quote)) {
+      f.fixtures
+          .sql()
+          .sql(
+              "INSERT INTO token_instruments(admin,instrument_id,symbol,decimals)"
+                  + " VALUES(?,?,?,6)")
+          .params(admin, id, id)
+          .update();
+      registered.add(new Instrument(admin, id));
+    }
     return new LinkedHashMap<>(
         Map.ofEntries(
             Map.entry("name", "Pool " + suffix),
-            Map.entry(
-                "baseInstrumentId",
-                Map.of("admin", admins.get(0).path("partyId").asString(), "id", "BASE-" + suffix)),
-            Map.entry(
-                "quoteInstrumentId",
-                Map.of("admin", admins.get(1).path("partyId").asString(), "id", "QUOTE-" + suffix)),
+            Map.entry("baseInstrumentId", Map.of("admin", admin, "id", base)),
+            Map.entry("quoteInstrumentId", Map.of("admin", admin, "id", quote)),
             Map.entry("feeBps", "30"),
             Map.entry("baseReserve", "1000"),
             Map.entry("quoteReserve", "2000"),
@@ -60,7 +104,7 @@ class PoolCreationIT {
       String trader = f.token(f.trader("pool-forbidden"));
       f.request("GET", ROOT, trader, null, 403);
       var options = f.request("GET", ROOT + "/options", token, null, 200);
-      var data = input(options, UUID.randomUUID().toString().substring(0, 8));
+      var data = input(f, UUID.randomUUID().toString().substring(0, 8));
       f.request("POST", ROOT, trader, data, 403);
       var created = f.request("POST", ROOT, token, data, 202);
       String id = created.path("proposalId").asString();
@@ -143,8 +187,8 @@ class PoolCreationIT {
     try (var f = new BackendFixture();
         var connection = DevelopmentFixtures.connection(DevelopmentFixtures.operatorIdentity())) {
       String token = f.token("operator");
-      var options = f.request("GET", ROOT + "/options", token, null, 200);
-      var body = input(options, UUID.randomUUID().toString().substring(0, 8));
+      f.request("GET", ROOT + "/options", token, null, 200);
+      var body = input(f, UUID.randomUUID().toString().substring(0, 8));
       var data =
           f.json.readValue(
               f.json.writeValueAsString(body), com.openzeppelin.dex.pools.PoolModels.Create.class);
@@ -197,7 +241,10 @@ class PoolCreationIT {
               return delegate.recover(p);
             }
           };
-      var workflow = new com.openzeppelin.dex.pools.PoolWorkflow(store, ledger);
+      var catalog =
+          new com.openzeppelin.dex.tokens.TokenRegistryStore(
+              org.springframework.jdbc.core.simple.JdbcClient.create(ds));
+      var workflow = new com.openzeppelin.dex.pools.PoolWorkflow(store, ledger, catalog);
       UUID accountId =
           f.fixtures
               .sql()
@@ -239,8 +286,8 @@ class PoolCreationIT {
   void rejectionWithdrawalAndConcurrentPairReservation() throws Exception {
     try (var f = new BackendFixture()) {
       String token = f.token("operator");
-      var options = f.request("GET", ROOT + "/options", token, null, 200);
-      var data = input(options, UUID.randomUUID().toString().substring(0, 8));
+      f.request("GET", ROOT + "/options", token, null, 200);
+      var data = input(f, UUID.randomUUID().toString().substring(0, 8));
       var proposal = f.request("POST", ROOT, token, data, 202);
       String id = proposal.path("proposalId").asString();
       status(f, token, id, "PENDING");
@@ -263,7 +310,7 @@ class PoolCreationIT {
         var b = executor.submit(call);
         assertThat(List.of(a.get(), b.get())).containsExactlyInAnyOrder(202, 409);
       }
-      var bad = new LinkedHashMap<>(input(options, UUID.randomUUID().toString()));
+      var bad = new LinkedHashMap<>(input(f, UUID.randomUUID().toString()));
       bad.put("feeBps", "10000");
       f.request("POST", ROOT, token, bad, 400);
       bad.put("feeBps", "30");

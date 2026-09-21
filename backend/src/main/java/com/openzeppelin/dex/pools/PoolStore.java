@@ -26,14 +26,6 @@ public class PoolStore {
     this.tx = new TransactionTemplate(manager);
   }
 
-  public List<Admin> admins() {
-    return sql.sql(
-            "SELECT party_id,name FROM fixture_parties WHERE name IN ('base-admin','quote-admin')"
-                + " UNION SELECT admin,'token-registry' FROM token_registries ORDER BY name,party_id")
-        .query((r, n) -> new Admin(r.getString(1), r.getString(2)))
-        .list();
-  }
-
   public String dvo() {
     return sql.sql("SELECT party_id FROM fixture_parties WHERE name='dvo'")
         .query(String.class)
@@ -72,7 +64,7 @@ public class PoolStore {
   }
 
   public Proposal reserve(
-      UUID id, Create input, Terms terms, Options options, UUID account, long offset) {
+      UUID id, Create input, Terms terms, String factoryId, UUID account, long offset) {
     try {
       return tx.execute(
           s -> {
@@ -84,7 +76,7 @@ public class PoolStore {
                     id,
                     input.name(),
                     json.writeValueAsString(terms),
-                    options.factoryId(),
+                    factoryId,
                     account,
                     id,
                     offset)

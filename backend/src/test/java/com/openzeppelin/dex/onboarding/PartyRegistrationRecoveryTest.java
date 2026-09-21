@@ -116,7 +116,8 @@ class PartyRegistrationRecoveryTest {
 
     var executor = Executors.newVirtualThreadPerTaskExecutor();
     try {
-      var first = executor.submit(() -> workflow.submitParty(store.id, david, signature, "expired"));
+      var first =
+          executor.submit(() -> workflow.submitParty(store.id, david, signature, "expired"));
       assertThat(allocationStarted.await(5, TimeUnit.SECONDS)).isTrue();
       var poll = executor.submit(() -> workflow.getOwned(store.id, david, "poll-token"));
       assertThat(snapshotRead.await(5, TimeUnit.SECONDS)).isTrue();
@@ -144,7 +145,8 @@ class PartyRegistrationRecoveryTest {
         finishLookup.countDown();
         assertThat(poll.get(5, TimeUnit.SECONDS).party().status()).isEqualTo("CONFLICT");
       }
-      assertThat(workflow.getOwned(store.id, david, "fresh").party().status()).isEqualTo("CONFLICT");
+      assertThat(workflow.getOwned(store.id, david, "fresh").party().status())
+          .isEqualTo("CONFLICT");
       assertThatThrownBy(() -> workflow.submitParty(store.id, david, signature, "fresh"))
           .isInstanceOf(PartyAlreadyExists.class);
       workflow.reconcile();

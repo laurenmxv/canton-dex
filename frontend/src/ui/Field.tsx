@@ -49,13 +49,16 @@ function Shell({
   children,
 }: FieldShell & { controlId: string; children: ReactNode }) {
   return (
-    <div className="flex flex-col gap-1.5">
+    // `min-w-0` lets a field shrink inside a grid or a flex row. Without it a
+    // hint carrying a party identifier holds the column open and the page
+    // scrolls sideways.
+    <div className="flex min-w-0 flex-col gap-1.5">
       <Label className={hideLabel ? 'sr-only' : 'text-xs font-medium'} htmlFor={controlId}>
         {label}
       </Label>
       {children}
       {hint ? (
-        <p className="text-muted-foreground text-[0.75rem]" id={`${controlId}-hint`}>
+        <p className="text-muted-foreground text-[0.75rem] break-words" id={`${controlId}-hint`}>
           {hint}
         </p>
       ) : null}
@@ -149,7 +152,13 @@ export const SelectControl = forwardRef<
         </SelectTrigger>
         <SelectContent>
           {options.map((option) => (
-            <SelectItem key={option.value} value={option.value} disabled={option.disabled}>
+            <SelectItem
+              key={option.value}
+              value={option.value}
+              disabled={option.disabled}
+              // A row naming a party wraps rather than widening the list.
+              className="break-words whitespace-normal"
+            >
               {option.label}
             </SelectItem>
           ))}

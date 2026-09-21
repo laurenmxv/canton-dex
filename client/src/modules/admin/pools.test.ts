@@ -57,12 +57,15 @@ describe('the pool proposal queue', () => {
     expect(calls[0]?.url).toBe(`${BASE}/v1/admin/pool-proposals/a%20b%2Fc`);
   });
 
-  it('asks for the parties a proposal is built against, from the static route', async () => {
+  it('asks for what a proposal is built against, from the static route', async () => {
     const options = {
       factoryId: '00factory0001',
       dvo: 'dvo::1220dvo',
       venueOperator: 'venue-operator::1220beef',
-      instrumentAdmins: [{ partyId: 'issuer-usdc::1220usdc', label: 'USDC issuer' }],
+      instruments: [
+        { admin: 'issuer-usdc::1220usdc', id: 'USDC', symbol: 'USDC', decimals: 6 },
+        { admin: 'issuer-eurc::1220eurc', id: 'EURC', symbol: 'EURC', decimals: 6 },
+      ],
     };
     const { client, calls } = clientWith(options);
 

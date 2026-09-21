@@ -1,14 +1,58 @@
 /*
- * Design tokens transcribed from OpenZeppelin's published product theme
- * (@openzeppelin/ui-styles). Values are reproduced, not imported, so this
- * webapp carries no extra dependency or license obligation.
+ * The venue's own theme, layered over @openzeppelin/ui-styles.
+ *
+ * The OpenZeppelin theme arrives first, from the managed Tailwind file. This
+ * file runs after it and keeps the values this product decided for itself:
+ * a wider radius, a fifteen-pixel body, a two-step elevation scale and the
+ * soft tints a trading screen needs to separate a panel from the card it sits
+ * in. Everything not named here stays as OpenZeppelin ships it.
  *
  * Brand violet oklch(55.43% 0.238 273.87) equals #4F56FA in the OZ brand kit.
- *
- * Surfaces, elevation and radii are the app's own: a trading screen stacks
- * panels inside cards, and a flat sheet of hairlines gives a reader no way to
- * tell which level they are reading.
  */
+
+/*
+ * Every value this file decides lives in `:root` or `.dark` below, as a plain
+ * custom property. That is the contract, and the Keycloak login theme depends
+ * on it: `docker/keycloak/canton-dex` mounts this stylesheet raw, and its
+ * browser never runs Tailwind, so a value declared only inside `@theme` would
+ * not reach the login and registration pages.
+ *
+ * Most of them need no registration. A Tailwind utility already reads the
+ * variable by name — `font-mono` reads `--font-mono`, `text-xs` reads
+ * `--text-xs` — so a later `:root` declaration of that name is what the
+ * utility resolves to.
+ *
+ * The block below is for the two cases that need it: the colours Tailwind
+ * does not carry, and the shadows, which are the one utility that bakes its
+ * own value into the class instead of reading the variable.
+ */
+@theme inline {
+  --color-surface: var(--surface);
+  --color-surface-strong: var(--surface-strong);
+  --color-primary-soft: var(--primary-soft);
+  --color-primary-border: var(--primary-border);
+  --color-info-soft: var(--info-soft);
+
+  /*
+   * The venue's two elevation steps, under utility names of their own.
+   * Registering them as `--shadow-sm` / `--shadow-md` would make each entry
+   * read itself, and those names have to stay plain `:root` values because
+   * the Keycloak theme reads them.
+   */
+  --shadow-card: var(--shadow-sm);
+  --shadow-float: var(--shadow-md);
+}
+
+@theme {
+  /*
+   * Above this the sidebar is a column and only the content scrolls. Below it
+   * the sidebar is a drawer and the page scrolls. `COMPACT_MAX_PX` in
+   * app/useMediaQuery.ts is this value minus one, and the two must agree.
+   *
+   * This one is a build-time value: no stylesheet reads it at runtime.
+   */
+  --breakpoint-wide: 901px;
+}
 
 :root {
   --background: oklch(0.985 0.003 273.87);
@@ -30,11 +74,8 @@
   --muted-foreground: oklch(0.556 0 0);
 
   --destructive: oklch(0.577 0.245 27.325);
-  --destructive-soft: oklch(0.96 0.03 27.325);
   --success: oklch(0.5 0.2 150);
-  --success-soft: oklch(0.96 0.04 150);
   --warning: oklch(0.65 0.15 80);
-  --warning-soft: oklch(0.97 0.05 80);
   --info: oklch(0.5 0.2 200);
   --info-soft: oklch(0.96 0.03 200);
 
@@ -42,6 +83,12 @@
   --input: oklch(0.922 0.003 273.87);
   --ring: var(--primary);
   --sidebar: oklch(0.985 0.003 273.87);
+
+  /*
+   * A trading screen carries more small print than a marketing page, so the
+   * smallest step is a shade larger than the Tailwind default.
+   */
+  --text-xs: 0.8125rem;
 
   --radius: 0.875rem;
   --radius-sm: calc(var(--radius) - 6px);
@@ -54,17 +101,14 @@
   --shadow-sm: 0 1px 2px oklch(0.2 0.03 273.87 / 0.05), 0 1px 3px oklch(0.2 0.03 273.87 / 0.04);
   --shadow-md: 0 6px 24px oklch(0.2 0.03 273.87 / 0.08), 0 2px 6px oklch(0.2 0.03 273.87 / 0.04);
 
+  --font-sans:
+    'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  --font-mono:
+    ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, 'DejaVu Sans Mono', monospace;
+
   --animation-fast: 150ms;
-  --animation-slow: 500ms;
   --ease-out: cubic-bezier(0, 0, 0.2, 1);
-  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
-
-  --z-sticky: 1100;
-
-  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-    'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  --font-mono: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas,
-    'DejaVu Sans Mono', monospace;
 }
 
 .dark {
@@ -86,11 +130,8 @@
   --muted-foreground: oklch(0.708 0 0);
 
   --destructive: oklch(0.704 0.191 22.216);
-  --destructive-soft: oklch(0.28 0.08 27.325);
   --success: oklch(0.72 0.17 150);
-  --success-soft: oklch(0.27 0.07 150);
   --warning: oklch(0.8 0.17 80);
-  --warning-soft: oklch(0.3 0.07 80);
   --info: oklch(0.72 0.14 200);
   --info-soft: oklch(0.27 0.06 200);
 

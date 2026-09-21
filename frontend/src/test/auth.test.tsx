@@ -9,7 +9,6 @@ import type { CantonWallet } from '../wallet/types';
 import { testClient } from './clients';
 import { testWallet } from './wallets';
 import type { Profile } from '../lib/api/types';
-import '../styles/global.css';
 
 const DAVID: Profile = {
   accountId: 'b2e4f6a8-0000-4000-8000-000000000002',

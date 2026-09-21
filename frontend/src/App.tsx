@@ -1,5 +1,5 @@
+import { Button } from '@openzeppelin/ui-components';
 import { useState, type ReactElement } from 'react';
-import './app/shell.css';
 import { useDemoApi, useDemoControls, useSession, type Session } from './app/runtime';
 import { Sidebar } from './app/Sidebar';
 import { Mark } from './app/Mark';
@@ -17,8 +17,8 @@ import { SwapDesk } from './features/swap/SwapDesk';
 import { SwapRequestFlow } from './features/swap/SwapRequestFlow';
 import type { Role } from './lib/api/types';
 import { roleLabels } from './lib/labels';
-import { Button } from './ui/Button';
 import { Card } from './ui/Card';
+import { SelectControl } from './ui/Field';
 import { EmptyState, Loading } from './ui/States';
 
 type View =
@@ -97,22 +97,29 @@ export function App() {
   const view = reachable ? requested : sectionViews[items[0]!.id];
 
   return (
-    <div className="app">
+    <div className="flex min-h-screen flex-col wide:h-screen wide:min-h-0">
       {/* Only the demo needs a standing warning: everything it shows is made
           up. In real mode the screens say what is simulated where it matters,
           on the documents and on the signer. */}
       {realLogin ? null : (
-        <div className="demo-bar">
-          <strong>Demo session</strong>
-          <span className="muted">Simulated identities, signatures and ledger results</span>
+        <div className="border-primary-border text-foreground flex items-center justify-center gap-2 border-b bg-[linear-gradient(90deg,var(--primary-soft),color-mix(in_oklab,var(--info)_12%,var(--primary-soft)))] px-6 py-2 text-center text-[0.75rem]">
+          <strong className="text-primary text-[0.6875rem] tracking-[0.04em] uppercase">
+            Demo session
+          </strong>
+          <span className="text-muted-foreground">
+            Simulated identities, signatures and ledger results
+          </span>
         </div>
       )}
 
-      <a className="skip-link" href="#main">
+      <a
+        className="bg-primary text-primary-foreground absolute top-0 -left-[9999px] z-[1100] rounded-br-md px-3.5 py-2 text-xs focus:left-0"
+        href="#main"
+      >
         Skip to content
       </a>
 
-      <div className="shell">
+      <div className="flex min-h-0 flex-1 flex-col wide:flex-row wide:items-stretch">
         {session.current ? (
           <Sidebar
             items={items}
@@ -138,9 +145,13 @@ export function App() {
           />
         ) : null}
 
-        <div className="content">
+        <div className="flex min-w-0 flex-1 flex-col wide:overflow-y-auto">
           <main
-            className={`main${session.auth?.status === 'anonymous' ? ' main-welcome' : ''}`}
+            className={
+              session.auth?.status === 'anonymous'
+                ? 'grid min-h-[100svh] place-items-center px-5 py-12'
+                : 'mx-auto w-full max-w-6xl flex-1 px-4 pt-6 pb-12 sm:px-7 sm:pt-9 sm:pb-16'
+            }
             id="main"
             tabIndex={-1}
           >
@@ -177,34 +188,30 @@ function SidebarFooter({
   return (
     <>
       {choosable ? (
-        <div className="sidebar-identity">
-          <label className="sr-only" htmlFor="identity-switcher">
-            Demo identity
-          </label>
-          <select
-            id="identity-switcher"
-            className="control identity-select"
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <SelectControl
+            label="Demo identity"
+            hideLabel
+            controlClassName="h-8 text-xs"
             value={session.current?.accountId ?? ''}
-            onChange={(event) => session.switchTo?.(event.target.value)}
-          >
-            {session.identities!.map((identity) => (
-              <option key={identity.accountId} value={identity.accountId}>
-                {identity.displayName} · {roleLabels[identity.role]}
-              </option>
-            ))}
-          </select>
+            onValueChange={(next) => session.switchTo?.(next)}
+            options={session.identities!.map((identity) => ({
+              value: identity.accountId,
+              label: `${identity.displayName} · ${roleLabels[identity.role]}`,
+            }))}
+          />
         </div>
       ) : session.current ? (
-        <div className="sidebar-identity">
-          <span className="sidebar-identity-name">
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <span className="truncate text-xs font-medium">
             {/* The venue's own name for the caller, not a token claim. */}
             {session.current.displayName}
           </span>
-          <span className="muted text-xs">{roleLabels[session.current.role]}</span>
+          <span className="text-muted-foreground text-xs">{roleLabels[session.current.role]}</span>
         </div>
       ) : null}
 
-      <div className="sidebar-actions">
+      <div className="flex flex-wrap items-center gap-1.5">
         {session.logout && signedIn ? (
           <Button size="sm" variant="secondary" onClick={session.logout}>
             Sign out
@@ -215,14 +222,16 @@ function SidebarFooter({
             Reset demo data
           </Button>
         ) : null}
-        <button
+        <Button
           type="button"
-          className="theme-toggle"
+          variant="outline"
+          size="icon"
+          className="text-muted-foreground hover:text-foreground size-8 flex-none"
           onClick={onToggleTheme}
           aria-label={dark ? 'Switch to light theme' : 'Switch to dark theme'}
         >
           {dark ? '☀' : '☾'}
-        </button>
+        </Button>
       </div>
     </>
   );
@@ -254,24 +263,35 @@ function AppBody({
 
   if (auth?.status === 'anonymous') {
     return (
-      <section className="welcome" aria-labelledby="welcome-title">
-        <header className="welcome-brand">
-          <div className="welcome-mark"><Mark /></div>
-          <h1 id="welcome-title">Canton DEX</h1>
+      <section
+        className="w-[min(100%,27rem)] animate-fade-in text-center"
+        aria-labelledby="welcome-title"
+      >
+        <header className="mb-8 grid justify-items-center gap-3">
+          <div className="border-primary-border mb-3 grid size-28 place-items-center rounded-[2rem] border bg-[linear-gradient(145deg,var(--card),var(--primary-soft))] shadow-[0_12px_44px_color-mix(in_oklab,var(--primary)_14%,transparent)] [&_img]:size-20">
+            <Mark />
+          </div>
+          <h1 id="welcome-title" className="text-[clamp(2.25rem,7vw,2.75rem)] tracking-[-0.045em]">
+            Canton DEX
+          </h1>
         </header>
-        <div className="welcome-card">
-          <h2>Sign in to continue</h2>
-          <p>Access your account, explore pools and manage your swaps.</p>
-          <div className="welcome-actions">
-            <Button className="btn-block" onClick={session.login}>
+        <div className="bg-card rounded-3xl border p-[clamp(1.5rem,5vw,2.25rem)] shadow-float">
+          <h2 className="mb-2.5 text-xl">Sign in to continue</h2>
+          <p className="text-muted-foreground text-sm leading-[1.65]">
+            Access your account, explore pools and manage your swaps.
+          </p>
+          <div className="mt-7 grid gap-3">
+            <Button className="w-full" onClick={session.login}>
               Sign in <span aria-hidden="true">→</span>
             </Button>
-            <Button className="btn-block" variant="secondary" onClick={session.register}>
+            <Button className="w-full" variant="secondary" onClick={session.register}>
               Create an account
             </Button>
           </div>
         </div>
-        <p className="welcome-footer">Built on Canton Network</p>
+        <p className="text-muted-foreground mt-7 text-[0.75rem] tracking-[0.025em]">
+          Built on Canton Network
+        </p>
       </section>
     );
   }

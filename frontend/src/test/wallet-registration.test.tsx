@@ -1,5 +1,5 @@
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import userEvent, { type UserEvent } from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { DexProvider, type Session } from '../app/runtime';
 import { TraderOnboarding } from '../features/onboarding/TraderOnboarding';
@@ -13,7 +13,6 @@ import { testClient } from './clients';
 import { testWallet } from './wallets';
 import { renderApp } from './harness';
 import { approveForPool, goTo, openRow, submitApplication } from './flows';
-import '../styles/global.css';
 
 const DAVID: Profile = {
   accountId: 'david',
@@ -89,9 +88,17 @@ function unusedDemoApi(): DemoApi {
   } as unknown as DemoApi;
 }
 
-/** The disclosure that holds what a reader only needs when something is wrong. */
-function details(): HTMLElement {
-  return screen.getByText('Key details').closest('details')!;
+/**
+ * The disclosure that holds what a reader only needs when something is wrong.
+ *
+ * It is a collapsible region, so it has to be opened before anything inside it
+ * is on the screen at all.
+ */
+async function openDetails(user: UserEvent): Promise<HTMLElement> {
+  const region = screen.queryByRole('region', { name: 'Key details' });
+  if (region) return region;
+  await user.click(screen.getByRole('button', { name: 'Key details' }));
+  return screen.findByRole('region', { name: 'Key details' });
 }
 
 function stubWallet(overrides: Partial<CantonWallet> = {}): CantonWallet {
@@ -140,7 +147,8 @@ describe('connecting the wallet', () => {
     await user.click(screen.getByRole('button', { name: 'Connect MetaMask' }));
 
     expect(connect).toHaveBeenCalledTimes(1);
-    expect(await screen.findByText('1220aa')).toBeInTheDocument();
+    // The fingerprint is one of the key details, which the reader opens.
+    expect(within(await openDetails(user)).getByText('1220aa')).toBeInTheDocument();
   });
 
   it('tells the reader when MetaMask is not there, without claiming anything worked', async () => {
@@ -184,7 +192,7 @@ describe('connecting the wallet', () => {
     const user = renderWallet(approved(), stubWallet({ publicKey }));
 
     await screen.findByText('Key details');
-    const index = within(details()).getByLabelText('Canton key index');
+    const index = within(await openDetails(user)).getByLabelText('Canton key index');
     await user.type(index, '123');
 
     expect(index).toHaveValue(123);
@@ -202,7 +210,7 @@ describe('connecting the wallet', () => {
     await user.click(await screen.findByRole('button', { name: 'Sign and register with MetaMask' }));
     expect(await screen.findByText(/prepared with a different key/i)).toBeInTheDocument();
 
-    await user.type(within(details()).getByLabelText('Canton key index'), '1');
+    await user.type(within(await openDetails(user)).getByLabelText('Canton key index'), '1');
 
     expect(screen.queryByText(/prepared with a different key/i)).not.toBeInTheDocument();
   });
@@ -214,17 +222,19 @@ describe('connecting the wallet', () => {
     const user = renderWallet(approved(), stubWallet({ publicKey }));
 
     await user.click(await screen.findByRole('button', { name: 'Connect MetaMask' }));
-    expect(await screen.findByText('12200')).toBeInTheDocument();
 
-    const index = within(details()).getByLabelText('Canton key index');
-    await user.type(index, '123');
+    // The key and the index it came from are both key details.
+    const details = await openDetails(user);
+    expect(within(details).getByText('12200')).toBeInTheDocument();
+
+    await user.type(within(details).getByLabelText('Canton key index'), '123');
 
     // The key on screen belonged to the old index, so it is gone with it.
-    expect(screen.queryByText('12200')).not.toBeInTheDocument();
+    expect(within(details).queryByText('12200')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Connect MetaMask' }));
 
     expect(publicKey).toHaveBeenLastCalledWith(123);
-    expect(await screen.findByText('1220123')).toBeInTheDocument();
+    expect(await within(await openDetails(user)).findByText('1220123')).toBeInTheDocument();
   });
 
   it('repeats a refusal in the wallet’s own words, and claims nothing worked', async () => {
@@ -372,20 +382,20 @@ describe('a development snap', () => {
   const local = { snapId: 'local:http://localhost:4040', version: '1.0.0', local: true };
 
   it('asks for Flask in one line, and keeps the id out of the way', async () => {
-    renderWallet(approved(), stubWallet({ target: local }));
+    const user = renderWallet(approved(), stubWallet({ target: local }));
 
     expect(await screen.findByText('This build requires MetaMask Flask.')).toBeInTheDocument();
     // The id is a detail, not a heading, and nothing explains key derivation.
-    expect(within(details()).getByText('local:http://localhost:4040@1.0.0')).toBeInTheDocument();
+    expect(within(await openDetails(user)).getByText('local:http://localhost:4040@1.0.0')).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/derives|seed|Ethereum/i);
   });
 
   it('says nothing of Flask for the published snap', async () => {
-    renderWallet(approved(), stubWallet());
+    const user = renderWallet(approved(), stubWallet());
 
     expect(await screen.findByRole('button', { name: 'Connect MetaMask' })).toBeInTheDocument();
     expect(screen.queryByText(/Flask/)).not.toBeInTheDocument();
-    expect(within(details()).getByText('npm:@chainsafe/canton-snap@1.0.0')).toBeInTheDocument();
+    expect(within(await openDetails(user)).getByText('npm:@chainsafe/canton-snap@1.0.0')).toBeInTheDocument();
   });
 });
 

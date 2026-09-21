@@ -2,7 +2,8 @@ import { useId } from 'react';
 import type { PoolReserves, Settlement } from '../../lib/api/types';
 import { compareDecimals, formatDecimal, formatExact, parseDecimal } from '../../lib/decimal';
 import { formatAge, formatDateTime, shortContract } from '../../lib/labels';
-import { Badge } from '../../ui/Badge';
+import { Mono } from '../../ui/Mono';
+import { StatusBadge } from '../../ui/Badge';
 import { axisAmount, curveInWindow, plotWindow, type PlotWindow } from './curvePlot';
 import { curveGeometry, reserveDelta, type CurvePoint } from './reserves';
 
@@ -184,32 +185,30 @@ export function ReserveChart({
   const beforeText = `${formatExact(before.baseReserve)} ${baseLabel} · ${formatExact(before.quoteReserve)} ${quoteLabel}`;
 
   return (
-    <figure className="chart">
-      <figcaption className="chart-head">
+    <figure className="m-0 flex flex-col gap-2.5 rounded-md border bg-[color-mix(in_oklab,var(--muted)_40%,var(--card))] px-4 pt-3.5 pb-4">
+      <figcaption className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <span className="chart-title">Reserves across the last confirmed batch</span>
-          <p className="muted text-xs">
-            <span className="mono">{shortContract(settlement.settlementId)}</span> ·{' '}
+          <span className="text-sm font-semibold">Reserves across the last confirmed batch</span>
+          <p className="text-muted-foreground text-xs">
+            <Mono>{shortContract(settlement.settlementId)}</Mono> ·{' '}
             {settlement.swapIds.length} request{settlement.swapIds.length === 1 ? '' : 's'} ·
             confirmed {formatAge(settlement.updatedAt, now)} ago
           </p>
         </div>
-        <Badge tone={current ? 'success' : 'neutral'}>
-          {current ? 'Still the current state' : 'Superseded'}
-        </Badge>
+        <StatusBadge tone={current ? 'success' : 'neutral'} label={current ? 'Still the current state' : 'Superseded'} />
       </figcaption>
 
-      <div className="chart-body">
-        <div className="chart-plot">
-          <span className="chart-axis">↑ {quoteLabel} reserve</span>
-          <div className="chart-frame">
-            <div className="chart-ticks-y tabular">
+      <div className="flex flex-wrap items-center gap-5">
+        <div className="flex max-w-[21rem] min-w-[13rem] flex-[1_1_17rem] flex-col gap-1">
+          <span className="text-muted-foreground text-[0.6875rem]">↑ {quoteLabel} reserve</span>
+          <div className="flex items-stretch gap-1.5">
+            <div className="text-muted-foreground flex flex-col justify-between py-1.5 text-right text-[0.625rem] tabular-nums">
               <span>{tick(window.maxY, geometry.quoteScale, quoteSpan)}</span>
               <span>{tick(window.minY, geometry.quoteScale, quoteSpan)}</span>
             </div>
             <svg
               viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-              className="chart-svg"
+              className="block h-auto w-full min-w-0 flex-1 [&_circle]:[vector-effect:non-scaling-stroke] [&_line]:[vector-effect:non-scaling-stroke] [&_polyline]:[vector-effect:non-scaling-stroke]"
               role="img"
               aria-label={`Constant product curves for the last confirmed batch. Before it, ${beforeText}. After it, ${afterText}.`}
             >
@@ -295,43 +294,43 @@ export function ReserveChart({
               <circle cx={afterAt.x} cy={afterAt.y} r="3.4" fill="var(--primary)" />
             </svg>
           </div>
-          <div className="chart-ticks-x tabular">
+          <div className="text-muted-foreground flex justify-between px-[4.2%] text-[0.625rem] tabular-nums">
             <span>{tick(window.minX, geometry.baseScale, baseSpan)}</span>
             <span>{tick(window.maxX, geometry.baseScale, baseSpan)}</span>
           </div>
-          <span className="chart-axis chart-axis-x">{baseLabel} reserve →</span>
+          <span className="text-muted-foreground self-end text-[0.6875rem]">{baseLabel} reserve →</span>
         </div>
 
-        <dl className="chart-key">
-          <div className="chart-key-row">
+        <dl className="flex min-w-0 flex-[1_1_11rem] flex-col gap-2.5 text-[0.75rem] [&_dd]:wrap-anywhere [&_dt]:text-muted-foreground [&_dt]:flex [&_dt]:items-center [&_dt]:gap-1.5">
+          <div className="flex min-w-0 flex-col gap-0.5">
             <dt>
-              <span className="chart-swatch chart-swatch-after" aria-hidden="true" />
-              After · <span className="mono">{shortContract(after.stateId)}</span>
+              <span className="bg-primary size-2.5 flex-none rounded-full" aria-hidden="true" />
+              After · <Mono>{shortContract(after.stateId)}</Mono>
             </dt>
-            <dd className="tabular">{afterText}</dd>
+            <dd className="tabular-nums">{afterText}</dd>
           </div>
-          <div className="chart-key-row">
+          <div className="flex min-w-0 flex-col gap-0.5">
             <dt>
-              <span className="chart-swatch chart-swatch-before" aria-hidden="true" />
-              Before · <span className="mono">{shortContract(before.stateId)}</span>
+              <span className="size-2.5 flex-none rounded-full shadow-[inset_0_0_0_1.5px_var(--muted-foreground)]" aria-hidden="true" />
+              Before · <Mono>{shortContract(before.stateId)}</Mono>
             </dt>
-            <dd className="tabular">{beforeText}</dd>
+            <dd className="tabular-nums">{beforeText}</dd>
           </div>
           {delta ? (
             <>
-              <div className="chart-key-row">
+              <div className="flex min-w-0 flex-col gap-0.5">
                 <dt>{baseLabel} change</dt>
-                <dd className="tabular">{signed(delta.base)}</dd>
+                <dd className="tabular-nums">{signed(delta.base)}</dd>
               </div>
-              <div className="chart-key-row">
+              <div className="flex min-w-0 flex-col gap-0.5">
                 <dt>{quoteLabel} change</dt>
-                <dd className="tabular">{signed(delta.quote)}</dd>
+                <dd className="tabular-nums">{signed(delta.quote)}</dd>
               </div>
             </>
           ) : null}
-          <div className="chart-key-row">
+          <div className="flex min-w-0 flex-col gap-0.5">
             <dt>Invariant x·y=k</dt>
-            <dd className="tabular">
+            <dd className="tabular-nums">
               {formatDecimal(before.invariant, { maxFractionDigits: 2 })} →{' '}
               {formatDecimal(after.invariant, { maxFractionDigits: 2 })}
               {invariant === null ? '' : ` · ${invariant}`}
@@ -340,14 +339,14 @@ export function ReserveChart({
         </dl>
       </div>
 
-      <div className="chart-notes muted text-xs">
+      <div className="text-muted-foreground flex flex-col gap-1.5 text-xs leading-normal">
         <p>
           Confirmed {formatDateTime(settlement.updatedAt)} ·{' '}
           {settlement.trigger === 'MANUAL' ? 'started by an operator' : 'started by the venue'}
           {settlement.updateId ? (
             <>
               {' '}
-              · ledger update <span className="mono">{shortContract(settlement.updateId)}</span>
+              · ledger update <Mono>{shortContract(settlement.updateId)}</Mono>
             </>
           ) : null}
         </p>

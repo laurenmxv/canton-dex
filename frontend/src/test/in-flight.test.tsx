@@ -7,7 +7,6 @@ import { SwapRequestFlow } from '../features/swap/SwapRequestFlow';
 import type { Profile } from '../lib/api/types';
 import { createFixtureBackend } from '../mocks/client';
 import { fieldValue } from './flows';
-import '../styles/global.css';
 
 const ALICE: Profile = {
   accountId: 'acc-trader-alice',

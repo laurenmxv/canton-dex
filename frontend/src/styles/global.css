@@ -1,213 +1,126 @@
+@import './oz-tailwind.generated.css';
+
 @import './tokens.css';
 
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-  border: 0 solid var(--border);
-}
-
-* {
-  margin: 0;
-  padding: 0;
-}
-
-html {
-  color-scheme: light;
-}
-
-html.dark {
-  color-scheme: dark;
-}
-
-body {
-  min-height: 100vh;
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-sans);
-  font-size: 0.9375rem;
-  line-height: 1.5;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
-}
-
 /*
- * Two soft washes of the brand colour, fixed behind everything. They give the
- * page a top edge and a horizon without putting a colour on any surface.
+ * The base layer OpenZeppelin does not set.
+ *
+ * The managed import already gives the page its background, its text colour,
+ * the Inter stack and a focus ring. What is left here is what this product
+ * decided for itself: a slightly smaller body size, a heading scale with
+ * tighter tracking, and the two washes of brand colour behind the page.
  */
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  background:
-    radial-gradient(
-      70rem 34rem at 15% -8rem,
-      color-mix(in oklab, var(--primary) 12%, transparent),
-      transparent 70%
-    ),
-    radial-gradient(
-      52rem 28rem at 105% 8%,
-      color-mix(in oklab, var(--info) 8%, transparent),
-      transparent 70%
-    );
-}
+@layer base {
+  body {
+    font-size: 0.9375rem;
+    line-height: 1.5;
+    text-rendering: optimizeLegibility;
+  }
 
-#root {
-  position: relative;
-  z-index: 1;
-}
+  /*
+   * Two soft washes of the brand colour, fixed behind everything. They give the
+   * page a top edge and a horizon without putting a colour on any surface.
+   */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background:
+      radial-gradient(
+        70rem 34rem at 15% -8rem,
+        color-mix(in oklab, var(--primary) 12%, transparent),
+        transparent 70%
+      ),
+      radial-gradient(
+        52rem 28rem at 105% 8%,
+        color-mix(in oklab, var(--info) 8%, transparent),
+        transparent 70%
+      );
+  }
 
-button,
-input,
-select,
-textarea {
-  font: inherit;
-  color: inherit;
-  background: none;
-}
+  #root {
+    position: relative;
+    z-index: 1;
+  }
 
-button {
-  cursor: pointer;
-}
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-weight: 600;
+    letter-spacing: -0.014em;
+    line-height: 1.25;
+  }
 
-button:disabled {
-  cursor: not-allowed;
-}
+  h1 {
+    font-size: 1.75rem;
+    letter-spacing: -0.028em;
+  }
 
-ul,
-ol {
-  list-style: none;
-}
+  h2 {
+    font-size: 1.125rem;
+  }
 
-a {
-  color: var(--primary);
-  text-decoration: none;
-}
+  h3 {
+    font-size: 1rem;
+  }
 
-a:hover {
-  text-decoration: underline;
-}
+  a {
+    color: var(--primary);
+    text-decoration: none;
+  }
 
-:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-  border-radius: var(--radius-sm);
-}
+  a:hover {
+    text-decoration: underline;
+  }
 
-h1,
-h2,
-h3,
-h4 {
-  font-weight: 600;
-  letter-spacing: -0.014em;
-  line-height: 1.25;
-}
+  ul,
+  ol {
+    list-style: none;
+  }
 
-h1 {
-  font-size: 1.75rem;
-  letter-spacing: -0.028em;
-}
-
-h2 {
-  font-size: 1.125rem;
-}
-
-h3 {
-  font-size: 1rem;
-}
-
-code,
-.mono {
-  font-family: var(--font-mono);
-  font-size: 0.8125rem;
-}
-
-/* Financial figures must align across rows. */
-.tabular {
-  font-variant-numeric: tabular-nums;
-}
-
-.muted {
-  color: var(--muted-foreground);
-}
-
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border-width: 0;
-}
-
-.stack {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.stack-sm {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.stack-lg {
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-}
-
-.row {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.row-between {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-}
-
-.grid-2 {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1rem;
-}
-
-.grid-3 {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1rem;
-}
-
-@media (max-width: 760px) {
-  .grid-2,
-  .grid-3 {
-    grid-template-columns: minmax(0, 1fr);
+  button:disabled {
+    cursor: not-allowed;
   }
 }
 
-.page-title {
-  letter-spacing: -0.02em;
+@layer utilities {
+  /*
+   * A page arrives as a short cascade rather than one block, so the eye lands
+   * on the first card while the rest settles. The reduced-motion rule
+   * resolves it at once.
+   */
+  .fade-in > * {
+    animation: venue-fade-in 420ms var(--ease-out) backwards;
+  }
+
+  .fade-in > *:nth-child(2) {
+    animation-delay: 55ms;
+  }
+
+  .fade-in > *:nth-child(3) {
+    animation-delay: 110ms;
+  }
+
+  .fade-in > *:nth-child(n + 4) {
+    animation-delay: 165ms;
+  }
+
+  /* The drawer arrives from the edge it is anchored to. */
+  .animate-drawer-in {
+    animation: venue-drawer-in var(--animation-fast) var(--ease-out);
+  }
 }
 
-.text-sm {
-  font-size: 0.875rem;
+@keyframes venue-drawer-in {
+  from {
+    transform: translateX(-100%);
+  }
 }
 
-.text-xs {
-  font-size: 0.8125rem;
-}
-
-@keyframes oz-fade-in {
+@keyframes venue-fade-in {
   from {
     opacity: 0;
     transform: translateY(8px);
@@ -216,38 +129,6 @@ code,
     opacity: 1;
     transform: none;
   }
-}
-
-@keyframes oz-pulse {
-  50% {
-    opacity: 0.45;
-  }
-}
-
-@keyframes oz-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/*
- * A page arrives as a short cascade rather than one block, so the eye lands on
- * the first card while the rest settles. Reduced motion resolves it at once.
- */
-.fade-in > * {
-  animation: oz-fade-in 420ms var(--ease-out) backwards;
-}
-
-.fade-in > *:nth-child(2) {
-  animation-delay: 55ms;
-}
-
-.fade-in > *:nth-child(3) {
-  animation-delay: 110ms;
-}
-
-.fade-in > *:nth-child(n + 4) {
-  animation-delay: 165ms;
 }
 
 @media (prefers-reduced-motion: reduce) {

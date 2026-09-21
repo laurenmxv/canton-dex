@@ -1,5 +1,5 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import userEvent, { type UserEvent } from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { App } from '../App';
 import { DexProvider, type Session } from '../app/runtime';
@@ -10,7 +10,6 @@ import { testClient } from './clients';
 import { testWallet } from './wallets';
 import { TraderOnboarding } from '../features/onboarding/TraderOnboarding';
 import type { LedgerStep, Onboarding, Profile } from '../lib/api/types';
-import '../styles/global.css';
 
 const DAVID: Profile = {
   accountId: 'b2e4f6a8-0000-4000-8000-000000000002',
@@ -89,11 +88,25 @@ function renderDashboard(mine: () => Promise<Onboarding | null>) {
       <App />
     </DexProvider>,
   );
+  return userEvent.setup();
+}
+
+/**
+ * The proof sits behind a disclosure, so a reader opens it before any of it is
+ * on the screen. Returns the card it lives in.
+ */
+async function openProof(user: UserEvent): Promise<HTMLElement> {
+  const receipt = (
+    await screen.findByRole('heading', { name: 'KYC attestation' })
+  ).closest<HTMLElement>('[data-slot="card"]')!;
+  await user.click(within(receipt).getByRole('button', { name: /Proof and details/ }));
+  await within(receipt).findByRole('region');
+  return receipt;
 }
 
 describe('the attestation receipt', () => {
   it('carries the whole contract identifier, its issuer, the party and the pools', async () => {
-    renderDashboard(() =>
+    const user = renderDashboard(() =>
       Promise.resolve(
         onboardingWith(
           [CONFIRMED_ATTESTATION, step({ key: 'access:pool-usdc-eurc', status: 'SUBMITTING' })],
@@ -102,7 +115,7 @@ describe('the attestation receipt', () => {
       ),
     );
 
-    const receipt = (await screen.findByText('KYC attestation')).closest('section')!;
+    const receipt = await openProof(user);
     // The full identifier, not a shortened one a reader could not use.
     expect(within(receipt).getByText(CONTRACT_ID)).toBeInTheDocument();
     expect(within(receipt).getByText('venue-operator::1220beef')).toBeInTheDocument();
@@ -131,7 +144,7 @@ describe('the attestation receipt', () => {
       Promise.resolve(onboardingWith([CONFIRMED_ATTESTATION], 'LEDGER_PENDING')),
     );
 
-    const receipt = (await screen.findByText('KYC attestation')).closest('section')!;
+    const receipt = (await screen.findByText('KYC attestation')).closest<HTMLElement>('[data-slot="card"]')!;
     expect(receipt.textContent).not.toMatch(/simulated|demo/i);
   });
 
@@ -185,7 +198,7 @@ describe('what the dashboard treats as tradable', () => {
       ),
     );
 
-    const pools = (await screen.findByText('Pools open to you')).closest('section')!;
+    const pools = (await screen.findByText('Pools open to you')).closest<HTMLElement>('[data-slot="card"]')!;
     expect(within(pools).getByText('No pools yet')).toBeInTheDocument();
     expect(within(pools).queryByText('USDC / EURC')).not.toBeInTheDocument();
   });
@@ -203,7 +216,7 @@ describe('what the dashboard treats as tradable', () => {
       ),
     );
 
-    const pools = (await screen.findByText('Pools open to you')).closest('section')!;
+    const pools = (await screen.findByText('Pools open to you')).closest<HTMLElement>('[data-slot="card"]')!;
     expect(within(pools).getByText('USDC / EURC')).toBeInTheDocument();
   });
 });
@@ -246,7 +259,6 @@ describe('work already in flight', () => {
     await new Promise((resolve) => setTimeout(resolve, 3_500));
 
     expect(mine.mock.calls.length).toBe(before);
-    vi.restoreAllMocks();
   });
 });
 
@@ -281,16 +293,14 @@ describe('the onboarding screen a trader waits on', () => {
   });
 
   it('carries the receipt on the page the reader is already on', async () => {
-    renderOnboarding(
+    const user = renderOnboarding(
       onboardingWith(
         [CONFIRMED_ATTESTATION, step({ key: 'access:pool-usdc-eurc', status: 'SUBMITTING' })],
         'LEDGER_SUBMITTING',
       ),
     );
 
-    const receipt = (
-      await screen.findByRole('heading', { name: 'KYC attestation' })
-    ).closest('section')!;
+    const receipt = await openProof(user);
     expect(within(receipt).getByText(CONTRACT_ID)).toBeInTheDocument();
     // KYC evidence is not the same as access, and the card says which is which.
     expect(within(receipt).getByText('USDC / EURC')).toBeInTheDocument();
@@ -303,9 +313,11 @@ describe('the onboarding screen a trader waits on', () => {
     renderOnboarding(onboardingWith([CONFIRMED_ATTESTATION], 'COMPLETED'));
 
     await screen.findByText('Completed');
-    const titles = Array.from(document.querySelectorAll('.step-title')).map(
-      (node) => node.firstChild?.textContent,
-    );
+    const titles = Array.from(document.querySelectorAll('[data-slot="step-title"]')).map((node) => {
+      const title = node.firstChild;
+      if (!title) throw new Error('A step has no title node; the step markup changed.');
+      return title.textContent;
+    });
     expect(titles).toEqual([
       'Application submitted',
       'Compliance review',
@@ -384,11 +396,9 @@ describe('the onboarding screen a trader waits on', () => {
 
   it('never calls a demo identifier real', async () => {
     const demo = { pools: {}, swaps: {} } as unknown as DemoApi;
-    renderOnboarding(onboardingWith([CONFIRMED_ATTESTATION], 'COMPLETED'), demo);
+    const user = renderOnboarding(onboardingWith([CONFIRMED_ATTESTATION], 'COMPLETED'), demo);
 
-    const receipt = (
-      await screen.findByRole('heading', { name: 'KYC attestation' })
-    ).closest('section')!;
+    const receipt = await openProof(user);
     expect(within(receipt).getByText('Simulated ledger')).toBeInTheDocument();
   });
 });

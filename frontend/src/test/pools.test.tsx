@@ -15,7 +15,7 @@ import type {
 } from '../lib/api/types';
 import { DomainError } from '../lib/api/types';
 import { testClient } from './clients';
-import '../styles/global.css';
+import { pick } from './listbox';
 
 const OPERATOR: Profile = {
   accountId: 'acc-operator',
@@ -107,8 +107,15 @@ async function openPools(user: ReturnType<typeof userEvent.setup>) {
 /** One proposal's own row, so a status never matches a filter chip or a count. */
 async function row(name = 'USDC / EURC'): Promise<HTMLElement> {
   const found = await screen.findAllByText(name);
-  const inRow = found.find((element) => element.closest('.proposal-row'));
-  return inRow!.closest<HTMLElement>('.proposal-row')!;
+  const inRow = found
+    .map((element) => element.closest<HTMLElement>('[data-slot="proposal-row"]'))
+    .find((node): node is HTMLElement => node !== null);
+  if (!inRow) {
+    throw new Error(
+      `Found ${found.length} element(s) reading "${name}", none inside a proposal row.`,
+    );
+  }
+  return inRow;
 }
 
 describe('the venue pools console', () => {
@@ -254,7 +261,7 @@ describe('the venue pools console', () => {
 
     // The proposal it already read is still there, and no count claims zero.
     expect(within(await row()).getByText('Awaiting dvo')).toBeInTheDocument();
-    expect(screen.getByText('In progress').closest('.stat')!.textContent).toContain('1');
+    expect(screen.getByText('In progress').closest<HTMLElement>('[data-slot="stat"]')!.textContent).toContain('1');
   });
 
   it('filters and searches what is already loaded', async () => {
@@ -292,7 +299,7 @@ describe('the venue pools console', () => {
     });
 
     await openPools(user);
-    const proposals = (await screen.findByText('Proposals')).closest<HTMLElement>('section')!;
+    const proposals = (await screen.findByText('Proposals')).closest<HTMLElement>('[data-slot="card"]')!;
     const named = (scope: HTMLElement, name: string) => within(scope).queryAllByText(name).length;
 
     expect(named(proposals, 'USDC / EURC')).toBeGreaterThan(0);
@@ -303,7 +310,7 @@ describe('the venue pools console', () => {
     expect(named(proposals, 'USDC / EURC')).toBe(0);
 
     await user.type(screen.getByLabelText('Search pools'), 'tbill');
-    const pools = screen.getByText('Live pools').closest<HTMLElement>('section')!;
+    const pools = screen.getByText('Live pools').closest<HTMLElement>('[data-slot="card"]')!;
     expect(within(pools).getByRole('heading', { name: 'TBILL / USDC' })).toBeInTheDocument();
     expect(within(pools).queryByRole('heading', { name: 'USDC / EURC' })).not.toBeInTheDocument();
   });
@@ -318,11 +325,13 @@ describe('the venue pools console', () => {
     });
 
     await openPools(user);
-    const details = within(await row()).getByText('Details').closest<HTMLElement>('details')!;
+    // The identifiers live behind a disclosure, so the operator opens it.
+    await user.click(within(await row()).getByRole('button', { name: 'Details' }));
+    const details = await screen.findByRole('region', { name: 'Details' });
 
-    const identifier = within(details).getByText('Proposal ID').closest('.copy-field')!;
+    const identifier = within(details).getByText('Proposal ID').closest<HTMLElement>('[data-slot="copy-field"]')!;
     expect(within(identifier as HTMLElement).getByText('prop-0001')).toBeInTheDocument();
-    const contract = within(details).getByText('Proposal contract').closest('.copy-field')!;
+    const contract = within(details).getByText('Proposal contract').closest<HTMLElement>('[data-slot="copy-field"]')!;
     expect(within(contract as HTMLElement).getByText('00proposal0001')).toBeInTheDocument();
   });
 
@@ -341,12 +350,12 @@ describe('the venue pools console', () => {
     });
 
     await openPools(user);
-    const proposals = (await screen.findByText('Proposals')).closest<HTMLElement>('section')!;
+    const proposals = (await screen.findByText('Proposals')).closest<HTMLElement>('[data-slot="card"]')!;
 
     expect(within(proposals).getAllByText(/Awaiting dvo|Failed|Rejected by dvo/)).toHaveLength(1);
     expect(within(proposals).getByText('Awaiting dvo')).toBeInTheDocument();
     // The count still says one needs attention, whichever filter is on.
-    const stats = screen.getByText('Needs attention').closest('.stat')!;
+    const stats = screen.getByText('Needs attention').closest<HTMLElement>('[data-slot="stat"]')!;
     expect(stats.textContent).toContain('1');
 
     await user.click(within(proposals).getByRole('button', { name: 'All' }));
@@ -389,7 +398,8 @@ describe('the venue pools console', () => {
     const card = (await screen.findByRole('heading', { name: 'USDC / EURC' })).closest('article')!;
 
     expect(within(card).getByText('30 bps')).toBeInTheDocument();
-    const details = within(card).getByText('Contracts').closest('details')!;
+    await user.click(within(card).getByRole('button', { name: 'Contracts' }));
+    const details = await screen.findByRole('region', { name: 'Contracts' });
     expect(within(details).getByText('00pool0001')).toBeInTheDocument();
     expect(within(details).getByText('00config0001')).toBeInTheDocument();
     expect(within(details).getByText('00state0001')).toBeInTheDocument();
@@ -401,9 +411,9 @@ describe('the venue pools console', () => {
 
 describe('proposing a pool', () => {
   async function fillPair(user: ReturnType<typeof userEvent.setup>) {
-    await user.selectOptions(screen.getByLabelText('Base admin'), 'issuer-usdc::1220usdc');
+    await pick(user, 'Base admin', 'USDC issuer');
     await user.type(screen.getByLabelText('Base instrument'), 'USDC');
-    await user.selectOptions(screen.getByLabelText('Quote admin'), 'issuer-eurc::1220eurc');
+    await pick(user, 'Quote admin', 'EURC issuer');
     await user.type(screen.getByLabelText('Quote instrument'), 'EURC');
     await user.type(screen.getByLabelText('Base reserve'), '1000000');
     await user.type(screen.getByLabelText('Quote reserve'), '920000');
@@ -418,9 +428,11 @@ describe('proposing a pool', () => {
     await user.click(screen.getByRole('button', { name: 'New pool' }));
     await fillPair(user);
 
-    // The identifiers the pair implies are filled in, and stay editable.
+    // The identifiers the pair implies are filled in, and stay editable. The
+    // ones the operator rarely touches wait behind the advanced disclosure.
     expect(screen.getByLabelText('Pool name')).toHaveValue('USDC / EURC');
-    expect(screen.getByLabelText('LP token')).toHaveValue('LP-USDC-EURC');
+    await user.click(screen.getByRole('button', { name: 'Advanced' }));
+    expect(await screen.findByLabelText('LP token')).toHaveValue('LP-USDC-EURC');
 
     await user.click(screen.getByRole('button', { name: 'Review' }));
     await user.click(screen.getByRole('button', { name: 'Submit proposal' }));
@@ -511,7 +523,8 @@ describe('proposing a pool', () => {
     await user.click(screen.getByRole('button', { name: 'New pool' }));
 
     expect(await screen.findByText('Could not load the instrument admins')).toBeInTheDocument();
-    expect(screen.getByLabelText('Base admin')).toHaveValue('');
+    // With no admins to offer, the listbox stands on its placeholder.
+    expect(screen.getByLabelText('Base admin')).toHaveTextContent('Select an admin');
   });
 });
 

@@ -28,25 +28,56 @@ function keyOf(onboarding: Onboarding, column: QueueColumn): string {
   }
 }
 
+/** Rebuilt on every poll otherwise, and it is stateless. */
+const COLLATOR = new Intl.Collator('en', { sensitivity: 'base', numeric: true });
+
+/**
+ * One instant as two comparable parts: the whole seconds, then the fraction.
+ *
+ * The venue serialises `createdAt` from a `java.time.Instant`, which carries
+ * nanoseconds and which Jackson writes without a fraction when it is zero. So
+ * one list holds `…:00Z` beside `…:00.500Z` beside `…:00.500001Z`. `Date.parse`
+ * stops at the millisecond, and comparing the text collates `.5` above `.25`,
+ * so neither answers alone.
+ */
+function instantParts(text: string): [number, string] {
+  const fraction = /\.(\d+)/.exec(text)?.[1] ?? '';
+  return [Date.parse(text.replace(/\.\d+/, '')), fraction.padEnd(9, '0')];
+}
+
+/** Older first. Falls back to the text when the venue sent something unparsable. */
+function compareInstants(left: string, right: string): number {
+  const [leftSeconds, leftFraction] = instantParts(left);
+  const [rightSeconds, rightFraction] = instantParts(right);
+  if (Number.isNaN(leftSeconds) || Number.isNaN(rightSeconds)) {
+    return COLLATOR.compare(left, right);
+  }
+  if (leftSeconds !== rightSeconds) return Math.sign(leftSeconds - rightSeconds);
+  return leftFraction < rightFraction ? -1 : leftFraction > rightFraction ? 1 : 0;
+}
+
 /**
  * The queue in the order the operator asked for.
  *
- * Text is compared the way a reader reads it, so case and accents do not split
- * names that belong together. A tie falls back to the newest first, and then to
- * the identifier, so the order never shifts between two identical readings.
+ * A date is compared as an instant and text the way a reader reads it, so case
+ * and accents do not split names that belong together. A tie falls back to the
+ * newest first, and then to the identifier, so the order never shifts between
+ * two identical readings.
  */
 export function orderQueue(requests: readonly Onboarding[], order: QueueOrder): Onboarding[] {
-  const compare = new Intl.Collator('en', { sensitivity: 'base', numeric: true }).compare;
   const sign = order.direction === 'ascending' ? 1 : -1;
 
   return [...requests].sort((left, right) => {
-    const ranked = compare(keyOf(left, order.column), keyOf(right, order.column));
+    const ranked =
+      order.column === 'submitted'
+        ? compareInstants(left.createdAt, right.createdAt)
+        : COLLATOR.compare(keyOf(left, order.column), keyOf(right, order.column));
     if (ranked !== 0) return ranked * sign;
     if (order.column !== 'submitted') {
-      const byDate = compare(left.createdAt, right.createdAt);
+      const byDate = compareInstants(left.createdAt, right.createdAt);
       if (byDate !== 0) return -byDate;
     }
-    return compare(left.id, right.id);
+    return COLLATOR.compare(left.id, right.id);
   });
 }
 

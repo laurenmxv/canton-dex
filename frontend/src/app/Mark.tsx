@@ -5,5 +5,5 @@ import venueMark from '../assets/venue-mark.svg';
  * (#475AFF, #2E99FF, #09C2FF), matching their logo's tonal ramp.
  */
 export function Mark() {
-  return <img className="mark" src={venueMark} alt="Canton DEX" />;
+  return <img className="size-6 flex-none" src={venueMark} alt="Canton DEX" />;
 }

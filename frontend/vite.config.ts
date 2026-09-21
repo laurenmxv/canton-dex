@@ -1,5 +1,6 @@
 /// <reference types="vitest/config" />
 import { fileURLToPath } from 'node:url';
+import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 import { cantonSnapServer } from './dev/cantonSnap';
@@ -19,7 +20,7 @@ const apiProxy = {
 };
 
 export default defineConfig({
-  plugins: [react(), cantonSnapServer()],
+  plugins: [tailwindcss(), react(), cantonSnapServer()],
   // Treat the SDK as source so edits participate in Vite's normal HMR graph.
   resolve: {
     alias: {
@@ -41,9 +42,18 @@ export default defineConfig({
     environment: 'jsdom',
     // An origin is what gives jsdom a working localStorage.
     environmentOptions: { jsdom: { url: 'http://localhost:5180/' } },
-    globals: true,
     setupFiles: ['./src/test/setup.ts'],
-    css: true,
+    /*
+     * A spy that outlives its test changes the meaning of every test after it,
+     * so one real failure becomes a wall of unrelated ones.
+     */
+    restoreMocks: true,
+    /**
+     * No test reads a computed style, and jsdom lays nothing out, so the only
+     * thing compiling the stylesheet buys is time: Tailwind would rebuild for
+     * every test file that imports it.
+     */
+    css: false,
     // Ledger confirmations arrive over several polls, so flows need headroom.
     testTimeout: 20_000,
   },

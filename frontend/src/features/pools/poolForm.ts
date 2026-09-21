@@ -1,3 +1,5 @@
+import type { FieldErrors, Resolver } from 'react-hook-form';
+import { BPS_SCALE } from '../../lib/api/types';
 import type { CreatePoolProposal, PoolCreationOptions } from '../../lib/api/types';
 import { isLedgerDecimal } from '../../lib/decimal';
 
@@ -25,8 +27,6 @@ export interface ProposalDraft {
 
 export type DraftField = keyof ProposalDraft;
 
-/** Basis points are exclusive of this, which is a whole fee. */
-const FEE_LIMIT = 10_000;
 /** The venue's own bounds on the text a proposal carries. */
 const MAX_IDENTIFIER = 128;
 const MAX_PARTY = 255;
@@ -106,7 +106,8 @@ function feeError(raw: string): string | undefined {
   if (!isLedgerDecimal(value)) return 'Fee must be a decimal with up to 10 fractional digits';
   // The integer part is at most five digits here, so this comparison is exact.
   const whole = Number(value.split('.')[0]);
-  if (whole >= FEE_LIMIT) return 'Fee must be below 10000 bps';
+  // Basis points are exclusive of the scale, which is a whole fee.
+  if (whole >= BPS_SCALE) return `Fee must be below ${BPS_SCALE} bps`;
   return undefined;
 }
 
@@ -142,6 +143,23 @@ export function draftErrors(draft: ProposalDraft): Partial<Record<DraftField, st
   }
   return errors;
 }
+
+/**
+ * The same rules, as React Hook Form reads them.
+ *
+ * The rules stay in `draftErrors`. They are the venue's own bounds, they are
+ * covered field by field, and a second copy written against a schema library
+ * would be free to drift from what the backend refuses. This only translates
+ * the shape.
+ */
+export const proposalResolver: Resolver<ProposalDraft> = (values) => {
+  const found = draftErrors(values);
+  const errors: FieldErrors<ProposalDraft> = {};
+  for (const field of Object.keys(found) as DraftField[]) {
+    errors[field] = { type: 'venue', message: found[field] };
+  }
+  return Object.keys(errors).length === 0 ? { values, errors: {} } : { values: {}, errors };
+};
 
 /** The request body, trimmed, with nothing the venue assigns for itself. */
 export function toProposal(draft: ProposalDraft): CreatePoolProposal {

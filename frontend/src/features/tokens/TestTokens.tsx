@@ -1,3 +1,11 @@
+import {
+  Banner,
+  CardContent,
+  DataTable,
+  type DataTableColumn,
+  LoadingButton as Button,
+} from '@openzeppelin/ui-components';
+import { NUMERIC } from '../../ui/table';
 import { useEffect, useRef, useState } from 'react';
 import { useDexClient } from '../../app/runtime';
 import { useAction, useAsync, useChange, type AsyncResult } from '../../app/useAsync';
@@ -6,11 +14,11 @@ import {
   type FaucetPreparation,
   type FaucetResult,
   type FaucetStatus,
+  type TokenBalance,
   type TokenBalances,
 } from '../../lib/api/types';
 import { formatExact } from '../../lib/decimal';
-import { Badge, Callout } from '../../ui/Badge';
-import { Button } from '../../ui/Button';
+import { StatusBadge } from '../../ui/Badge';
 import { Card, CardHeader } from '../../ui/Card';
 import { AsyncSection, EmptyState, RefreshFailure } from '../../ui/States';
 import { walletMessage, type WalletSigner } from '../wallet/signing';
@@ -30,6 +38,26 @@ function granted(preparation: FaucetPreparation): string {
  * once per account and is signed by the trader's own wallet, like any other
  * transaction the venue prepares.
  */
+/**
+ * A balance at its instrument's own precision: a whole satoshi shown to six
+ * places would read as nothing.
+ */
+const BALANCE_COLUMNS: DataTableColumn<TokenBalance>[] = [
+  { id: 'token', header: 'Token', cell: (balance) => balance.symbol },
+  {
+    ...NUMERIC,
+    id: 'available',
+    header: 'Available',
+    cell: (balance) => formatExact(balance.available, balance.decimals),
+  },
+  {
+    ...NUMERIC,
+    id: 'locked',
+    header: 'Locked',
+    cell: (balance) => formatExact(balance.locked, balance.decimals),
+  },
+];
+
 export function TestTokens({
   balances,
   signer,
@@ -104,9 +132,7 @@ export function TestTokens({
         title="Test tokens"
         actions={
           offered && status ? (
-            <Badge tone={status === 'COMPLETED' ? 'success' : 'neutral'}>
-              {status === 'COMPLETED' ? 'Claimed' : 'One claim per account'}
-            </Badge>
+            <StatusBadge tone={status === 'COMPLETED' ? 'success' : 'neutral'} label={status === 'COMPLETED' ? 'Claimed' : 'One claim per account'} />
           ) : null
         }
       />
@@ -118,44 +144,29 @@ export function TestTokens({
           held.balances.length === 0 ? (
             <EmptyState title="No balances yet" />
           ) : (
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Token</th>
-                  <th className="table-num">Available</th>
-                  <th className="table-num">Locked</th>
-                </tr>
-              </thead>
-              <tbody>
-                {held.balances.map((balance) => (
-                  <tr key={`${balance.instrument.admin}/${balance.instrument.id}`}>
-                    <td>{balance.symbol}</td>
-                    {/* At the instrument's own precision: a whole satoshi
-                        shown to six places would read as nothing. */}
-                    <td className="table-num tabular">
-                      {formatExact(balance.available, balance.decimals)}
-                    </td>
-                    <td className="table-num tabular">
-                      {formatExact(balance.locked, balance.decimals)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <DataTable
+              caption="Test token balances"
+              columns={BALANCE_COLUMNS}
+              rows={held.balances}
+              getRowKey={(balance) =>
+                `${balance.instrument.admin}/${balance.instrument.id}`
+              }
+              className="border-0"
+            />
           )
         }
       </AsyncSection>
 
       {offered && (notices || hasClaimAction(status, prepared !== undefined, unresolved)) ? (
-        <div className="card-pad stack-sm">
+        <CardContent className="p-5 flex flex-col gap-2">
           {/* A claim already sent explains itself below; the transport failure
               that hid its outcome is not something to act on separately. */}
           {failure && !unresolved ? (
-            <Callout tone="danger">{walletMessage(failure)}</Callout>
+            <Banner variant="error" size="compact" dismissible={false}>{walletMessage(failure)}</Banner>
           ) : null}
 
           {unresolved ? (
-            <Callout tone="warning">Claim sent, outcome unknown</Callout>
+            <Banner variant="warning" size="compact" dismissible={false}>Claim sent, outcome unknown</Banner>
           ) : null}
 
           {faucet.error ? (
@@ -163,9 +174,9 @@ export function TestTokens({
           ) : null}
 
           {faucet.data?.error ? (
-            <Callout tone="warning" title="The venue reported a problem with your claim">
+            <Banner variant="warning" title="The venue reported a problem with your claim" size="compact" dismissible={false}>
               {faucet.data.error}
-            </Callout>
+            </Banner>
           ) : null}
 
           <Claim
@@ -188,7 +199,7 @@ export function TestTokens({
             }}
             onCancel={() => setPrepared(undefined)}
           />
-        </div>
+        </CardContent>
       ) : null}
     </Card>
   );
@@ -235,7 +246,7 @@ function Claim({
   // that was there before the reply went missing, so it decides nothing.
   if (unresolved) {
     return (
-      <div className="row">
+      <div className="flex items-center gap-3">
         <Button size="sm" variant="secondary" onClick={onCheck}>
           Check again
         </Button>
@@ -245,7 +256,7 @@ function Claim({
 
   if (status === 'SUBMITTING' || status === 'UNRESOLVED') {
     return (
-      <p className="muted text-xs">
+      <p className="text-muted-foreground text-xs">
         {status === 'SUBMITTING' ? 'Submitting' : 'Confirming'}
       </p>
     );
@@ -255,7 +266,7 @@ function Claim({
     return (
       <>
         <p className="text-xs">Grants {granted(prepared)}</p>
-        <div className="row">
+        <div className="flex items-center gap-3">
           <Button size="sm" loading={signing} onClick={() => onSign(prepared)}>
             Sign in MetaMask
           </Button>
@@ -268,7 +279,7 @@ function Claim({
   }
 
   return (
-    <div className="row">
+    <div className="flex items-center gap-3">
       <Button size="sm" variant="secondary" loading={preparing} onClick={onPrepare}>
         Get test tokens
       </Button>

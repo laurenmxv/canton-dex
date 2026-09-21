@@ -14,11 +14,11 @@ export function DocumentList({ application }: { application: OnboardingApplicati
 
   if (documents.length > 0) {
     return (
-      <ul className="stack-sm">
+      <ul className="flex flex-col gap-2">
         {documents.map((document) => (
           <li key={document.id} className="text-xs">
             {document.fileName}{' '}
-            <span className="muted">
+            <span className="text-muted-foreground">
               {documentCategoryLabels[document.category]} · {formatSize(document.sizeBytes)}
             </span>
           </li>
@@ -27,9 +27,9 @@ export function DocumentList({ application }: { application: OnboardingApplicati
     );
   }
   return (
-    <ul className="stack-sm">
+    <ul className="flex flex-col gap-2">
       {references.map((reference) => (
-        <li key={reference} className="mono muted text-xs">
+        <li key={reference} className="font-mono text-xs text-muted-foreground">
           {reference}
         </li>
       ))}

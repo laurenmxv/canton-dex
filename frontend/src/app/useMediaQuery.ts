@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 
-/** Below this the sidebar becomes a drawer. `shell.css` matches on it too. */
+/**
+ * Below this the sidebar becomes a drawer. The `--breakpoint-wide` token in
+ * styles/tokens.css is this value plus one, and the two must agree.
+ */
 export const COMPACT_MAX_PX = 900;
 
 const COMPACT_QUERY = `(max-width: ${COMPACT_MAX_PX}px)`;

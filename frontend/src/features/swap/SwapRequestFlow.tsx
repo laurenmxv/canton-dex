@@ -1,9 +1,17 @@
-import { useRef, useState } from 'react';
+import {
+  Banner,
+  CardContent,
+  DataTable,
+  LoadingButton as Button,
+} from '@openzeppelin/ui-components';
+import { NUMERIC } from '../../ui/table';
+import { useId, useRef, useState } from 'react';
 import { requireDemoApi } from '../../app/runtime';
 import { useAction, useAsync, type ActionResult } from '../../app/useAsync';
 import { useNow } from '../../app/useNow';
 import type { Pool, SwapDirection, SwapPreparation, SwapQuote, SwapRequest } from '../../lib/api/types';
-import { errorCode, MAX_SLIPPAGE_BPS, parseAmount, toDecimal } from '../../lib/api/types';
+import { errorCode, MAX_SLIPPAGE_BPS, parseAmount } from '../../lib/api/types';
+import { isLedgerDecimal, isZero, parseDecimal } from '../../lib/decimal';
 import {
   directionLabel,
   formatAmount,
@@ -12,13 +20,14 @@ import {
   shortDigest,
   symbolOf,
 } from '../../lib/labels';
-import { Badge, Callout } from '../../ui/Badge';
-import { Button } from '../../ui/Button';
+import { Mono } from '../../ui/Mono';
+import { StatusBadge } from '../../ui/Badge';
 import { Card, CardHeader, DataList } from '../../ui/Card';
-import { SelectField, TextField } from '../../ui/Field';
+import { SelectControl, TextControl } from '../../ui/Field';
 import { AsyncSection, EmptyState, ErrorState, Loading } from '../../ui/States';
 import { Steps, type StepItem } from '../../ui/Steps';
 import { TokenLogo } from '../../ui/TokenLogo';
+import { Note } from '../../ui/Note';
 import { PageHeader } from '../../ui/PageHeader';
 
 type Stage = 'compose' | 'review' | 'approve' | 'submitted';
@@ -40,6 +49,7 @@ export function SwapRequestFlow({
   /** The pool the trader arrived for, from the dashboard. */
   initialPoolId?: string;
 }) {
+  const openRequestsTitle = useId();
   const demo = requireDemoApi();
   const pools = useAsync(() => demo.swaps.eligiblePools(), [demo]);
   const requests = useAsync(() => demo.swaps.listRequests(), [demo]);
@@ -51,16 +61,16 @@ export function SwapRequestFlow({
   const symbol = (instrumentId: string) => symbolOf(instruments.data ?? [], instrumentId);
 
   return (
-    <div className="stack-lg fade-in page-narrow">
+    <div className="flex flex-col gap-6 fade-in max-w-3xl">
       <PageHeader
         title="Request a swap"
         description="Price the trade, approve it, and wait for the pool to settle it."
       />
 
       {instruments.error ? (
-        <Callout tone="warning" title="Instrument names unavailable">
+        <Banner variant="warning" title="Instrument names unavailable" size="compact" dismissible={false}>
           {instruments.error.message}
-        </Callout>
+        </Banner>
       ) : null}
 
       {pools.data && pools.data.length > 0 ? (
@@ -84,7 +94,7 @@ export function SwapRequestFlow({
       )}
 
       <Card>
-        <CardHeader title="Your swap requests" />
+        <CardHeader title="Your swap requests" titleId={openRequestsTitle} />
         <AsyncSection
           result={requests}
           label="Loading your requests"
@@ -92,32 +102,38 @@ export function SwapRequestFlow({
           empty={<EmptyState title="No requests yet" />}
         >
           {(list) => (
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Request</th>
-                  <th>Pool</th>
-                  <th className="table-num">Amount in</th>
-                  <th className="table-num">Minimum out</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {list.map((request) => (
-                  <tr key={request.requestId}>
-                    <td className="mono">{request.requestId}</td>
-                    <td>{request.poolName}</td>
-                    <td className="table-num">{formatAmount(request.amountIn)}</td>
-                    <td className="table-num">{formatAmount(request.minOut)}</td>
-                    <td>
-                      <Badge tone="progress" dot>
-                        Awaiting settlement
-                      </Badge>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <DataTable
+              aria-labelledby={openRequestsTitle}
+              columns={[
+                {
+                  id: 'request',
+                  header: 'Request',
+                  cellClassName: 'font-mono text-xs',
+                  cell: (request) => request.requestId,
+                },
+                { id: 'pool', header: 'Pool', cell: (request) => request.poolName },
+                {
+                  ...NUMERIC,
+                  id: 'amount-in',
+                  header: 'Amount in',
+                  cell: (request) => formatAmount(request.amountIn),
+                },
+                {
+                  ...NUMERIC,
+                  id: 'min-out',
+                  header: 'Minimum out',
+                  cell: (request) => formatAmount(request.minOut),
+                },
+                {
+                  id: 'status',
+                  header: 'Status',
+                  cell: () => <StatusBadge tone="progress" dot label="Awaiting settlement" />,
+                },
+              ]}
+              rows={list}
+              getRowKey={(request) => request.requestId}
+              className="border-0"
+            />
           )}
         </AsyncSection>
       </Card>
@@ -222,7 +238,7 @@ function SwapComposer({
               {
                 label: 'Amount in',
                 value: (
-                  <span className="tabular">
+                  <span className="tabular-nums">
                     {formatAmount(quote.amountIn)} {inSymbol}
                   </span>
                 ),
@@ -285,9 +301,9 @@ function SwapComposer({
           quotedPool ? `${quotedPool.name} · ${quotedPool.feeBps} bps fee` : undefined
         }
       />
-      <div className="card-pad">
+      <CardContent className="p-5">
         <Steps steps={steps} />
-      </div>
+      </CardContent>
     </Card>
   );
 }
@@ -317,9 +333,17 @@ function ComposeStage({
   const [slippageBps, setSlippageBps] = useState('50');
   const [touched, setTouched] = useState(false);
 
-  const amount = parseAmount(amountIn);
+  /*
+   * The amount travels as the text the trader typed. Reading it into a number
+   * and writing it back rewrites their figure: a ledger `Decimal` carries 28
+   * integer and 10 fractional digits, and a double holds neither end. The same
+   * check also keeps out the exponent and hex forms `Number` accepts and the
+   * ledger's grammar does not.
+   */
+  const amountText = amountIn.trim();
+  const amount = isLedgerDecimal(amountText) ? parseDecimal(amountText) : null;
   const slippage = parseAmount(slippageBps);
-  const amountError = amount !== undefined && amount > 0 ? undefined : 'Enter an amount above zero';
+  const amountError = amount && !isZero(amount) ? undefined : 'Enter an amount above zero';
   const slippageError =
     slippage !== undefined && slippage >= 0 && slippage <= MAX_SLIPPAGE_BPS
       ? undefined
@@ -329,7 +353,7 @@ function ComposeStage({
     demo.swaps.requestQuote({
       poolId,
       direction,
-      amountIn: toDecimal(amount ?? 0),
+      amountIn: amountText,
       slippageBps: slippage ?? 0,
     }),
   );
@@ -339,40 +363,39 @@ function ComposeStage({
   const locked = requestQuote.pending;
 
   return (
-    <div className="stack">
-      <div className="grid-2">
-        <SelectField
+    <div className="flex flex-col gap-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <SelectControl
           label="Pool"
           value={poolId}
           disabled={locked}
-          onChange={(event) => onPoolId(event.target.value)}
-        >
-          {pools.map((candidate) => (
-            <option key={candidate.poolId} value={candidate.poolId}>
-              {candidate.name}
-            </option>
-          ))}
-        </SelectField>
-        <SelectField
+          onValueChange={onPoolId}
+          options={pools.map((candidate) => ({
+            value: candidate.poolId,
+            label: candidate.name,
+          }))}
+        />
+        <SelectControl
           label="Direction"
           value={direction}
           disabled={locked}
-          onChange={(event) => onDirection(event.target.value as SwapDirection)}
-        >
-          <option value="BaseToQuote">{directionLabel('BaseToQuote', base, quote)}</option>
-          <option value="QuoteToBase">{directionLabel('QuoteToBase', base, quote)}</option>
-        </SelectField>
+          onValueChange={(next) => onDirection(next as SwapDirection)}
+          options={[
+            { value: 'BaseToQuote', label: directionLabel('BaseToQuote', base, quote) },
+            { value: 'QuoteToBase', label: directionLabel('QuoteToBase', base, quote) },
+          ]}
+        />
       </div>
 
       {/* The amount is what the trader is deciding, so it is set as a figure
           and the pair it is paid in sits beside it. */}
-      <div className="swap-panel">
-        <div className="swap-panel-head">
-          <span className="swap-panel-label">You pay</span>
+      <div className="bg-surface focus-within:border-primary-border flex flex-col gap-2 rounded-lg border px-4 pt-3.5 pb-4 transition-colors">
+        <div className="text-muted-foreground flex items-center justify-between gap-3 text-[0.75rem]">
+          <span className="font-[550] tracking-[0.02em]">You pay</span>
         </div>
-        <div className="swap-panel-row">
-          <div className="swap-field">
-            <TextField
+        <div className="flex items-center gap-3">
+          <div className="min-w-0 flex-1 [&_input]:h-9 [&_input]:border-0 [&_input]:bg-transparent [&_input]:p-0 [&_input]:text-[1.625rem] [&_input]:font-semibold [&_input]:tracking-[-0.02em] [&_input]:tabular-nums [&_input]:focus-visible:ring-0 [&_p]:text-[0.75rem]">
+            <TextControl
               label={`Amount in${inSymbol ? ` (${inSymbol})` : ''}`}
               hideLabel
               value={amountIn}
@@ -386,7 +409,7 @@ function ComposeStage({
             />
           </div>
           {inSymbol ? (
-            <span className="token-pill">
+            <span className="bg-card shadow-card inline-flex flex-none items-center gap-[0.4375rem] rounded-full border py-[0.3125rem] pr-3 pl-[0.3125rem] text-sm font-semibold">
               <TokenLogo symbol={inSymbol} size="sm" />
               {inSymbol}
             </span>
@@ -394,8 +417,8 @@ function ComposeStage({
         </div>
       </div>
 
-      <div className="inline-field">
-        <TextField
+      <div className="flex items-end gap-2">
+        <TextControl
           label="Maximum slippage"
           value={slippageBps}
           inputMode="numeric"
@@ -405,9 +428,9 @@ function ComposeStage({
         />
       </div>
 
-      {requestQuote.error ? <Callout tone="danger">{requestQuote.error.message}</Callout> : null}
+      {requestQuote.error ? <Banner variant="error" size="compact" dismissible={false}>{requestQuote.error.message}</Banner> : null}
       <Button
-        className="btn-block"
+        className="w-full"
         loading={requestQuote.pending}
         onClick={async () => {
           setTouched(true);
@@ -447,13 +470,13 @@ function QuoteStage({
   onRestart: () => void;
 }) {
   return (
-    <div className="stack">
+    <div className="flex flex-col gap-4">
       <DataList
         items={[
           {
             label: 'Expected output',
             value: (
-              <span className="tabular">
+              <span className="tabular-nums">
                 {formatAmount(quote.expectedOut)} {outSymbol}
               </span>
             ),
@@ -461,7 +484,7 @@ function QuoteStage({
           {
             label: 'Fee',
             value: (
-              <span className="tabular">
+              <span className="tabular-nums">
                 {formatAmount(quote.feeAmount)} {inSymbol}
                 {feeBps === undefined ? '' : ` · ${feeBps} bps`}
               </span>
@@ -470,7 +493,7 @@ function QuoteStage({
           {
             label: 'Minimum output',
             value: (
-              <span className="tabular">
+              <span className="tabular-nums">
                 {formatAmount(quote.minOut)} {outSymbol}
               </span>
             ),
@@ -488,14 +511,14 @@ function QuoteStage({
         ]}
       />
       {prepare.error ? (
-        <Callout
-          tone="danger"
+        <Banner
+          variant="error"
           title={errorCode(prepare.error) === 'EXPIRED' ? 'Quote expired' : undefined}
-        >
+         size="compact" dismissible={false}>
           {prepare.error.message}
-        </Callout>
+        </Banner>
       ) : null}
-      <div className="row">
+      <div className="flex items-center gap-3">
         <Button
           loading={prepare.pending}
           disabled={expired}
@@ -509,7 +532,7 @@ function QuoteStage({
           Confirm these details
         </Button>
         <Button
-          variant={expired ? 'primary' : 'ghost'}
+          variant={expired ? 'default' : 'ghost'}
           disabled={prepare.pending}
           onClick={onRestart}
         >
@@ -532,19 +555,19 @@ function ApproveStage({
   onCancel: () => void;
 }) {
   return (
-    <div className="stack">
-      <Callout tone="demo">Simulated wallet approval</Callout>
+    <div className="flex flex-col gap-4">
+      <Note tone="demo">Simulated wallet approval</Note>
       <DataList
         items={[
-          { label: 'Preparation', value: <span className="mono">{preparation.preparationId}</span> },
+          { label: 'Preparation', value: <Mono>{preparation.preparationId}</Mono> },
           {
             label: 'Command digest',
-            value: <span className="mono">{shortDigest(preparation.commandDigest)}</span>,
+            value: <Mono>{shortDigest(preparation.commandDigest)}</Mono>,
           },
         ]}
       />
-      {submit.error ? <Callout tone="danger">{submit.error.message}</Callout> : null}
-      <div className="row">
+      {submit.error ? <Banner variant="error" size="compact" dismissible={false}>{submit.error.message}</Banner> : null}
+      <div className="flex items-center gap-3">
         <Button
           loading={submit.pending}
           onClick={async () => {
@@ -571,16 +594,14 @@ function SubmittedStage({
   onRestart: () => void;
 }) {
   return (
-    <div className="stack">
+    <div className="flex flex-col gap-4">
       <DataList
         items={[
-          { label: 'Request', value: <span className="mono">{request.requestId}</span> },
+          { label: 'Request', value: <Mono>{request.requestId}</Mono> },
           {
             label: 'Status',
             value: (
-              <Badge tone="progress" dot>
-                Awaiting settlement
-              </Badge>
+              <StatusBadge tone="progress" dot label="Awaiting settlement" />
             ),
           },
           { label: 'Submitted', value: formatDateTime(request.submittedAt) },

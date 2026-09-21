@@ -1,0 +1,12 @@
+/* Managed by oz-ui-dev tailwind fix */
+@layer base, components, utilities;
+
+@import 'tailwindcss' source(none);
+
+@source "./";
+@source "../";
+@source "../../node_modules/@openzeppelin/ui-components";
+@source "../../node_modules/@openzeppelin/ui-styles";
+@source "../../node_modules/@openzeppelin/ui-utils";
+
+@import '@openzeppelin/ui-styles/global.css';

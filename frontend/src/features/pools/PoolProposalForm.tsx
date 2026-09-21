@@ -1,17 +1,19 @@
+import { Banner, Button, LoadingButton, TextField } from '@openzeppelin/ui-components';
 import { useState } from 'react';
+import { Controller, useForm } from 'react-hook-form';
 import { useDexClient } from '../../app/runtime';
 import { useAction, useAsync } from '../../app/useAsync';
 import type { PoolProposalRecord } from '../../lib/api/types';
 import { errorCode } from '../../lib/api/types';
-import { Callout } from '../../ui/Badge';
-import { Button } from '../../ui/Button';
+import { Mono } from '../../ui/Mono';
+import { TextLink } from '../../ui/Link';
 import { Card, CardHeader, DataList } from '../../ui/Card';
 import { Disclosure } from '../../ui/Disclosure';
-import { SelectField, TextField } from '../../ui/Field';
+import { SelectControl } from '../../ui/Field';
 import { SkeletonRows } from '../../ui/States';
 import {
-  draftErrors,
   emptyDraft,
+  proposalResolver,
   suggestedIds,
   toProposal,
   type DraftField,
@@ -30,175 +32,241 @@ export function PoolProposalForm({
 }) {
   const client = useDexClient();
   const options = useAsync((signal) => client.admin.poolCreationOptions({ signal }), [client]);
-  const [draft, setDraft] = useState<ProposalDraft>(emptyDraft());
+  /**
+   * The draft the operator last put through the venue's rules, or null while
+   * they are still editing. Holding the draft rather than a flag is what makes
+   * the summary and the submission provably the same values.
+   */
+  const [reviewed, setReviewed] = useState<ProposalDraft | null>(null);
   /** Fields the operator wrote themselves, which a suggestion must not overwrite. */
   const [written, setWritten] = useState<Set<DraftField>>(new Set());
-  const [touched, setTouched] = useState(false);
-  const [reviewing, setReviewing] = useState(false);
+
+  const form = useForm<ProposalDraft>({
+    defaultValues: emptyDraft(),
+    resolver: proposalResolver,
+    mode: 'onTouched',
+  });
+  const { control, getValues, setValue, handleSubmit } = form;
 
   const admins = options.data?.instrumentAdmins ?? [];
-  const ready = { ...draft, ...applySuggestions(draft, written) };
-  const errors = draftErrors(ready);
-  const invalid = Object.keys(errors).length > 0;
+  const submit = useAction((draft: ProposalDraft) =>
+    client.admin.createPoolProposal(toProposal(draft)),
+  );
+  const reviewing = reviewed !== null;
 
-  const submit = useAction(() => client.admin.createPoolProposal(toProposal(ready)));
-
-  function set(field: DraftField, value: string) {
-    submit.clearError();
-    setDraft((current) => ({ ...current, [field]: value }));
-    if (SUGGESTED.includes(field)) {
-      setWritten((current) => new Set(current).add(field));
+  /**
+   * A suggestion only fills a field the operator has not written in.
+   *
+   * `onUserEdit` fires on a keystroke and never on `setValue`, so a field this
+   * writes into stays open to the next suggestion, and one the operator typed
+   * into does not.
+   */
+  function suggest() {
+    const suggested = suggestedIds(getValues());
+    for (const field of SUGGESTED) {
+      if (written.has(field)) continue;
+      const value = suggested[field as keyof typeof suggested];
+      if (value) setValue(field, value, { shouldValidate: false });
     }
   }
 
-  function field(name: DraftField, label: string, extra: { hint?: string; type?: string } = {}) {
+  function claim(field: DraftField) {
+    setWritten((current) => new Set(current).add(field));
+  }
+
+  function text(name: DraftField, label: string, helperText?: string) {
     return (
       <TextField
+        control={control}
+        id={`proposal-${name}`}
+        name={name}
         label={label}
-        value={ready[name]}
-        error={touched ? errors[name] : undefined}
-        onChange={(event) => set(name, event.target.value)}
-        {...extra}
+        {...(helperText === undefined ? {} : { helperText })}
+        onUserEdit={() => {
+          submit.clearError();
+          if (SUGGESTED.includes(name)) claim(name);
+          if (name === 'baseId' || name === 'quoteId') queueMicrotask(suggest);
+        }}
       />
     );
   }
 
+  /**
+   * The instrument admin, on the kit's listbox.
+   *
+   * The kit's own `SelectField` gives no way to hand React Hook Form the
+   * blur and the ref it needs to mark the field touched and to focus it as a
+   * first error, so this composes the same listbox parts around a controller.
+   */
   function adminField(name: 'baseAdmin' | 'quoteAdmin', label: string) {
     return (
-      <SelectField
-        label={label}
-        value={ready[name]}
-        error={touched ? errors[name] : undefined}
-        onChange={(event) => set(name, event.target.value)}
-      >
-        <option value="">Select an admin</option>
-        {admins.map((admin) => (
-          <option key={admin.partyId} value={admin.partyId}>
-            {admin.label}
-          </option>
-        ))}
-      </SelectField>
+      <Controller
+        control={control}
+        name={name}
+        render={({ field, fieldState }) => (
+          <SelectControl
+            label={label}
+            placeholder="Select an admin"
+            value={field.value}
+            onValueChange={field.onChange}
+            onBlur={field.onBlur}
+            ref={field.ref}
+            {...(fieldState.error ? { error: fieldState.error.message } : {})}
+            options={admins.map((admin) => ({ value: admin.partyId, label: admin.label }))}
+          />
+        )}
+      />
     );
   }
 
-  async function propose() {
-    setTouched(true);
-    if (invalid) return;
-    const created = await submit.perform();
-    if (created) onProposed(created);
-  }
-
   const conflict = errorCode(submit.error) === 'CONFLICT';
+
+  /**
+   * Sends the proposal.
+   *
+   * Both steps run behind `handleSubmit`, so the rules decide again on the
+   * values as they stand. A draft that no longer passes them never reaches the
+   * venue, and the operator is put back in the form with the errors on the
+   * fields.
+   */
+  const startReview = handleSubmit((draft) => setReviewed(draft));
+  const submitProposal = handleSubmit(
+    async (draft) => {
+      const created = await submit.perform(draft);
+      if (created) onProposed(created);
+    },
+    () => setReviewed(null),
+  );
 
   return (
     <Card>
       <CardHeader
         title="New proposal"
         actions={
-          <Button size="sm" variant="ghost" onClick={onClose} disabled={submit.pending}>
+          <Button type="button" size="sm" variant="ghost" onClick={onClose} disabled={submit.pending}>
             Cancel
           </Button>
         }
       />
-      <div className="card-pad stack">
+      <form className="flex flex-col gap-4 p-5" onSubmit={startReview}>
         {options.error ? (
-          <Callout tone="warning" title="Could not load the instrument admins">
+          <Banner
+            variant="warning"
+            title="Could not load the instrument admins"
+            size="compact"
+            dismissible={false}
+          >
             {options.error.message}{' '}
-            <button type="button" className="table-link" onClick={options.reload}>
-              Try again
-            </button>
-          </Callout>
+            <TextLink onClick={options.reload}>Try again</TextLink>
+          </Banner>
         ) : options.loading && !options.data ? (
           <SkeletonRows rows={2} label="Loading pool settings" />
         ) : null}
 
-        <div className="grid-2">
-          {adminField('baseAdmin', 'Base admin')}
-          {field('baseId', 'Base instrument', { hint: 'The admin’s own id, such as USDC.' })}
-          {adminField('quoteAdmin', 'Quote admin')}
-          {field('quoteId', 'Quote instrument')}
-        </div>
+        {/*
+          A reviewed draft is frozen where the browser freezes it, not through
+          the form library: React Hook Form drops a disabled field from the
+          values it hands `handleSubmit`, so routing the freeze through the
+          kit's `readOnly` would have the submission receive an empty draft.
+          `contents` keeps the grids below laying themselves out.
 
-        {field('name', 'Pool name')}
+          Only the data controls are inside a fieldset. The advanced panel's
+          own trigger stays outside one, so the operator can still open it and
+          read what they are about to send.
+        */}
+        <fieldset disabled={reviewing} className="contents">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {adminField('baseAdmin', 'Base admin')}
+            {text('baseId', 'Base instrument', 'The admin’s own id, such as USDC.')}
+            {adminField('quoteAdmin', 'Quote admin')}
+            {text('quoteId', 'Quote instrument')}
+          </div>
 
-        <div className="grid-2">
-          {field('feeBps', 'Fee, bps')}
-          {field('lpTokenSupply', 'LP supply')}
-          {field('baseReserve', 'Base reserve')}
-          {field('quoteReserve', 'Quote reserve')}
-        </div>
+          {text('name', 'Pool name')}
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {text('feeBps', 'Fee, bps')}
+            {text('lpTokenSupply', 'LP supply')}
+            {text('baseReserve', 'Base reserve')}
+            {text('quoteReserve', 'Quote reserve')}
+          </div>
+        </fieldset>
 
         <Disclosure summary="Advanced">
-          <div className="grid-2">
-            {field('baseAccountId', 'Base account')}
-            {field('quoteAccountId', 'Quote account')}
-            {field('lpTokenId', 'LP token')}
-          </div>
+          <fieldset disabled={reviewing} className="contents">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              {text('baseAccountId', 'Base account')}
+              {text('quoteAccountId', 'Quote account')}
+              {text('lpTokenId', 'LP token')}
+            </div>
+          </fieldset>
           {options.data ? (
             <DataList
               items={[
-                { label: 'dvo', value: <span className="mono">{options.data.dvo}</span> },
-                { label: 'Factory', value: <span className="mono">{options.data.factoryId}</span> },
+                {
+                  label: 'dvo',
+                  value: <Mono>{options.data.dvo}</Mono>,
+                },
+                {
+                  label: 'Factory',
+                  value: <Mono>{options.data.factoryId}</Mono>,
+                },
               ]}
             />
           ) : null}
         </Disclosure>
 
         {submit.error ? (
-          <Callout tone={conflict ? 'warning' : 'danger'} title={conflict ? 'Already taken' : undefined}>
+          <Banner
+            variant={conflict ? 'warning' : 'error'}
+            title={conflict ? 'Already taken' : undefined}
+            size="compact"
+            dismissible={false}
+          >
             {submit.error.message}
-          </Callout>
+          </Banner>
         ) : null}
 
-        {reviewing ? (
+        {reviewed ? (
           <Card padded>
             <DataList
               items={[
-                { label: 'Pair', value: `${ready.baseId} / ${ready.quoteId}` },
-                { label: 'Name', value: ready.name },
-                { label: 'Fee', value: `${ready.feeBps} bps` },
-                { label: 'Reserves', value: `${ready.baseReserve} / ${ready.quoteReserve}` },
-                { label: 'LP supply', value: ready.lpTokenSupply },
-                { label: 'LP token', value: <span className="mono">{ready.lpTokenId}</span> },
+                { label: 'Pair', value: `${reviewed.baseId} / ${reviewed.quoteId}` },
+                { label: 'Name', value: reviewed.name },
+                { label: 'Fee', value: `${reviewed.feeBps} bps` },
+                { label: 'Reserves', value: `${reviewed.baseReserve} / ${reviewed.quoteReserve}` },
+                { label: 'LP supply', value: reviewed.lpTokenSupply },
+                {
+                  label: 'LP token',
+                  value: <Mono>{reviewed.lpTokenId}</Mono>,
+                },
               ]}
             />
-            <div className="row" style={{ marginTop: '0.75rem' }}>
-              <Button loading={submit.pending} disabled={submit.pending} onClick={propose}>
+            <div className="mt-3 flex items-center gap-3">
+              <LoadingButton
+                type="button"
+                loading={submit.pending}
+                disabled={submit.pending}
+                onClick={submitProposal}
+              >
                 Submit proposal
-              </Button>
-              <Button variant="ghost" disabled={submit.pending} onClick={() => setReviewing(false)}>
+              </LoadingButton>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={submit.pending}
+                onClick={() => setReviewed(null)}
+              >
                 Edit
               </Button>
             </div>
           </Card>
         ) : (
-          <div className="row">
-            <Button
-              onClick={() => {
-                setTouched(true);
-                if (!invalid) setReviewing(true);
-              }}
-            >
-              Review
-            </Button>
+          <div className="flex items-center gap-3">
+            <Button type="submit">Review</Button>
           </div>
         )}
-      </div>
+      </form>
     </Card>
   );
-}
-
-/** A suggestion only fills a field the operator has not written in. */
-function applySuggestions(
-  draft: ProposalDraft,
-  written: ReadonlySet<DraftField>,
-): Partial<ProposalDraft> {
-  const suggested = suggestedIds(draft);
-  const filled: Partial<ProposalDraft> = {};
-  for (const field of SUGGESTED) {
-    if (written.has(field)) continue;
-    const value = suggested[field as keyof typeof suggested];
-    if (value) filled[field] = value;
-  }
-  return filled;
 }

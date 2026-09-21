@@ -1,9 +1,10 @@
+import { Banner, LoadingButton as Button } from '@openzeppelin/ui-components';
 import { useAction } from '../../app/useAsync';
 import type { DemoApi } from '../../lib/api/demo';
 import type { Onboarding } from '../../lib/api/types';
 import { partyStatusLabels, partyStatusTones, shortParty } from '../../lib/labels';
-import { Badge, Callout } from '../../ui/Badge';
-import { Button } from '../../ui/Button';
+import { Mono } from '../../ui/Mono';
+import { StatusBadge } from '../../ui/Badge';
 import { DataList } from '../../ui/Card';
 import { SimulatedLedgerNotice } from '../../ui/SimulatedLedger';
 import { keyAlgorithm } from '../../wallet/encoding';
@@ -37,9 +38,9 @@ export function PartyRegistration({
 
   if (party?.status === 'CONFLICT') {
     return (
-      <Callout tone="danger">
+      <Banner variant="error" size="compact" dismissible={false}>
         This party already exists. Registration was stopped.
-      </Callout>
+      </Banner>
     );
   }
 
@@ -47,11 +48,11 @@ export function PartyRegistration({
     return (
       <DataList
         items={[
-          { label: 'Party', value: <span className="mono">{shortParty(party.partyId)}</span> },
+          { label: 'Party', value: <Mono>{shortParty(party.partyId)}</Mono> },
           {
             label: 'Registration',
             value: (
-              <Badge tone={partyStatusTones[party.status]}>{partyStatusLabels[party.status]}</Badge>
+              <StatusBadge tone={partyStatusTones[party.status]} label={partyStatusLabels[party.status]} />
             ),
           },
         ]}
@@ -61,13 +62,13 @@ export function PartyRegistration({
 
   if (onboarding.partyMode !== 'external') {
     return (
-      <p className="muted text-xs">Party held by the venue participant</p>
+      <p className="text-muted-foreground text-xs">Party held by the venue participant</p>
     );
   }
 
   if (onboarding.review?.decision !== 'APPROVED') {
     return (
-      <p className="muted text-xs">Awaiting approval</p>
+      <p className="text-muted-foreground text-xs">Awaiting approval</p>
     );
   }
 
@@ -75,9 +76,7 @@ export function PartyRegistration({
   // signature, whichever path produced it.
   if (party && (party.status === 'SUBMITTING' || party.status === 'UNRESOLVED')) {
     return (
-      <Badge tone={partyStatusTones[party.status]} dot>
-        {partyStatusLabels[party.status]}
-      </Badge>
+      <StatusBadge tone={partyStatusTones[party.status]} dot label={partyStatusLabels[party.status]} />
     );
   }
 
@@ -86,16 +85,16 @@ export function PartyRegistration({
   }
 
   if (!wallet) {
-    return <Callout tone="warning">No wallet configured</Callout>;
+    return <Banner variant="warning" size="compact" dismissible={false}>No wallet configured</Banner>;
   }
 
   // A key prepared before wallets is the trader's, and nothing here replaces it.
   const prepared = party?.publicKey ?? null;
   if (prepared !== null && keyAlgorithm(prepared) !== 'secp256k1') {
     return (
-      <Callout tone="warning" title="Prepared with a key MetaMask cannot sign">
+      <Banner variant="warning" title="Prepared with a key MetaMask cannot sign" size="compact" dismissible={false}>
         Ask the venue to start a new request to register this party from your wallet.
-      </Callout>
+      </Banner>
     );
   }
 
@@ -115,9 +114,9 @@ function SimulatedRegistration({
   const register = useAction(() => demo.onboarding.registerParty(onboarding.id));
 
   return (
-    <div className="stack-sm">
+    <div className="flex flex-col gap-2">
       <SimulatedLedgerNotice />
-      {register.error ? <Callout tone="danger">{register.error.message}</Callout> : null}
+      {register.error ? <Banner variant="error" size="compact" dismissible={false}>{register.error.message}</Banner> : null}
       <div>
         <Button
           size="sm"

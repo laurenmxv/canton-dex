@@ -37,8 +37,16 @@ export function TokenLogo({ symbol, seed, size = 'md' }: TokenMark & { size?: Si
   const hue = hashOf(seed ?? symbol) % 360;
   return (
     <span
-      className={`token-logo token-logo-${size}`}
-      style={{ '--token-hue': hue } as CSSProperties}
+      className={`inline-grid flex-none place-items-center rounded-full font-bold tracking-[0.01em] text-[oklch(0.99_0_0)] ${
+        size === 'md' ? 'size-[1.875rem] text-[0.625rem]' : 'size-[1.375rem] text-[0.5rem]'
+      }`}
+      style={
+        {
+          '--token-hue': hue,
+          backgroundImage:
+            'linear-gradient(145deg, oklch(0.68 0.15 var(--token-hue)), oklch(0.52 0.17 calc(var(--token-hue) + 32)))',
+        } as CSSProperties
+      }
       aria-hidden="true"
     >
       {monogram(symbol)}
@@ -46,10 +54,15 @@ export function TokenLogo({ symbol, seed, size = 'md' }: TokenMark & { size?: Si
   );
 }
 
-/** The marks of a pool's two sides, overlapped the way a pair is written. */
+/**
+ * The marks of a pool's two sides, overlapped the way a pair is written.
+ *
+ * The second mark keeps a ring of the card behind it, so the two stay
+ * separable where they overlap.
+ */
 export function TokenPair({ tokens, size = 'md' }: { tokens: readonly TokenMark[]; size?: Size }) {
   return (
-    <span className="token-pair">
+    <span className="inline-flex flex-none items-center [&>*+*]:-ml-2 [&>*+*]:ring-2 [&>*+*]:ring-card">
       {tokens.map((token, index) => (
         <TokenLogo
           key={`${token.seed ?? token.symbol}-${index}`}

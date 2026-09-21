@@ -1,4 +1,11 @@
-import { useState } from 'react';
+import {
+  Banner,
+  CardContent,
+  DataTable,
+  LoadingButton as Button,
+} from '@openzeppelin/ui-components';
+import { NUMERIC } from '../../ui/table';
+import { useId, useState } from 'react';
 import { requireDemoApi } from '../../app/runtime';
 import { useAction, useAsync } from '../../app/useAsync';
 import type { Instrument } from '../../lib/api/types';
@@ -10,11 +17,12 @@ import {
   proposalStatusTones,
   symbolOf,
 } from '../../lib/labels';
-import { Badge, Callout } from '../../ui/Badge';
-import { Button } from '../../ui/Button';
+import { TextLink } from '../../ui/Link';
+import { StatusBadge } from '../../ui/Badge';
 import { Card, CardHeader } from '../../ui/Card';
-import { SelectField, TextField } from '../../ui/Field';
+import { SelectControl, TextControl } from '../../ui/Field';
 import { AsyncSection, EmptyState } from '../../ui/States';
+import { Note } from '../../ui/Note';
 import { PageHeader } from '../../ui/PageHeader';
 import { approvalCount } from './approvals';
 
@@ -23,6 +31,8 @@ export function OperatorPools({
 }: {
   onOpenProposal: (proposalId: string) => void;
 }) {
+  const proposalsTitle = useId();
+  const livePoolsTitle = useId();
   const demo = requireDemoApi();
   const pools = useAsync(() => demo.pools.list(), [demo]);
   const proposals = useAsync(() => demo.pools.listProposals(), [demo]);
@@ -37,7 +47,7 @@ export function OperatorPools({
   }
 
   return (
-    <div className="stack-lg fade-in">
+    <div className="flex flex-col gap-6 fade-in">
       <PageHeader
         title="Pools"
         description="Propose a pool, collect its approvals, and create it."
@@ -45,6 +55,7 @@ export function OperatorPools({
 
       <Card>
         <CardHeader
+          titleId={proposalsTitle}
           title="Pool proposals"
           actions={
             <Button size="sm" onClick={() => setCreating((value) => !value)}>
@@ -53,16 +64,14 @@ export function OperatorPools({
           }
         />
         {creating ? (
-          <div className="card-pad" style={{ borderBottom: '1px solid var(--border)' }}>
+          <CardContent className="p-5" style={{ borderBottom: '1px solid var(--border)' }}>
             {instruments.error ? (
-              <Callout tone="warning" title="Could not load instruments">
+              <Banner variant="warning" title="Could not load instruments" size="compact" dismissible={false}>
                 {instruments.error.message}{' '}
-                <button type="button" className="table-link" onClick={instruments.reload}>
-                  Try again
-                </button>
-              </Callout>
+                <TextLink onClick={instruments.reload}>Try again</TextLink>
+              </Banner>
             ) : instruments.data === undefined ? (
-              <p className="muted text-xs">Loading instruments…</p>
+              <p className="text-muted-foreground text-xs">Loading instruments…</p>
             ) : (
               <ProposalForm
                 instruments={instruments.data}
@@ -72,7 +81,7 @@ export function OperatorPools({
                 }}
               />
             )}
-          </div>
+          </CardContent>
         ) : null}
 
         <AsyncSection
@@ -86,51 +95,58 @@ export function OperatorPools({
           }
         >
           {(list) => (
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Pair</th>
-                  <th className="table-num">Fee</th>
-                  <th>Approvals</th>
-                  <th>Created</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {list.map((proposal) => {
-                  const { approved, required } = approvalCount(proposal);
-                  return (
-                    <tr key={proposal.proposalId}>
-                      <td>
-                        <button
-                          type="button"
-                          className="table-link"
-                          onClick={() => onOpenProposal(proposal.proposalId)}
-                        >
-                          {proposal.name}
-                        </button>
-                      </td>
-                      <td className="table-num">{proposal.settings.feeBps} bps</td>
-                      <td className="tabular">
-                        {approved} of {required}
-                      </td>
-                      <td className="muted">{formatDateTime(proposal.createdAt)}</td>
-                      <td>
-                        <Badge tone={proposalStatusTones[proposal.status]}>
-                          {proposalStatusLabels[proposal.status]}
-                        </Badge>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            <DataTable
+              aria-labelledby={proposalsTitle}
+              columns={[
+                {
+                  id: 'pair',
+                  header: 'Pair',
+                  cell: (proposal) => (
+                    <TextLink onClick={() => onOpenProposal(proposal.proposalId)}>{proposal.name}</TextLink>
+                  ),
+                },
+                {
+                  ...NUMERIC,
+                  id: 'fee',
+                  header: 'Fee',
+                  cell: (proposal) => `${proposal.settings.feeBps} bps`,
+                },
+                {
+                  id: 'approvals',
+                  header: 'Approvals',
+                  cellClassName: 'tabular-nums',
+                  cell: (proposal) => {
+                    const { approved, required } = approvalCount(proposal);
+                    return `${approved} of ${required}`;
+                  },
+                },
+                {
+                  id: 'created',
+                  header: 'Created',
+                  cellClassName: 'text-muted-foreground',
+                  cell: (proposal) => formatDateTime(proposal.createdAt),
+                },
+                {
+                  id: 'status',
+                  header: 'Status',
+                  cell: (proposal) => (
+                    <StatusBadge
+                      tone={proposalStatusTones[proposal.status]}
+                      label={proposalStatusLabels[proposal.status]}
+                    />
+                  ),
+                },
+              ]}
+              rows={list}
+              getRowKey={(proposal) => proposal.proposalId}
+              className="border-0"
+            />
           )}
         </AsyncSection>
       </Card>
 
       <Card>
-        <CardHeader title="Live pools" />
+        <CardHeader title="Live pools" titleId={livePoolsTitle} />
         <AsyncSection
           result={pools}
           label="Loading pools"
@@ -138,32 +154,41 @@ export function OperatorPools({
           empty={<EmptyState title="No live pools" />}
         >
           {(list) => (
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Pool</th>
-                  <th>Identifier</th>
-                  <th className="table-num">Fee</th>
-                  <th className="table-num">Base reserve</th>
-                  <th className="table-num">Quote reserve</th>
-                </tr>
-              </thead>
-              <tbody>
-                {list.map((pool) => (
-                  <tr key={pool.poolId}>
-                    <td>{pool.name}</td>
-                    <td className="mono muted">{pool.poolId}</td>
-                    <td className="table-num">{pool.feeBps} bps</td>
-                    <td className="table-num">
-                      {formatAmount(pool.baseReserve)} {symbol(pool.baseInstrumentId)}
-                    </td>
-                    <td className="table-num">
-                      {formatAmount(pool.quoteReserve)} {symbol(pool.quoteInstrumentId)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <DataTable
+              aria-labelledby={livePoolsTitle}
+              columns={[
+                { id: 'pool', header: 'Pool', cell: (pool) => pool.name },
+                {
+                  id: 'identifier',
+                  header: 'Identifier',
+                  cellClassName: 'font-mono text-xs text-muted-foreground',
+                  cell: (pool) => pool.poolId,
+                },
+                {
+                  ...NUMERIC,
+                  id: 'fee',
+                  header: 'Fee',
+                  cell: (pool) => `${pool.feeBps} bps`,
+                },
+                {
+                  ...NUMERIC,
+                  id: 'base-reserve',
+                  header: 'Base reserve',
+                  cell: (pool) =>
+                    `${formatAmount(pool.baseReserve)} ${symbol(pool.baseInstrumentId)}`,
+                },
+                {
+                  ...NUMERIC,
+                  id: 'quote-reserve',
+                  header: 'Quote reserve',
+                  cell: (pool) =>
+                    `${formatAmount(pool.quoteReserve)} ${symbol(pool.quoteInstrumentId)}`,
+                },
+              ]}
+              rows={list}
+              getRowKey={(pool) => pool.poolId}
+              className="border-0"
+            />
           )}
         </AsyncSection>
       </Card>
@@ -217,36 +242,31 @@ function ProposalForm({
     }),
   );
 
+  const instrumentOptions = instruments.map((instrument) => ({
+    value: instrument.id,
+    label: instrument.symbol,
+  }));
+
   return (
-    <div className="stack">
-      <div className="grid-3">
-        <SelectField
+    <div className="flex flex-col gap-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <SelectControl
           label="Base instrument"
+          placeholder="Select…"
           value={base}
           error={touched ? errors.base : undefined}
-          onChange={(event) => setBase(event.target.value)}
-        >
-          <option value="">Select…</option>
-          {instruments.map((instrument) => (
-            <option key={instrument.id} value={instrument.id}>
-              {instrument.symbol}
-            </option>
-          ))}
-        </SelectField>
-        <SelectField
+          onValueChange={setBase}
+          options={instrumentOptions}
+        />
+        <SelectControl
           label="Quote instrument"
+          placeholder="Select…"
           value={quote}
           error={touched ? errors.quote : undefined}
-          onChange={(event) => setQuote(event.target.value)}
-        >
-          <option value="">Select…</option>
-          {instruments.map((instrument) => (
-            <option key={instrument.id} value={instrument.id}>
-              {instrument.symbol}
-            </option>
-          ))}
-        </SelectField>
-        <TextField
+          onValueChange={setQuote}
+          options={instrumentOptions}
+        />
+        <TextControl
           label="Fee (bps)"
           value={feeBps}
           inputMode="numeric"
@@ -255,8 +275,8 @@ function ProposalForm({
           onChange={(event) => setFeeBps(event.target.value)}
         />
       </div>
-      <div className="grid-2">
-        <TextField
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <TextControl
           label="Initial base reserve"
           value={baseReserve}
           inputMode="decimal"
@@ -264,7 +284,7 @@ function ProposalForm({
           error={touched ? errors.baseReserve : undefined}
           onChange={(event) => setBaseReserve(event.target.value)}
         />
-        <TextField
+        <TextControl
           label="Initial quote reserve"
           value={quoteReserve}
           inputMode="decimal"
@@ -273,8 +293,8 @@ function ProposalForm({
           onChange={(event) => setQuoteReserve(event.target.value)}
         />
       </div>
-      <Callout tone="demo">Reserves and instruments are fixtures</Callout>
-      {create.error ? <Callout tone="danger">{create.error.message}</Callout> : null}
+      <Note tone="demo">Reserves and instruments are fixtures</Note>
+      {create.error ? <Banner variant="error" size="compact" dismissible={false}>{create.error.message}</Banner> : null}
       <div>
         <Button
           loading={create.pending}

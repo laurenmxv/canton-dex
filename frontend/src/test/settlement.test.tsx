@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { DexProvider, type Session } from '../app/runtime';
@@ -12,6 +12,7 @@ import {
   type SettlementQueueFilter,
 } from '../lib/api/types';
 import { testClient } from './clients';
+import { pick } from './listbox';
 import {
   BTC,
   monitoring,
@@ -23,7 +24,6 @@ import {
   swap,
   USDC,
 } from './venue-fixtures';
-import '../styles/global.css';
 
 /** A second pool, so a change of scope can be told apart from a shared setting. */
 const OTHER_ID = '00pool00ethusdc';
@@ -91,10 +91,17 @@ describe('what the dashboard reads', () => {
     const user = dashboard({ settlements: { policy, requests } }, [POOL, OTHER]);
     await screen.findByText('Ready 2 / 5');
 
-    await user.selectOptions(screen.getByLabelText('Pool'), OTHER_ID);
+    await pick(user, 'Pool', OTHER.name);
 
     await waitFor(() => expect(policy).toHaveBeenLastCalledWith(OTHER_ID, expect.anything()));
-    expect(requests.mock.calls.map((call) => call[0])).toEqual([POOL_ID, OTHER_ID]);
+
+    // The screen polls while it is open, so what matters is not how many reads
+    // it made but that every one names a pool the reader chose, starting on the
+    // first and ending on the second.
+    const asked = requests.mock.calls.map((call) => call[0]);
+    expect(new Set(asked)).toEqual(new Set([POOL_ID, OTHER_ID]));
+    expect(asked.at(0)).toBe(POOL_ID);
+    expect(asked.at(-1)).toBe(OTHER_ID);
   });
 
   it('shows the settings the venue saved for this pool, not the previous pool’s', async () => {
@@ -110,7 +117,7 @@ describe('what the dashboard reads', () => {
     expect(await screen.findByLabelText('Batch target, exact')).toHaveValue(5);
     expect(screen.getByLabelText('Automatic settlement')).not.toBeChecked();
 
-    await user.selectOptions(screen.getByLabelText('Pool'), OTHER_ID);
+    await pick(user, 'Pool', OTHER.name);
 
     await waitFor(() => expect(screen.getByLabelText('Batch target, exact')).toHaveValue(7));
     expect(screen.getByLabelText('Automatic settlement')).toBeChecked();
@@ -129,7 +136,7 @@ describe('what the dashboard reads', () => {
 
     expect(await screen.findByLabelText('Batch target, exact')).toHaveValue(5);
 
-    await user.selectOptions(screen.getByLabelText('Pool'), OTHER_ID);
+    await pick(user, 'Pool', OTHER.name);
 
     // The previous pool's target must not sit under the new pool's name while
     // the venue is still answering for it.
@@ -209,6 +216,7 @@ describe('saving one pool’s settings', () => {
 
     expect(await screen.findByRole('button', { name: 'Save settings' })).toBeDisabled();
   });
+
 });
 
 describe('running a batch by hand', () => {
@@ -226,7 +234,7 @@ describe('running a batch by hand', () => {
     const button = await screen.findByRole('button', { name: 'Run batch' });
     await user.click(button);
     await user.click(button);
-    release();
+    await act(async () => release());
 
     await waitFor(() => expect(run).toHaveBeenCalledTimes(1));
     const key = run.mock.calls[0]![1].idempotencyKey;
@@ -348,7 +356,7 @@ describe('what the pool state says', () => {
       },
     });
 
-    const state = (await screen.findByText('Pool state')).closest('section')!;
+    const state = (await screen.findByText('Pool state')).closest<HTMLElement>('[data-slot="card"]')!;
     expect(within(state).queryByText(/change, last confirmed batch/)).not.toBeInTheDocument();
   });
 });
@@ -357,17 +365,18 @@ describe('the batch history', () => {
   it('keeps the identifiers and the fills behind a detail the reader opens', async () => {
     const user = dashboard({ settlements: { list: () => Promise.resolve([settlement()]) } });
 
-    const history = (await screen.findByText('Recent batches')).closest('section')!;
-    const summary = await within(history).findByText('Show detail');
-    const disclosure = summary.closest('details')!;
+    const history = (await screen.findByText('Recent batches')).closest<HTMLElement>('[data-slot="card"]')!;
+    const summary = await within(history).findByRole('button', { name: 'Show detail' });
     // The row says what happened; the contract identifiers stay closed until
     // the reader asks for them.
-    expect(disclosure).not.toHaveAttribute('open');
+    expect(summary).toHaveAttribute('aria-expanded', 'false');
+    expect(within(history).queryByText('settle-0001')).not.toBeInTheDocument();
     expect(within(history).getByText('Confirmed')).toBeInTheDocument();
 
     await user.click(summary);
 
-    expect(disclosure).toHaveAttribute('open');
+    const disclosure = await screen.findByRole('region', { name: 'Show detail' });
+    expect(summary).toHaveAttribute('aria-expanded', 'true');
     expect(within(disclosure).getByText('settle-0001')).toBeInTheDocument();
     expect(within(disclosure).getByText(/2,941.17647 USDC/)).toBeInTheDocument();
   });
@@ -380,7 +389,7 @@ describe('the batch history', () => {
       },
     });
 
-    const history = (await screen.findByText('Recent batches')).closest('section')!;
+    const history = (await screen.findByText('Recent batches')).closest<HTMLElement>('[data-slot="card"]')!;
     await user.click(await within(history).findByText('Show detail'));
 
     expect(within(history).getByText('No fills')).toBeInTheDocument();
@@ -434,7 +443,7 @@ describe('what the counts mean', () => {
       },
     });
 
-    const queue = (await screen.findByText('Queue')).closest('section')!;
+    const queue = (await screen.findByText('Queue')).closest<HTMLElement>('[data-slot="card"]')!;
     expect(await within(queue).findByText(/2 in this queue/)).toBeInTheDocument();
     expect(within(queue).getByText(/2 ready/)).toBeInTheDocument();
     expect(within(queue).getByText(/0 awaiting confirmation/)).toBeInTheDocument();
@@ -449,7 +458,7 @@ describe('a batch that has not been confirmed', () => {
       },
     });
 
-    const history = (await screen.findByText('Recent batches')).closest('section')!;
+    const history = (await screen.findByText('Recent batches')).closest<HTMLElement>('[data-slot="card"]')!;
     await user.click(await within(history).findByText('Show detail'));
 
     expect(within(history).getByText('Projected, not paid')).toBeInTheDocument();
@@ -460,7 +469,7 @@ describe('a batch that has not been confirmed', () => {
   it('shows a confirmed batch as paid', async () => {
     const user = dashboard({ settlements: { list: () => Promise.resolve([settlement()]) } });
 
-    const history = (await screen.findByText('Recent batches')).closest('section')!;
+    const history = (await screen.findByText('Recent batches')).closest<HTMLElement>('[data-slot="card"]')!;
     await user.click(await within(history).findByText('Show detail'));
 
     expect(within(history).getByText('Paid out')).toBeInTheDocument();
@@ -474,8 +483,8 @@ describe('the mode an operator reads', () => {
       settlements: { policy: () => Promise.resolve({ ...POLICY, automaticEnabled: true }) },
     });
 
-    const panel = (await screen.findByRole('heading', { name: 'Settlement', level: 2 })).closest(
-      'section',
+    const panel = (await screen.findByRole('heading', { name: 'Settlement', level: 2 })).closest<HTMLElement>(
+      '[data-slot="card"]',
     )!;
     expect(await within(panel).findByText('Automatic')).toBeInTheDocument();
 
@@ -501,7 +510,7 @@ describe('the mode an operator reads', () => {
     expect(await screen.findByText('These settings changed elsewhere')).toBeInTheDocument();
     const panel = screen
       .getByRole('heading', { name: 'Settlement', level: 2 })
-      .closest('section')!;
+      .closest<HTMLElement>('[data-slot="card"]')!;
     expect(within(panel).getByText('Automatic')).toBeInTheDocument();
   });
 });
@@ -543,8 +552,8 @@ describe('an unanswered manual run', () => {
     await user.click(await screen.findByRole('button', { name: 'Run batch' }));
     await screen.findByText('Batch status unknown');
 
-    await user.selectOptions(screen.getByLabelText('Pool'), OTHER_ID);
-    await user.selectOptions(await screen.findByLabelText('Pool'), POOL_ID);
+    await pick(user, 'Pool', OTHER.name);
+    await pick(user, 'Pool', POOL.name);
     await user.click(await screen.findByRole('button', { name: 'Run batch' }));
 
     // A whole new page, as after a reload: the key is still the venue's to
@@ -562,7 +571,7 @@ describe('an unanswered manual run', () => {
   it('sends nothing when the key cannot be made to survive a reload', async () => {
     const run = vi.fn<(poolId: string, input: RunSettlementInput) => Promise<Settlement>>();
     const setItem = vi
-      .spyOn(window.localStorage, 'setItem')
+      .spyOn(Storage.prototype, 'setItem')
       .mockImplementation(() => {
         throw new DOMException('QuotaExceededError');
       });
@@ -595,7 +604,7 @@ describe('what a payout is denominated in', () => {
       },
     });
 
-    const history = (await screen.findByText('Recent batches')).closest('section')!;
+    const history = (await screen.findByText('Recent batches')).closest<HTMLElement>('[data-slot="card"]')!;
     await user.click(await within(history).findByText('Show detail'));
 
     // Either side of the pair can be the output, so the fill's own instrument
@@ -616,7 +625,7 @@ describe('what a payout is denominated in', () => {
       },
     });
 
-    const history = (await screen.findByText('Recent batches')).closest('section')!;
+    const history = (await screen.findByText('Recent batches')).closest<HTMLElement>('[data-slot="card"]')!;
     await user.click(await within(history).findByText('Show detail'));
 
     const unknown = within(history).getByText('token unknown');
@@ -639,7 +648,7 @@ describe('what a payout is denominated in', () => {
       },
     });
 
-    const history = (await screen.findByText('Recent batches')).closest('section')!;
+    const history = (await screen.findByText('Recent batches')).closest<HTMLElement>('[data-slot="card"]')!;
     await user.click(await within(history).findByText('Show detail'));
 
     expect(within(history).getByText('Projected, not paid')).toBeInTheDocument();

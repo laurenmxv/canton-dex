@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { applyStoredTheme, useTheme } from '../app/useTheme';
 import { renderApp } from './harness';
 import { setSystemDark } from './viewport';
-import '../styles/global.css';
 
 const KEY = 'canton-dex.theme';
 
@@ -77,16 +76,18 @@ describe('before React renders', () => {
 
 describe('a browser that refuses to remember anything', () => {
   it('still honours the toggle for as long as the page lives', () => {
-    const refuse = vi.spyOn(window.localStorage, 'setItem').mockImplementation(() => {
+    // The instance delegates to the prototype, so that is where the refusal
+    // has to sit for the hook to meet it.
+    const refuse = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new Error('Storage is disabled');
     });
     const view = renderHook(() => useTheme());
 
     act(() => view.result.current.toggle());
 
+    expect(refuse).toHaveBeenCalled();
     expect(view.result.current.dark).toBe(true);
     expect(document.documentElement.classList.contains('dark')).toBe(true);
-    refuse.mockRestore();
   });
 
   it('stores nothing that says who the reader is', () => {

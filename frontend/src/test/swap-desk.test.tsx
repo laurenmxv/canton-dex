@@ -21,7 +21,6 @@ import {
   TRADER,
   USDC,
 } from './venue-fixtures';
-import '../styles/global.css';
 
 const SIGNATURE = 'MEQCIBEiM0RVZneImaq7zN3u/wACIDNEVWZ3iJmqu8zd7v8AESIz';
 const CLAIMED: FaucetResult = {
@@ -77,7 +76,7 @@ function signingWallet(overrides: Partial<CantonWallet> = {}): CantonWallet {
 
 /** One card's own section, so a label outside it never satisfies a query. */
 function card(title: string): HTMLElement {
-  return screen.getByText(title).closest<HTMLElement>('section')!;
+  return screen.getByText(title).closest<HTMLElement>('[data-slot="card"]')!;
 }
 
 async function quoteFor(user: ReturnType<typeof userEvent.setup>, amount: string) {
@@ -136,7 +135,7 @@ describe('requesting a swap', () => {
     await quoteFor(user, '0.05');
     await user.click(await screen.findByRole('button', { name: 'Request swap' }));
 
-    const notice = (await screen.findByText('Request sent')).closest('.callout')!;
+    const notice = (await screen.findByText('Request sent')).closest<HTMLElement>('[role="alert"]')!;
     expect(notice.textContent).toContain(swap().swapId);
     expect(notice.textContent).not.toMatch(/settled|exchanged|credited|received/i);
   });
@@ -442,7 +441,7 @@ describe('the development faucet', () => {
   it('offers no second claim once the account has had its one bundle', async () => {
     desk();
 
-    const card = (await screen.findByText('Test tokens')).closest('section')!;
+    const card = (await screen.findByText('Test tokens')).closest<HTMLElement>('[data-slot="card"]')!;
     expect(await within(card).findByText('Claimed')).toBeInTheDocument();
     expect(within(card).queryByRole('button', { name: 'Get test tokens' })).not.toBeInTheDocument();
   });

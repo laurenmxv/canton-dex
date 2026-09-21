@@ -1,5 +1,8 @@
+import { Button } from '@openzeppelin/ui-components';
 import { useEffect, useState } from 'react';
-import { Button } from './Button';
+
+/** How long the button reads "Copied" before it offers to copy again. */
+const COPIED_LABEL_MS = 2_000;
 
 /**
  * A value the reader needs whole and exact, with a button that copies it.
@@ -12,7 +15,7 @@ export function CopyField({ label, value }: { label: string; value: string }) {
 
   useEffect(() => {
     if (!copied) return;
-    const timer = setTimeout(() => setCopied(false), 2_000);
+    const timer = setTimeout(() => setCopied(false), COPIED_LABEL_MS);
     return () => clearTimeout(timer);
   }, [copied]);
 
@@ -27,14 +30,16 @@ export function CopyField({ label, value }: { label: string; value: string }) {
   }
 
   return (
-    <div className="copy-field">
-      <div className="row-between">
-        <span className="field-label">{label}</span>
+    <div data-slot="copy-field" className="flex flex-col gap-1.5">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-xs font-medium">{label}</span>
         <Button size="sm" variant="ghost" onClick={copy}>
           {copied ? 'Copied' : 'Copy'}
         </Button>
       </div>
-      <pre className="copy-value">{value}</pre>
+      <pre className="bg-muted overflow-x-auto rounded-md border px-2.5 py-2 font-mono text-xs leading-normal wrap-anywhere whitespace-pre-wrap">
+        {value}
+      </pre>
     </div>
   );
 }

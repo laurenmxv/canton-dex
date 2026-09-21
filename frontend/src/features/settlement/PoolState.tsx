@@ -1,3 +1,7 @@
+import {
+  Banner,
+  CardContent,
+} from '@openzeppelin/ui-components';
 import type { PoolDetail, Settlement, SettlementMonitoring } from '../../lib/api/types';
 import { formatDecimal, formatExact } from '../../lib/decimal';
 import {
@@ -7,7 +11,8 @@ import {
   poolHealthTones,
   shortContract,
 } from '../../lib/labels';
-import { Badge, Callout } from '../../ui/Badge';
+import { Mono } from '../../ui/Mono';
+import { StatusBadge } from '../../ui/Badge';
 import { Card, CardHeader, DataList } from '../../ui/Card';
 import { EmptyState } from '../../ui/States';
 import { ReserveChart } from './ReserveChart';
@@ -61,38 +66,36 @@ export function PoolState({
         title="Pool state"
         description={`Ledger offset ${snapshot.ledgerOffset}`}
         actions={
-          <Badge tone={poolHealthTones[snapshot.health]} dot={snapshot.health !== 'READY'}>
-            {poolHealthLabels[snapshot.health]}
-          </Badge>
+          <StatusBadge tone={poolHealthTones[snapshot.health]} dot={snapshot.health !== 'READY'} label={poolHealthLabels[snapshot.health]} />
         }
       />
-      <div className="card-pad stack-sm">
-        {snapshot.reason ? <Callout tone="warning">{snapshot.reason}</Callout> : null}
+      <CardContent className="p-5 flex flex-col gap-2">
+        {snapshot.reason ? <Banner variant="warning" size="compact" dismissible={false}>{snapshot.reason}</Banner> : null}
 
         {stale ? (
-          <Callout tone="warning">
+          <Banner variant="warning" size="compact" dismissible={false}>
             {age === null
               ? 'Timestamp unavailable'
               : `Stale data · ${formatAge(snapshot.observedAt, now)}`}
-          </Callout>
+          </Banner>
         ) : null}
 
         <DataList
           items={[
             {
               label: `${baseLabel} reserve`,
-              value: <span className="tabular">{formatExact(snapshot.reserves.baseReserve)}</span>,
+              value: <span className="tabular-nums">{formatExact(snapshot.reserves.baseReserve)}</span>,
             },
             {
               label: `${quoteLabel} reserve`,
               value: (
-                <span className="tabular">{formatExact(snapshot.reserves.quoteReserve)}</span>
+                <span className="tabular-nums">{formatExact(snapshot.reserves.quoteReserve)}</span>
               ),
             },
             {
               label: 'Spot price',
               value: (
-                <span className="tabular">
+                <span className="tabular-nums">
                   {formatExact(snapshot.reserves.spotPrice)} {quoteLabel} per {baseLabel}
                 </span>
               ),
@@ -101,7 +104,7 @@ export function PoolState({
             {
               label: 'Invariant',
               value: (
-                <span className="tabular">
+                <span className="tabular-nums">
                   {formatDecimal(snapshot.reserves.invariant, { maxFractionDigits: 2 })}
                   {invariantHolds === null
                     ? ' · not checked'
@@ -117,7 +120,7 @@ export function PoolState({
             },
             {
               label: 'Pool state',
-              value: <span className="mono">{shortContract(snapshot.reserves.stateId)}</span>,
+              value: <Mono>{shortContract(snapshot.reserves.stateId)}</Mono>,
             },
           ]}
         />
@@ -135,12 +138,12 @@ export function PoolState({
         ) : (
           // Saying nothing here would leave the figures above looking like a
           // comparison. There is nothing to compare them with yet.
-          <Callout tone="info" title="No confirmed batch to compare with">
+          <Banner variant="info" title="No confirmed batch to compare with" size="compact" dismissible={false}>
             The reserves above are one observation, not a change. A chart of the move appears once
             the ledger confirms a batch for this pool.
-          </Callout>
+          </Banner>
         )}
-      </div>
+      </CardContent>
     </Card>
   );
 }

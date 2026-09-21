@@ -1,4 +1,11 @@
-import { useState } from 'react';
+import {
+  Banner,
+  CardContent,
+  DataTable,
+  LoadingButton as Button,
+} from '@openzeppelin/ui-components';
+import { NUMERIC } from '../../ui/table';
+import { useId, useState } from 'react';
 import { useDexClient } from '../../app/runtime';
 import { useAction, type AsyncResult } from '../../app/useAsync';
 import type { Swap, SwapActivity as SwapActivityPage, TokenBalance } from '../../lib/api/types';
@@ -9,8 +16,8 @@ import {
   swapStatusLabels,
   swapStatusTones,
 } from '../../lib/labels';
-import { Badge, Callout } from '../../ui/Badge';
-import { Button } from '../../ui/Button';
+import { Mono } from '../../ui/Mono';
+import { StatusBadge } from '../../ui/Badge';
 import { Card, CardHeader, DataList } from '../../ui/Card';
 import { Disclosure } from '../../ui/Disclosure';
 import { AsyncSection, EmptyState } from '../../ui/States';
@@ -33,6 +40,14 @@ export function hasOutstanding(page: SwapActivityPage): boolean {
  * request reports what was actually paid, which can exceed the minimum signed
  * for; nothing here derives it.
  */
+/** The instrument's own precision, where the venue reported a balance for it. */
+function decimalsOf(
+  balances: readonly TokenBalance[],
+  instrument: Swap['inputInstrument'],
+): number | undefined {
+  return balanceOf(balances, instrument)?.decimals;
+}
+
 export function SwapActivity({
   activity,
   balances,
@@ -56,6 +71,7 @@ export function SwapActivity({
   onShowNewer: () => void;
   onReclaimed: () => void;
 }) {
+  const swapActivityTitle = useId();
   const client = useDexClient();
   const [reclaiming, setReclaiming] = useState<string>();
 
@@ -76,20 +92,20 @@ export function SwapActivity({
 
   return (
     <Card>
-      <CardHeader title="Your requests" />
+      <CardHeader title="Your requests" titleId={swapActivityTitle} />
 
       {recovering ? (
-        <div className="card-pad">
-          <Callout tone="warning" title="Sent, not reported yet">
-            <span className="mono">{recovering}</span>
-          </Callout>
-        </div>
+        <CardContent className="p-5">
+          <Banner variant="warning" title="Sent, not reported yet" size="compact" dismissible={false}>
+            <Mono>{recovering}</Mono>
+          </Banner>
+        </CardContent>
       ) : null}
 
       {reclaim.error ? (
-        <div className="card-pad">
-          <Callout tone="danger">{walletMessage(reclaim.error)}</Callout>
-        </div>
+        <CardContent className="p-5">
+          <Banner variant="error" size="compact" dismissible={false}>{walletMessage(reclaim.error)}</Banner>
+        </CardContent>
       ) : null}
 
       {/* One page of requests, not a bare list, so the empty case is the
@@ -99,43 +115,70 @@ export function SwapActivity({
           page.items.length === 0 ? (
             <EmptyState title="No requests yet" />
           ) : (
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Pool</th>
-                  <th className="table-num">Input</th>
-                  <th className="table-num">Output</th>
-                  <th>Status</th>
-                  <th>Settles by</th>
-                  <th>Detail</th>
-                </tr>
-              </thead>
-              <tbody>
-                {page.items.map((swap) => (
-                  <SwapRow
-                    key={swap.swapId}
-                    swap={swap}
-                    balances={balances}
-                    busy={reclaim.pending && reclaiming === swap.swapId}
-                    disabled={reclaim.pending}
-                    onReclaim={async () => {
-                      setReclaiming(swap.swapId);
-                      await reclaim.perform(swap);
-                      // A withdrawal moves funds back, so the holdings and the
-                      // history are both read again, whatever the answer was.
-                      onReclaimed();
-                    }}
-                  />
-                ))}
-              </tbody>
-            </table>
+            <DataTable
+              aria-labelledby={swapActivityTitle}
+              columns={[
+                { id: 'pool', header: 'Pool', cell: (swap) => swap.poolName },
+                {
+                  ...NUMERIC,
+                  id: 'input',
+                  header: 'Input',
+                  cell: (swap) =>
+                    `${formatExact(swap.amountIn, decimalsOf(balances, swap.inputInstrument))} ${instrumentLabel(balances, swap.inputInstrument)}`,
+                },
+                {
+                  ...NUMERIC,
+                  id: 'output',
+                  header: 'Output',
+                  cell: (swap) => <SwapOutput swap={swap} balances={balances} />,
+                },
+                {
+                  id: 'status',
+                  header: 'Status',
+                  cell: (swap) => (
+                    <StatusBadge
+                      tone={swapStatusTones[swap.status]}
+                      dot={swap.status === 'SETTLING'}
+                      label={swapStatusLabels[swap.status]}
+                    />
+                  ),
+                },
+                {
+                  id: 'settles-by',
+                  header: 'Settles by',
+                  cell: (swap) => formatDateTime(swap.settlementDeadline),
+                },
+                {
+                  id: 'detail',
+                  header: 'Detail',
+                  cell: (swap) => (
+                    <SwapDetail
+                      swap={swap}
+                      busy={reclaim.pending && reclaiming === swap.swapId}
+                      disabled={reclaim.pending}
+                      onReclaim={async () => {
+                        setReclaiming(swap.swapId);
+                        await reclaim.perform(swap);
+                        // A withdrawal moves funds back, so the holdings and
+                        // the history are both read again, whatever the
+                        // answer was.
+                        onReclaimed();
+                      }}
+                    />
+                  ),
+                },
+              ]}
+              rows={page.items}
+              getRowKey={(swap) => swap.swapId}
+              className="border-0"
+            />
           )
         }
       </AsyncSection>
 
       {olderCursor || canShowNewer ? (
-        <div className="card-pad">
-          <div className="row">
+        <CardContent className="p-5">
+          <div className="flex items-center gap-3">
             <Button
               size="sm"
               variant="secondary"
@@ -153,100 +196,95 @@ export function SwapActivity({
               Older
             </Button>
           </div>
-        </div>
+        </CardContent>
       ) : null}
     </Card>
   );
 }
 
-function SwapRow({
+/**
+ * What the request bought, or what it still guarantees.
+ *
+ * Nothing has been paid while `amountOut` is null. What the request binds is a
+ * floor, and saying so keeps a signed minimum from reading as a receipt.
+ */
+function SwapOutput({ swap, balances }: { swap: Swap; balances: readonly TokenBalance[] }) {
+  const symbol = instrumentLabel(balances, swap.outputInstrument);
+  const decimals = decimalsOf(balances, swap.outputInstrument);
+  if (swap.amountOut === null) {
+    return (
+      <span className="text-muted-foreground">
+        minimum {formatExact(swap.minOut, decimals)} {symbol}
+      </span>
+    );
+  }
+  return (
+    <>
+      {formatExact(swap.amountOut, decimals)} {symbol}
+    </>
+  );
+}
+
+function SwapDetail({
   swap,
-  balances,
   busy,
   disabled,
   onReclaim,
 }: {
   swap: Swap;
-  balances: readonly TokenBalance[];
   busy: boolean;
   disabled: boolean;
   onReclaim: () => void;
 }) {
-  const inSymbol = instrumentLabel(balances, swap.inputInstrument);
-  const outSymbol = instrumentLabel(balances, swap.outputInstrument);
-  const inDecimals = balanceOf(balances, swap.inputInstrument)?.decimals;
-  const outDecimals = balanceOf(balances, swap.outputInstrument)?.decimals;
-
   return (
-    <tr>
-      <td>{swap.poolName}</td>
-      <td className="table-num tabular">
-        {formatExact(swap.amountIn, inDecimals)} {inSymbol}
-      </td>
-      <td className="table-num tabular">
-        {swap.amountOut === null ? (
-          // Nothing has been paid. What the request binds is a floor, and
-          // saying so keeps a signed minimum from reading as a receipt.
-          <span className="muted">
-            minimum {formatExact(swap.minOut, outDecimals)} {outSymbol}
-          </span>
-        ) : (
-          <>
-            {formatExact(swap.amountOut, outDecimals)} {outSymbol}
-          </>
-        )}
-      </td>
-      <td>
-        <Badge tone={swapStatusTones[swap.status]} dot={swap.status === 'SETTLING'}>
-          {swapStatusLabels[swap.status]}
-        </Badge>
-      </td>
-      <td>{formatDateTime(swap.settlementDeadline)}</td>
-      <td>
-        <div className="stack-sm">
-          {swap.canWithdraw ? (
-            <Button size="sm" variant="secondary" loading={busy} disabled={disabled} onClick={onReclaim}>
-              Reclaim
-            </Button>
-          ) : null}
-          <Disclosure summary="Show detail">
-            <DataList
-              items={[
-                { label: 'Request', value: <span className="mono">{swap.swapId}</span> },
-                {
-                  label: 'Queue position',
-                  value: swap.arrivalSequence === null ? 'Not queued yet' : String(swap.arrivalSequence),
-                },
-                {
-                  // The venue keeps these identifiers after a settlement
-                  // consumes the contracts they name, so they are a record of
-                  // what the request created, not of what is locked now.
-                  label: 'Allocation references',
-                  value:
-                    swap.allocationCids.length === 0 ? (
-                      'None recorded'
-                    ) : (
-                      <span className="mono">
-                        {swap.allocationCids.map(shortContract).join(', ')}
-                      </span>
-                    ),
-                },
-                {
-                  label: 'Ledger update',
-                  value: swap.updateId ? (
-                    <span className="mono">{shortContract(swap.updateId)}</span>
-                  ) : (
-                    'Not confirmed yet'
-                  ),
-                },
-                ...(swap.error
-                  ? [{ label: 'Reported problem', value: `${swap.errorCode ?? ''} ${swap.error}`.trim() }]
-                  : []),
-              ]}
-            />
-          </Disclosure>
-        </div>
-      </td>
-    </tr>
+    <div className="flex flex-col gap-2">
+      {swap.canWithdraw ? (
+        <Button size="sm" variant="secondary" loading={busy} disabled={disabled} onClick={onReclaim}>
+          Reclaim
+        </Button>
+      ) : null}
+      <Disclosure summary="Show detail">
+        <DataList
+          items={[
+            { label: 'Request', value: <Mono>{swap.swapId}</Mono> },
+            {
+              label: 'Queue position',
+              value:
+                swap.arrivalSequence === null ? 'Not queued yet' : String(swap.arrivalSequence),
+            },
+            {
+              // The venue keeps these identifiers after a settlement consumes
+              // the contracts they name, so they are a record of what the
+              // request created, not of what is locked now.
+              label: 'Allocation references',
+              value:
+                swap.allocationCids.length === 0 ? (
+                  'None recorded'
+                ) : (
+                  <Mono>
+                    {swap.allocationCids.map(shortContract).join(', ')}
+                  </Mono>
+                ),
+            },
+            {
+              label: 'Ledger update',
+              value: swap.updateId ? (
+                <Mono>{shortContract(swap.updateId)}</Mono>
+              ) : (
+                'Not confirmed yet'
+              ),
+            },
+            ...(swap.error
+              ? [
+                  {
+                    label: 'Reported problem',
+                    value: `${swap.errorCode ?? ''} ${swap.error}`.trim(),
+                  },
+                ]
+              : []),
+          ]}
+        />
+      </Disclosure>
+    </div>
   );
 }

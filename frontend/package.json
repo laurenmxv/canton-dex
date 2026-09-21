@@ -13,13 +13,26 @@
     "provision:keycloak": "node scripts/provision-keycloak.mjs",
     "dev:keycloak": "vite --mode keycloak"
   },
+  "overridesReason": "nwsapi from 2.2.27 recurses on :modal, which Floating UI queries whenever a kit listbox opens. It takes one open from about 70ms to over 12s under jsdom. Re-check on the next jsdom major.",
+  "overrides": {
+    "jsdom": {
+      "nwsapi": "2.2.24"
+    }
+  },
   "dependencies": {
     "@canton-dex/client": "file:../client",
+    "@openzeppelin/ui-components": "^3.13.0",
+    "@openzeppelin/ui-styles": "^1.2.0",
+    "@openzeppelin/ui-types": "^3.5.2",
+    "@openzeppelin/ui-utils": "^4.0.1",
     "keycloak-js": "^26.2.4",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "react-hook-form": "^7.88.0"
   },
   "devDependencies": {
+    "@openzeppelin/ui-dev-cli": "^1.4.0",
+    "@tailwindcss/vite": "^4.3.3",
     "@testing-library/dom": "^10.4.0",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.1.0",
@@ -29,6 +42,7 @@
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.0.0",
     "jsdom": "^26.0.0",
+    "tailwindcss": "^4.3.3",
     "typescript": "^5.7.0",
     "vite": "^7.0.0",
     "vitest": "^3.0.0"

@@ -17,12 +17,11 @@ import {
   submitApplication,
 } from './flows';
 import { renderApp } from './harness';
-import '../styles/global.css';
 
 const ALICE: Profile = { accountId: 'acc-trader-alice', displayName: 'Alice Carter', role: 'TRADER', partyId: null };
 
 function card(title: string): HTMLElement {
-  return screen.getByText(title).closest('section')!;
+  return screen.getByText(title).closest<HTMLElement>('[data-slot="card"]')!;
 }
 
 describe('the trader dashboard', () => {
@@ -76,7 +75,8 @@ describe('the trader dashboard', () => {
     // The second card, so landing on the first pool would prove nothing.
     await user.click(await screen.findByRole('button', { name: 'Trade CC / USDC' }, LEDGER_WAIT));
 
-    expect(await screen.findByLabelText('Pool')).toHaveValue('pool-cc-usdc');
+    // The listbox shows the pool it landed on, rather than a form value.
+    expect(await screen.findByLabelText('Pool')).toHaveTextContent('CC / USDC');
   });
 
   it('shows a swap submitted elsewhere as soon as the trader returns', async () => {
@@ -199,7 +199,7 @@ describe('a dashboard the venue cannot serve', () => {
     });
 
     const failed = (await screen.findAllByText('Something went wrong'))[0]!;
-    await user.click(within(failed.closest('section')!).getByRole('button', { name: 'Try again' }));
+    await user.click(within(failed.closest<HTMLElement>('[data-slot="card"]')!).getByRole('button', { name: 'Try again' }));
     expect(attempts).toBeGreaterThan(1);
     expect(screen.queryByText('No requests yet')).not.toBeInTheDocument();
   });
@@ -221,7 +221,7 @@ describe('a dashboard the venue cannot serve', () => {
     // Nothing claims a next step the venue never reported.
     expect(screen.queryByText('Start your onboarding')).not.toBeInTheDocument();
 
-    const failed = screen.getByText('Something went wrong').closest('section')!;
+    const failed = screen.getByText('Something went wrong').closest<HTMLElement>('[data-slot="card"]')!;
     await user.click(within(failed).getByRole('button', { name: 'Try again' }));
     expect(attempts).toBeGreaterThan(1);
   });

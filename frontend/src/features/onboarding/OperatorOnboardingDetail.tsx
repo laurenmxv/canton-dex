@@ -1,4 +1,12 @@
-import { useState } from 'react';
+import {
+  Banner,
+  CardContent,
+  Checkbox,
+  DataTable,
+  Label,
+  LoadingButton as Button,
+} from '@openzeppelin/ui-components';
+import { useId, useState } from 'react';
 import { useDemoApi, useDexClient } from '../../app/runtime';
 import { useAction, useAsync } from '../../app/useAsync';
 import type { Onboarding, PartyPreparation, PoolSummary } from '../../lib/api/types';
@@ -16,10 +24,11 @@ import {
   shortContract,
   shortParty,
 } from '../../lib/labels';
-import { Badge, Callout } from '../../ui/Badge';
-import { Button } from '../../ui/Button';
+import { Mono } from '../../ui/Mono';
+import { TextLink } from '../../ui/Link';
+import { StatusBadge } from '../../ui/Badge';
 import { Card, CardHeader, DataList } from '../../ui/Card';
-import { TextField } from '../../ui/Field';
+import { TextControl } from '../../ui/Field';
 import { SimulatedLedgerNotice } from '../../ui/SimulatedLedger';
 import { EmptyState, ErrorState, Loading, RefreshFailure } from '../../ui/States';
 import { PageHeader } from '../../ui/PageHeader';
@@ -33,6 +42,7 @@ export function OperatorOnboardingDetail({
   onboardingId: string;
   onBack: () => void;
 }) {
+  const ledgerStepsTitle = useId();
   const client = useDexClient();
   // Only the demo produces its own identifiers; the venue's are real.
   const simulated = useDemoApi() !== null;
@@ -66,7 +76,7 @@ export function OperatorOnboardingDetail({
   const poolName = (poolId: string) => poolNameOf(pools.data ?? [], poolId);
 
   return (
-    <div className="stack-lg fade-in">
+    <div className="flex flex-col gap-6 fade-in">
       {queue.error && queue.data !== undefined ? (
         <RefreshFailure error={queue.error} onRetry={queue.reload} />
       ) : null}
@@ -76,64 +86,59 @@ export function OperatorOnboardingDetail({
         eyebrow="Onboarding request"
         back={{ label: 'All requests', onClick: onBack }}
         actions={
-          <Badge tone={onboardingStatusTones[request.status]} dot={isWorking(request)}>
-            {onboardingStatusLabels[request.status]}
-          </Badge>
+          <StatusBadge tone={onboardingStatusTones[request.status]} dot={isWorking(request)} label={onboardingStatusLabels[request.status]} />
         }
       />
 
-      <div className="grid-2">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <Card>
           <CardHeader title="Submitted information" />
-          <div className="card-pad">
+          <CardContent className="p-5">
             <DataList
               items={[
                 { label: 'Legal name', value: request.application.legalName },
                 { label: 'Country', value: request.application.countryCode },
                 { label: 'Submitted', value: formatDateTime(request.createdAt) },
-                { label: 'Reference', value: <span className="mono">{request.id}</span> },
+                { label: 'Reference', value: <Mono>{request.id}</Mono> },
                 {
                   label: 'Documents',
                   value: <DocumentList application={request.application} />,
                 },
               ]}
             />
-          </div>
+          </CardContent>
         </Card>
 
         <Card>
           <CardHeader title="Party" />
-          <div className="card-pad stack-sm">
+          <CardContent className="p-5 flex flex-col gap-2">
             {request.party ? (
               <>
                 <DataList
                   items={[
                     {
                       label: 'Party',
-                      value: <span className="mono">{shortParty(request.party.partyId)}</span>,
+                      value: <Mono>{shortParty(request.party.partyId)}</Mono>,
                     },
                     {
                       label: 'Mode',
-                      value: <Badge tone="neutral">{partyModeLabels[request.partyMode]}</Badge>,
+                      value: <StatusBadge tone="neutral" label={partyModeLabels[request.partyMode]} />,
                     },
                     {
                       label: 'Registration',
                       value: (
-                        <Badge
+                        <StatusBadge
                           tone={partyStatusTones[request.party.status]}
-                          dot={request.party.status === 'SUBMITTING'}
-                        >
-                          {partyStatusLabels[request.party.status]}
-                        </Badge>
+                          dot={request.party.status === 'SUBMITTING'} label={partyStatusLabels[request.party.status]} />
                       ),
                     },
                   ]}
                 />
               </>
             ) : (
-              <p className="muted text-xs">Not registered</p>
+              <p className="text-muted-foreground text-xs">Not registered</p>
             )}
-          </div>
+          </CardContent>
         </Card>
       </div>
 
@@ -148,36 +153,53 @@ export function OperatorOnboardingDetail({
 
       {request.ledgerSteps.length > 0 ? (
         <Card>
-          <CardHeader title="Onboarding progress" />
-          <div className="card-pad">
+          <CardHeader title="Onboarding progress" titleId={ledgerStepsTitle} />
+          <CardContent className="p-5">
             {simulated ? <SimulatedLedgerNotice /> : null}
+          </CardContent>
+          {/*
+            The steps land one at a time while the operator watches. The kit
+            table owns its own `tbody`, so the live region sits on the element
+            around it; a change inside it is announced all the same.
+          */}
+          <div aria-live="polite">
+            <DataTable
+              aria-labelledby={ledgerStepsTitle}
+              columns={[
+                {
+                  id: 'step',
+                  header: 'Step',
+                  cell: (step) => ledgerStepLabel(step.key, poolName),
+                },
+                {
+                  id: 'command',
+                  header: 'Command',
+                  cellClassName: 'font-mono text-xs text-muted-foreground',
+                  cell: (step) => step.commandId,
+                },
+                {
+                  id: 'contract',
+                  header: 'Contract',
+                  cellClassName: 'font-mono text-xs text-muted-foreground',
+                  cell: (step) => (step.contractId ? shortContract(step.contractId) : '—'),
+                },
+                {
+                  id: 'status',
+                  header: 'Status',
+                  cell: (step) => (
+                    <StatusBadge
+                      tone={ledgerStepTones[step.status]}
+                      dot={step.status === 'SUBMITTING'}
+                      label={step.status}
+                    />
+                  ),
+                },
+              ]}
+              rows={request.ledgerSteps}
+              getRowKey={(step) => step.key}
+              className="border-0"
+            />
           </div>
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Step</th>
-                <th>Command</th>
-                <th>Contract</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody aria-live="polite">
-              {request.ledgerSteps.map((step) => (
-                <tr key={step.key}>
-                  <td>{ledgerStepLabel(step.key, poolName)}</td>
-                  <td className="mono muted">{step.commandId}</td>
-                  <td className="mono muted">
-                    {step.contractId ? shortContract(step.contractId) : '—'}
-                  </td>
-                  <td>
-                    <Badge tone={ledgerStepTones[step.status]} dot={step.status === 'SUBMITTING'}>
-                      {step.status}
-                    </Badge>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
         </Card>
       ) : null}
     </div>
@@ -226,16 +248,14 @@ function ReviewPanel({
         <CardHeader
           title="Review"
           actions={
-            <Badge tone={rejected ? 'danger' : 'success'}>
-              {rejected ? 'Rejected' : 'Approved'}
-            </Badge>
+            <StatusBadge tone={rejected ? 'danger' : 'success'} label={rejected ? 'Rejected' : 'Approved'} />
           }
         />
-        <div className="card-pad stack">
+        <CardContent className="p-5 flex flex-col gap-4">
           {rejected || onboarding.partyMode !== 'external' ? null : (
-            <Callout tone="info" title="Accepted">
+            <Banner variant="info" title="Accepted" size="compact" dismissible={false}>
               {acceptedDetail(onboarding.party)}
-            </Callout>
+            </Banner>
           )}
           <DataList
             items={[
@@ -254,7 +274,7 @@ function ReviewPanel({
               },
             ]}
           />
-        </div>
+        </CardContent>
       </Card>
     );
   }
@@ -277,42 +297,39 @@ function ReviewPanel({
       <CardHeader
         title="Review this application"
       />
-      <div className="card-pad stack">
+      <CardContent className="p-5 flex flex-col gap-4">
         {poolsError ? (
-          <Callout tone="warning" title="Could not load pools">
+          <Banner variant="warning" title="Could not load pools" size="compact" dismissible={false}>
             {poolsError.message}{' '}
-            <button type="button" className="table-link" onClick={onRetryPools}>
-              Try again
-            </button>
-          </Callout>
+            <TextLink onClick={onRetryPools}>Try again</TextLink>
+          </Banner>
         ) : pools === undefined ? (
-          <p className="muted text-xs">Loading pools…</p>
+          <p className="text-muted-foreground text-xs">Loading pools…</p>
         ) : pools.length === 0 ? (
-          <Callout tone="warning" title="No pools exist yet">
+          <Banner variant="warning" title="No pools exist yet" size="compact" dismissible={false}>
             Create a pool before approving, otherwise there is nothing to permit.
-          </Callout>
+          </Banner>
         ) : (
-          <fieldset className="stack-sm">
-            <legend className="field-label" style={{ marginBottom: '0.5rem' }}>
+          <fieldset className="flex flex-col gap-2">
+            <legend className="text-xs font-medium" style={{ marginBottom: '0.5rem' }}>
               Permitted pools
             </legend>
             {pools.map((pool) => (
-              <label key={pool.poolId} className="row text-sm">
-                <input
-                  type="checkbox"
+              <Label key={pool.poolId} className="flex items-center gap-3 text-sm">
+                <Checkbox
                   checked={selected.includes(pool.poolId)}
-                  onChange={() => toggle(pool.poolId)}
+                  onCheckedChange={() => toggle(pool.poolId)}
                 />
                 <span>{pool.name}</span>
-              </label>
+              </Label>
             ))}
             {touched && selected.length === 0 ? (
-              <p className="field-error">Select at least one pool</p>
+              <p className="text-destructive text-[0.75rem]">Select at least one pool</p>
             ) : null}
           </fieldset>
         )}
 
-        <TextField
+        <TextControl
           label="Party name"
           error={
             touched && !hintValid
@@ -324,31 +341,31 @@ function ReviewPanel({
           onChange={(event) => setHint(event.target.value)}
         />
 
-        {review.error ? <Callout tone="danger">{review.error.message}</Callout> : null}
+        {review.error ? <Banner variant="error" size="compact" dismissible={false}>{review.error.message}</Banner> : null}
 
         {confirmingReject ? (
-          <Callout tone="danger" title="Reject this application?">
+          <Banner variant="error" title="Reject this application?" size="compact" dismissible={false}>
             <p>Rejection is final.</p>
-            <div className="row" style={{ marginTop: '0.75rem' }}>
-              <Button variant="danger" loading={review.pending} onClick={() => decide('REJECTED')}>
+            <div className="flex items-center gap-3" style={{ marginTop: '0.75rem' }}>
+              <Button variant="destructive" loading={review.pending} onClick={() => decide('REJECTED')}>
                 Yes, reject
               </Button>
               <Button variant="ghost" onClick={() => setConfirmingReject(false)}>
                 Keep reviewing
               </Button>
             </div>
-          </Callout>
+          </Banner>
         ) : (
-          <div className="row">
+          <div className="flex items-center gap-3">
             <Button loading={review.pending} onClick={() => decide('APPROVED')}>
               Accept with {selected.length} pool{selected.length === 1 ? '' : 's'}
             </Button>
-            <Button variant="danger" onClick={() => setConfirmingReject(true)}>
+            <Button variant="destructive" onClick={() => setConfirmingReject(true)}>
               Reject
             </Button>
           </div>
         )}
-      </div>
+      </CardContent>
     </Card>
   );
 }

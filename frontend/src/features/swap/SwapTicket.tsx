@@ -1,3 +1,8 @@
+import {
+  Banner,
+  CardContent,
+  LoadingButton as Button,
+} from '@openzeppelin/ui-components';
 import { useState } from 'react';
 import { useDexClient } from '../../app/runtime';
 import { useAction, type AsyncResult } from '../../app/useAsync';
@@ -13,10 +18,9 @@ import type {
 } from '../../lib/api/types';
 import { formatDecimal, formatExact } from '../../lib/decimal';
 import { formatCountdown, formatDateTime, formatFeeBps } from '../../lib/labels';
-import { Callout } from '../../ui/Badge';
-import { Button } from '../../ui/Button';
+import { Mono } from '../../ui/Mono';
 import { Card, CardHeader, DataList } from '../../ui/Card';
-import { SelectField, TextField } from '../../ui/Field';
+import { SelectControl, TextControl } from '../../ui/Field';
 import { ErrorState, Loading } from '../../ui/States';
 import { TokenLogo } from '../../ui/TokenLogo';
 import { walletMessage, type WalletSigner } from '../wallet/signing';
@@ -154,38 +158,38 @@ export function SwapTicket({
         title="Request a swap"
         description={pool.data ? formatFeeBps(pool.data.settings.feeBps) : undefined}
         actions={
-          <SelectField
+          <SelectControl
             label="Pool"
             hideLabel
-            controlClassName="header-select"
+            controlClassName="h-8 text-xs"
             value={poolId}
             disabled={busy}
-            onChange={(event) => {
+            onValueChange={(next) => {
               retireQuote();
-              onPoolId(event.target.value);
+              onPoolId(next);
             }}
-          >
-            {pools.map((candidate) => (
-              <option key={candidate.poolId} value={candidate.poolId}>
-                {candidate.name}
-              </option>
-            ))}
-          </SelectField>
+            options={pools.map((candidate) => ({
+              value: candidate.poolId,
+              label: candidate.name,
+            }))}
+          />
         }
       />
-      <div className="card-pad stack">
+      <CardContent className="p-5 flex flex-col gap-4">
         {pool.error && !pool.data ? (
           <ErrorState error={pool.error} onRetry={pool.reload} />
         ) : null}
 
         <div>
-          <div className="swap-panel">
-            <div className="swap-panel-head">
-              <span className="swap-panel-label">You pay</span>
+          <div className="bg-surface focus-within:border-primary-border flex flex-col gap-2 rounded-lg border px-4 pt-3.5 pb-4 transition-colors">
+            <div className="text-muted-foreground flex items-center justify-between gap-3 text-[0.75rem]">
+              <span className="font-[550] tracking-[0.02em]">You pay</span>
               {inputBalance ? (
-                <button
+                <Button
                   type="button"
-                  className="swap-max"
+                  variant="outline"
+                  size="sm"
+                  className="h-auto border-primary-border bg-primary-soft text-primary hover:not-disabled:bg-[color-mix(in_oklab,var(--primary)_18%,transparent)] rounded-full border px-2 py-0.5 text-[0.6875rem] font-semibold tracking-[0.04em]"
                   disabled={busy}
                   onClick={() => {
                     retireQuote();
@@ -193,12 +197,12 @@ export function SwapTicket({
                   }}
                 >
                   Max
-                </button>
+                </Button>
               ) : null}
             </div>
-            <div className="swap-panel-row">
-              <div className="swap-field">
-                <TextField
+            <div className="flex items-center gap-3">
+              <div className="min-w-0 flex-1 [&_input]:h-9 [&_input]:border-0 [&_input]:bg-transparent [&_input]:p-0 [&_input]:text-[1.625rem] [&_input]:font-semibold [&_input]:tracking-[-0.02em] [&_input]:tabular-nums [&_input]:focus-visible:ring-0 [&_p]:text-[0.75rem]">
+                <TextControl
                   label={`Amount in${inSymbol ? ` (${inSymbol})` : ''}`}
                   hideLabel
                   value={amountIn}
@@ -215,16 +219,18 @@ export function SwapTicket({
               <TokenPillLabel symbol={inSymbol} />
             </div>
             {inputBalance ? (
-              <p className="muted text-xs tabular">
+              <p className="text-muted-foreground text-xs tabular-nums">
                 {`${formatExact(inputBalance.available, inputBalance.decimals)} ${inputBalance.symbol} available`}
               </p>
             ) : null}
           </div>
 
-          <div className="swap-seam">
-            <button
+          <div className="relative z-1 flex h-0 justify-center">
+            <Button
               type="button"
-              className="swap-switch"
+              variant="outline"
+              size="icon"
+              className="border-card bg-surface-strong text-foreground hover:not-disabled:bg-primary-soft hover:not-disabled:text-primary active:not-disabled:rotate-180 -mt-4.5 grid size-9 place-items-center rounded-full border-[3px] text-sm leading-none transition"
               disabled={busy}
               aria-label={`Swap direction to ${outSymbol || 'the other side'} for ${inSymbol || 'this one'}`}
               onClick={() => {
@@ -235,28 +241,28 @@ export function SwapTicket({
               }}
             >
               <span aria-hidden="true">↓</span>
-            </button>
+            </Button>
           </div>
 
-          <div className="swap-panel">
-            <div className="swap-panel-head">
-              <span className="swap-panel-label">You receive</span>
+          <div className="bg-surface focus-within:border-primary-border flex flex-col gap-2 rounded-lg border px-4 pt-3.5 pb-4 transition-colors">
+            <div className="text-muted-foreground flex items-center justify-between gap-3 text-[0.75rem]">
+              <span className="font-[550] tracking-[0.02em]">You receive</span>
               <span>{quote ? 'Estimated' : 'Quoted by the venue'}</span>
             </div>
-            <div className="swap-panel-row">
+            <div className="flex items-center gap-3">
               {/* The pill beside it names the token, so the figure is bare. */}
               {quote ? (
-                <span className="swap-quoted">{formatExact(quote.expectedOut)}</span>
+                <span className="min-w-0 flex-1 text-[1.625rem] font-semibold tracking-[-0.02em] wrap-anywhere tabular-nums">{formatExact(quote.expectedOut)}</span>
               ) : (
-                <span className="swap-quoted swap-quoted-none">0.00</span>
+                <span className="text-muted-foreground min-w-0 flex-1 text-[1.625rem] font-semibold tracking-[-0.02em] wrap-anywhere tabular-nums">0.00</span>
               )}
               <TokenPillLabel symbol={outSymbol} />
             </div>
           </div>
         </div>
 
-        <div className="inline-field">
-          <TextField
+        <div className="flex items-end gap-2">
+          <TextControl
             label="Maximum slippage (bps)"
             value={slippageBps}
             inputMode="numeric"
@@ -270,14 +276,14 @@ export function SwapTicket({
         </div>
 
         {requestQuote.error ? (
-          <Callout tone="danger">{requestQuote.error.message}</Callout>
+          <Banner variant="error" size="compact" dismissible={false}>{requestQuote.error.message}</Banner>
         ) : null}
 
         <Button
-          className="btn-block"
+          className="w-full"
           loading={requestQuote.pending}
           disabled={busy || pools.length === 0}
-          variant={quote ? 'secondary' : 'primary'}
+          variant={quote ? 'secondary' : 'default'}
           onClick={async () => {
             setTouched(true);
             if (amountError || slippageError) return;
@@ -318,21 +324,21 @@ export function SwapTicket({
         ) : null}
 
         {stale ? (
-          <Callout tone="warning">This quote already has a request</Callout>
+          <Banner variant="warning" size="compact" dismissible={false}>This quote already has a request</Banner>
         ) : null}
 
         {unresolved ? (
-          <Callout tone="warning" title="Sent, outcome unknown">
-            <span className="mono">{unresolved}</span>
-          </Callout>
+          <Banner variant="warning" title="Sent, outcome unknown" size="compact" dismissible={false}>
+            <Mono>{unresolved}</Mono>
+          </Banner>
         ) : null}
 
         {submitted ? (
-          <Callout tone="info" title="Request sent">
-            <span className="mono">{submitted.swapId}</span>
-          </Callout>
+          <Banner variant="info" title="Request sent" size="compact" dismissible={false}>
+            <Mono>{submitted.swapId}</Mono>
+          </Banner>
         ) : null}
-      </div>
+      </CardContent>
     </Card>
   );
 }
@@ -362,10 +368,10 @@ function QuotedTerms({
   const quoteExpired = error !== undefined && venueErrorCode(error) === 'QUOTE_EXPIRED';
 
   return (
-    <div className="stack-sm">
+    <div className="flex flex-col gap-2">
       {/* The terms of the quote, written out. The panels above carry the two
           figures a trader reads first; this is what they approve. */}
-      <div className="swap-summary">
+      <div className="bg-surface rounded-md border px-4 py-3.5">
         <DataList
           variant="summary"
           items={[
@@ -413,13 +419,13 @@ function QuotedTerms({
       </div>
 
       {error ? (
-        <Callout tone="danger" title={quoteExpired ? 'Quote expired' : undefined}>
+        <Banner variant="error" title={quoteExpired ? 'Quote expired' : undefined} size="compact" dismissible={false}>
           {walletMessage(error)}
-        </Callout>
+        </Banner>
       ) : null}
 
       <Button
-        className="btn-block"
+        className="w-full"
         loading={pending}
         disabled={expired || blocked}
         onClick={onRequest}
@@ -434,7 +440,7 @@ function QuotedTerms({
 function TokenPillLabel({ symbol }: { symbol: string }) {
   if (!symbol) return null;
   return (
-    <span className="token-pill">
+    <span className="bg-card shadow-card inline-flex flex-none items-center gap-[0.4375rem] rounded-full border py-[0.3125rem] pr-3 pl-[0.3125rem] text-sm font-semibold">
       <TokenLogo symbol={symbol} size="sm" />
       {symbol}
     </span>

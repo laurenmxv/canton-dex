@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useDexClient } from '../../app/runtime';
 import { useAsync } from '../../app/useAsync';
 import { Card } from '../../ui/Card';
-import { SelectField } from '../../ui/Field';
+import { SelectControl } from '../../ui/Field';
 import { EmptyState, ErrorState, Loading, RefreshFailure } from '../../ui/States';
 import { PageHeader } from '../../ui/PageHeader';
 import { PoolSettlement } from './PoolSettlement';
@@ -30,7 +30,7 @@ export function OperatorSettlement() {
   }
 
   return (
-    <div className="stack-lg fade-in">
+    <div className="flex flex-col gap-6 fade-in">
       <PageHeader
         title="Settlement"
         description="One pool at a time: its queue, its state, and the batches it has run."
@@ -41,17 +41,15 @@ export function OperatorSettlement() {
       {pool ? (
         <>
           <Card padded>
-            <SelectField
+            <SelectControl
               label="Pool"
               value={pool.poolId}
-              onChange={(event) => setChosen(event.target.value)}
-            >
-              {available.map((candidate) => (
-                <option key={candidate.poolId} value={candidate.poolId}>
-                  {candidate.name}
-                </option>
-              ))}
-            </SelectField>
+              onValueChange={setChosen}
+              options={available.map((candidate) => ({
+                value: candidate.poolId,
+                label: candidate.name,
+              }))}
+            />
           </Card>
 
           {/* Keyed on the pool, so one pool's settings and queue can never be

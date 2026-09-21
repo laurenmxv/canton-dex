@@ -1,3 +1,10 @@
+import {
+  Banner,
+  CardContent,
+  Input,
+  Label,
+  LoadingButton as Button,
+} from '@openzeppelin/ui-components';
 import { useEffect, useRef, useState } from 'react';
 import { useDexClient } from '../../app/runtime';
 import { useAction, useAsync } from '../../app/useAsync';
@@ -15,8 +22,8 @@ import {
   pairSymbols,
   trimDecimal,
 } from '../../lib/labels';
-import { Badge, Callout } from '../../ui/Badge';
-import { Button } from '../../ui/Button';
+import { Mono } from '../../ui/Mono';
+import { StatusBadge } from '../../ui/Badge';
 import { Card, CardHeader, DataList } from '../../ui/Card';
 import { CopyField } from '../../ui/CopyField';
 import { Disclosure } from '../../ui/Disclosure';
@@ -89,7 +96,7 @@ export function VenuePools() {
 
   if (proposals.error && !proposals.data) {
     return (
-      <div className="stack-lg fade-in">
+      <div className="flex flex-col gap-6 fade-in">
         <PageHeader
           title="Pools"
           description="The venue catalogue, and the proposals waiting on the dvo."
@@ -105,7 +112,7 @@ export function VenuePools() {
   const failed = (proposals.data ?? []).filter((proposal) => proposal.status === 'FAILED');
 
   return (
-    <div className="stack-lg fade-in">
+    <div className="flex flex-col gap-6 fade-in">
       <PageHeader
         title="Pools"
         description="The venue catalogue, and the proposals waiting on the dvo."
@@ -114,7 +121,7 @@ export function VenuePools() {
 
       <NoticeBoard notices={updates.notices} onDismiss={updates.dismiss} />
 
-      <div className="stat-row">
+      <div className="grid grid-cols-2 gap-3 min-[721px]:grid-cols-3">
         <Stat label="Pools" value={pools.data?.length} />
         <Stat label="In progress" value={proposals.data ? open.length : undefined} />
         <Stat label="Needs attention" value={proposals.data ? failed.length : undefined} />
@@ -134,17 +141,23 @@ export function VenuePools() {
         <CardHeader
           title="Proposals"
           actions={
-            <div className="chip-row">
+            <div className="bg-surface inline-flex gap-0.5 rounded-full border p-[0.1875rem]">
               {FILTERS.map((one) => (
-                <button
+                <Button
                   key={one.id}
                   type="button"
-                  className={`chip ${filter === one.id ? 'chip-on' : ''}`.trim()}
+                  variant="ghost"
+                  size="sm"
+                  className={
+                    filter === one.id
+                      ? 'bg-card text-foreground shadow-card rounded-full px-3 py-[0.3125rem] text-[0.75rem] font-medium transition-colors'
+                      : 'text-muted-foreground hover:text-foreground rounded-full px-3 py-[0.3125rem] text-[0.75rem] font-medium transition-colors'
+                  }
                   aria-pressed={filter === one.id}
                   onClick={() => setFilter(one.id)}
                 >
                   {one.label}
-                </button>
+                </Button>
               ))}
             </div>
           }
@@ -168,13 +181,12 @@ export function VenuePools() {
         <CardHeader
           title="Live pools"
           actions={
-            <div className="search-field">
-              <label className="sr-only" htmlFor="pool-search">
+            <div className="[&_input]:min-w-48">
+              <Label className="sr-only" htmlFor="pool-search">
                 Search pools
-              </label>
-              <input
+              </Label>
+              <Input
                 id="pool-search"
-                className="control"
                 type="search"
                 placeholder="Search"
                 value={search}
@@ -206,14 +218,14 @@ export function VenuePools() {
 function Pair({ terms, name }: { terms: PoolTerms; name: string }) {
   const pair = pairOf(terms);
   if (pair === name) return null;
-  return <p className="muted text-xs mono">{pair}</p>;
+  return <p className="text-muted-foreground text-xs font-mono">{pair}</p>;
 }
 
 function Stat({ label, value }: { label: string; value: number | undefined }) {
   return (
-    <div className="stat">
-      <span className="stat-value">{value ?? '—'}</span>
-      <span className="stat-label">{label}</span>
+    <div data-slot="stat" className="bg-surface flex flex-col-reverse gap-1 rounded-md border px-4.5 py-4">
+      <span className="text-2xl leading-[1.1] font-semibold tracking-[-0.02em] tabular-nums">{value ?? '—'}</span>
+      <span className="text-muted-foreground text-[0.6875rem] tracking-[0.05em] uppercase">{label}</span>
     </div>
   );
 }
@@ -225,13 +237,13 @@ function Terms({ terms }: { terms: PoolTerms }) {
         { label: 'Base reserve', value: trimDecimal(terms.baseReserve) },
         { label: 'Quote reserve', value: trimDecimal(terms.quoteReserve) },
         { label: 'LP supply', value: trimDecimal(terms.lpTokenSupply) },
-        { label: 'LP token', value: <span className="mono">{terms.lpTokenInstrumentId.id}</span> },
-        { label: 'Base admin', value: <span className="mono">{terms.baseInstrumentId.admin}</span> },
+        { label: 'LP token', value: <Mono>{terms.lpTokenInstrumentId.id}</Mono> },
+        { label: 'Base admin', value: <Mono>{terms.baseInstrumentId.admin}</Mono> },
         {
           label: 'Quote admin',
-          value: <span className="mono">{terms.quoteInstrumentId.admin}</span>,
+          value: <Mono>{terms.quoteInstrumentId.admin}</Mono>,
         },
-        { label: 'dvo', value: <span className="mono">{terms.dvo}</span> },
+        { label: 'dvo', value: <Mono>{terms.dvo}</Mono> },
       ]}
     />
   );
@@ -240,28 +252,28 @@ function Terms({ terms }: { terms: PoolTerms }) {
 function PoolGrid({ pools }: { pools: PoolDetail[] }) {
   if (pools.length === 0) {
     return (
-      <div className="card-pad">
+      <CardContent className="p-5">
         <EmptyState title="No match" />
-      </div>
+      </CardContent>
     );
   }
   return (
-    <div className="card-pad pool-grid">
+    <div className="grid grid-cols-[repeat(auto-fill,minmax(18rem,1fr))] gap-3 p-5">
       {pools.map((pool) => (
-        <article key={pool.poolId} className="pool-card">
-          <div className="row-between">
-            <div className="access-head">
+        <article key={pool.poolId} className="bg-card flex flex-col gap-3 rounded-md border px-4 py-3.5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2.5">
               {/* The marks sit beside the heading, never inside it: a name a
                   reader hears must be the pool's own. */}
               <TokenPair tokens={pairSymbols(pool.name).map((symbol) => ({ symbol }))} size="sm" />
-              <div className="access-name">
-                <h3 className="pool-name">{pool.name}</h3>
+              <div className="flex min-w-0 flex-col [&>*]:truncate">
+                <h3 className="text-[0.9375rem] font-semibold">{pool.name}</h3>
                 <Pair terms={pool.settings} name={pool.name} />
               </div>
             </div>
-            <Badge tone="success">{formatFeeBps(pool.settings.feeBps)}</Badge>
+            <StatusBadge tone="success" label={formatFeeBps(pool.settings.feeBps)} />
           </div>
-          <div className="pool-figures">
+          <div className="grid grid-cols-2 gap-2 min-[721px]:grid-cols-3">
             <Figure label="Base" value={trimDecimal(pool.settings.baseReserve)} />
             <Figure label="Quote" value={trimDecimal(pool.settings.quoteReserve)} />
             <Figure label="LP supply" value={trimDecimal(pool.settings.lpTokenSupply)} />
@@ -272,7 +284,7 @@ function PoolGrid({ pools }: { pools: PoolDetail[] }) {
             <CopyField label="State" value={pool.stateId} />
             <DataList
               items={[
-                { label: 'Package', value: <span className="mono">{pool.packageId}</span> },
+                { label: 'Package', value: <Mono>{pool.packageId}</Mono> },
                 {
                   label: 'Created',
                   value: pool.createdAt ? formatDateTime(pool.createdAt) : 'Not recorded',
@@ -289,9 +301,9 @@ function PoolGrid({ pools }: { pools: PoolDetail[] }) {
 
 function Figure({ label, value }: { label: string; value: string }) {
   return (
-    <div className="pool-figure">
-      <span className="pool-figure-label">{label}</span>
-      <span className="pool-figure-value">{value}</span>
+    <div className="flex flex-col">
+      <span className="text-muted-foreground text-[0.6875rem]">{label}</span>
+      <span className="text-xs tabular-nums">{value}</span>
     </div>
   );
 }
@@ -305,17 +317,17 @@ function ProposalList({
 }) {
   if (proposals.length === 0) {
     return (
-      <div className="card-pad">
+      <CardContent className="p-5">
         <EmptyState title="Nothing here" />
-      </div>
+      </CardContent>
     );
   }
   return (
-    <div className="card-pad stack-sm">
+    <CardContent className="p-5 flex flex-col gap-2">
       {proposals.map((proposal) => (
         <ProposalRow key={proposal.proposalId} proposal={proposal} onChanged={onChanged} />
       ))}
-    </div>
+    </CardContent>
   );
 }
 
@@ -330,19 +342,16 @@ function ProposalRow({
   const withdraw = useAction(() => client.admin.withdrawPoolProposal(proposal.proposalId));
 
   return (
-    <div className="proposal-row">
-      <div className="row-between">
+    <div data-slot="proposal-row" className="flex flex-col gap-2 rounded-md border px-4 py-3.5">
+      <div className="flex items-center justify-between gap-3">
         <div>
-          <span className="proposal-name">{proposal.name}</span>
+          <span className="text-[0.9375rem] font-semibold">{proposal.name}</span>
           <Pair terms={proposal.settings} name={proposal.name} />
         </div>
-        <div className="row">
-          <Badge
+        <div className="flex items-center gap-3">
+          <StatusBadge
             tone={poolProposalStatusTones[proposal.status]}
-            dot={proposal.status === 'SUBMITTING' || proposal.status === 'UNRESOLVED'}
-          >
-            {poolProposalStatusLabels[proposal.status]}
-          </Badge>
+            dot={proposal.status === 'SUBMITTING' || proposal.status === 'UNRESOLVED'} label={poolProposalStatusLabels[proposal.status]} />
           {proposal.status === 'PENDING' ? (
             <Button
               size="sm"
@@ -360,11 +369,11 @@ function ProposalRow({
       </div>
 
       {proposal.error ? (
-        <Callout tone={proposal.status === 'FAILED' ? 'danger' : 'warning'}>
+        <Banner variant={proposal.status === 'FAILED' ? 'error' : 'warning'} size="compact" dismissible={false}>
           {proposal.error}
-        </Callout>
+        </Banner>
       ) : null}
-      {withdraw.error ? <Callout tone="danger">{withdraw.error.message}</Callout> : null}
+      {withdraw.error ? <Banner variant="error" size="compact" dismissible={false}>{withdraw.error.message}</Banner> : null}
 
       <Disclosure summary="Details">
         <DataList
@@ -372,8 +381,8 @@ function ProposalRow({
             { label: 'Fee', value: formatFeeBps(proposal.settings.feeBps) },
             { label: 'Proposed', value: formatDateTime(proposal.createdAt) },
             { label: 'Updated', value: formatDateTime(proposal.updatedAt) },
-            { label: 'By', value: <span className="mono">{proposal.proposedBy}</span> },
-            { label: 'Factory', value: <span className="mono">{proposal.factoryId}</span> },
+            { label: 'By', value: <Mono>{proposal.proposedBy}</Mono> },
+            { label: 'Factory', value: <Mono>{proposal.factoryId}</Mono> },
           ]}
         />
         <CopyField label="Proposal ID" value={proposal.proposalId} />

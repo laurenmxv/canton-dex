@@ -7,7 +7,6 @@ import type { DexClient } from '../lib/api/port';
 import type { Onboarding, Profile } from '../lib/api/types';
 import { testClient } from './clients';
 import { goTo } from './flows';
-import '../styles/global.css';
 
 const TRADER: Profile = { accountId: 'acc-trader-alice', displayName: 'Alice Carter', role: 'TRADER', partyId: null };
 const OPERATOR: Profile = {
@@ -122,7 +121,7 @@ describe('when the venue is unreachable', () => {
 
     // Every read on this screen is refused, so the assertion names the card it
     // is about rather than whichever failure rendered first.
-    const pools = (await screen.findByText('Pools open to you')).closest('section')!;
+    const pools = (await screen.findByText('Pools open to you')).closest<HTMLElement>('[data-slot="card"]')!;
     expect(await within(pools).findByText('Something went wrong')).toBeInTheDocument();
     expect(within(pools).queryByText('No pools yet')).not.toBeInTheDocument();
   });

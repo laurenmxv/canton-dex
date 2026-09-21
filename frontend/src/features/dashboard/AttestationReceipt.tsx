@@ -1,6 +1,13 @@
 import type { Onboarding, PoolSummary } from '../../lib/api/types';
 import { poolNameOf, shortContract } from '../../lib/labels';
-import { Badge } from '../../ui/Badge';
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@openzeppelin/ui-components';
+import { Mono } from '../../ui/Mono';
+import { StatusBadge } from '../../ui/Badge';
 import { Card, CardHeader, DataList } from '../../ui/Card';
 import { CopyField } from '../../ui/CopyField';
 import { SimulatedLedgerNotice } from '../../ui/SimulatedLedger';
@@ -35,24 +42,32 @@ export function AttestationReceipt({
   const unresolved = onboarding.ledgerSteps.some((step) => step.status === 'UNRESOLVED');
   return (
     <Card>
-      <CardHeader title="KYC attestation" actions={<Badge tone="success">Confirmed</Badge>} />
-      <details className="receipt">
-        <summary className="receipt-summary">
-          <span className="receipt-summary-label">Proof and details</span>
-          <span className="muted text-xs mono">{shortContract(attestation.contractId)}</span>
-        </summary>
-        <div className="card-pad stack">
+      <CardHeader title="KYC attestation" actions={<StatusBadge tone="success" label="Confirmed" />} />
+      <Accordion type="single" collapsible variant="card">
+        <AccordionItem value="proof" className="border-b-0">
+          {/*
+            The summary names the contract, so a reader can tell one receipt
+            from another without opening it.
+          */}
+          <AccordionTrigger className="bg-surface text-muted-foreground mx-5 mt-3 rounded-md border px-3.5 py-3 text-xs">
+            <span className="flex flex-1 flex-wrap items-baseline justify-between gap-2 pr-2">
+              <span>Proof and details</span>
+              <span className="font-mono">{shortContract(attestation.contractId)}</span>
+            </span>
+          </AccordionTrigger>
+          <AccordionContent>
+            <div className="flex flex-col gap-4 p-5">
           {simulated ? <SimulatedLedgerNotice /> : null}
           <CopyField label="Contract ID" value={attestation.contractId} />
           <DataList
             items={[
               {
                 label: 'Issued by',
-                value: <span className="mono">{attestation.issuer ?? 'Unknown'}</span>,
+                value: <Mono>{attestation.issuer ?? 'Unknown'}</Mono>,
               },
               {
                 label: 'Your party',
-                value: <span className="mono">{onboarding.party?.partyId ?? 'Unknown'}</span>,
+                value: <Mono>{onboarding.party?.partyId ?? 'Unknown'}</Mono>,
               },
               {
                 label: 'Pools approved',
@@ -73,14 +88,16 @@ export function AttestationReceipt({
                 ? [
                     {
                       label: 'Ledger update',
-                      value: <span className="mono">{attestation.updateId}</span>,
+                      value: <Mono>{attestation.updateId}</Mono>,
                     },
                   ]
                 : []),
             ]}
-          />
-        </div>
-      </details>
+              />
+            </div>
+          </AccordionContent>
+        </AccordionItem>
+      </Accordion>
     </Card>
   );
 }

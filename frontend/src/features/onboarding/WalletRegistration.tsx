@@ -1,13 +1,14 @@
+import { Banner, LoadingButton as Button } from '@openzeppelin/ui-components';
 import { useState } from 'react';
 import { useDexClient } from '../../app/runtime';
 import { useAction, useLive } from '../../app/useAsync';
 import { venueErrorCode, type Onboarding } from '../../lib/api/types';
 import { partyStatusLabels, partyStatusTones, shortParty } from '../../lib/labels';
-import { Badge, Callout } from '../../ui/Badge';
-import { Button } from '../../ui/Button';
+import { Mono } from '../../ui/Mono';
+import { StatusBadge } from '../../ui/Badge';
 import { DataList } from '../../ui/Card';
 import { Disclosure } from '../../ui/Disclosure';
-import { TextField } from '../../ui/Field';
+import { TextControl } from '../../ui/Field';
 import { isKeyIndex, WalletError, type CantonWallet, type WalletKey } from '../../wallet/types';
 import { walletMessage } from '../wallet/signing';
 
@@ -87,16 +88,16 @@ export function WalletRegistration({
 
   if (venueErrorCode(register.error) === 'PARTY_ALREADY_EXISTS') {
     return (
-      <Callout tone="danger">
+      <Banner variant="error" size="compact" dismissible={false}>
         This party already exists. Registration was stopped.
-      </Callout>
+      </Banner>
     );
   }
 
   return (
-    <div className="stack-sm">
+    <div className="flex flex-col gap-2">
       {snap.local && !identity ? (
-        <Callout tone="warning">This build requires MetaMask Flask.</Callout>
+        <Banner variant="warning" size="compact" dismissible={false}>This build requires MetaMask Flask.</Banner>
       ) : null}
 
       <DataList
@@ -104,17 +105,15 @@ export function WalletRegistration({
           { label: 'Party name', value: partyName },
           ...(party
             ? [
-                { label: 'Party', value: <span className="mono">{shortParty(party.partyId)}</span> },
+                { label: 'Party', value: <Mono>{shortParty(party.partyId)}</Mono> },
                 {
                   label: 'Hosted by',
-                  value: <span className="mono">{party.participantId ?? 'Not recorded'}</span>,
+                  value: <Mono>{party.participantId ?? 'Not recorded'}</Mono>,
                 },
                 {
                   label: 'Registration',
                   value: (
-                    <Badge tone={partyStatusTones[party.status]}>
-                      {partyStatusLabels[party.status]}
-                    </Badge>
+                    <StatusBadge tone={partyStatusTones[party.status]} label={partyStatusLabels[party.status]} />
                   ),
                 },
               ]
@@ -122,9 +121,9 @@ export function WalletRegistration({
         ]}
       />
 
-      {failure ? <Callout tone="danger">{walletMessage(failure)}</Callout> : null}
+      {failure ? <Banner variant="error" size="compact" dismissible={false}>{walletMessage(failure)}</Banner> : null}
 
-      <div className="row">
+      <div className="flex items-center gap-3">
         {!identity ? (
           <Button size="sm" loading={connect.pending} disabled={busy} onClick={() => connect.perform()}>
             Connect MetaMask
@@ -157,7 +156,7 @@ export function WalletRegistration({
 
       <Disclosure summary="Key details">
         {/* Reachable at every step: a preparation made at another index can only be finished here. */}
-        <TextField
+        <TextControl
           label="Canton key index"
           type="number"
           min={0}
@@ -180,21 +179,21 @@ export function WalletRegistration({
           items={[
             {
               label: 'Wallet fingerprint',
-              value: <span className="mono">{identity?.fingerprint ?? 'Not connected'}</span>,
+              value: <Mono>{identity?.fingerprint ?? 'Not connected'}</Mono>,
             },
             {
               label: 'Snap',
               value: (
-                <span className="mono">
+                <Mono>
                   {snap.snapId}@{snap.version}
-                </span>
+                </Mono>
               ),
             },
             ...(party
               ? [
                   {
                     label: 'Hash to sign',
-                    value: <span className="mono">{party.multiHash ?? 'Not produced'}</span>,
+                    value: <Mono>{party.multiHash ?? 'Not produced'}</Mono>,
                   },
                 ]
               : []),

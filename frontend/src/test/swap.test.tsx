@@ -1,6 +1,7 @@
 import { screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { fieldValue, onboardAlice } from './flows';
+import { optionsOf, pick } from './listbox';
 import { renderApp } from './harness';
 
 /** The flow ends at a registered request. Nothing settles, nothing is credited. */
@@ -31,12 +32,12 @@ describe('swap request', () => {
     expect(requestId).toMatch(/^swap-\d+$/);
     // The step title, the step's status badge, and the row in the trader's list.
     expect(screen.getAllByText('Awaiting settlement')).toHaveLength(3);
-    const requests = (await screen.findByText('Your swap requests')).closest('section')!;
+    const requests = (await screen.findByText('Your swap requests')).closest<HTMLElement>('[data-slot="card"]')!;
     expect(within(requests).getByText(requestId)).toBeInTheDocument();
     // The pool the trader swapped against is untouched.
     await actAs('Venue Operations');
     await user.click(await screen.findByRole('button', { name: 'Pools' }));
-    const live = (await screen.findByText('Live pools')).closest('section')!;
+    const live = (await screen.findByText('Live pools')).closest<HTMLElement>('[data-slot="card"]')!;
     const row = within(live).getByText('pool-usdc-eurc').closest('tr')!;
     expect(within(row).getByText('4,200,000.00 USDC')).toBeInTheDocument();
     expect(within(row).getByText('3,885,000.00 EURC')).toBeInTheDocument();
@@ -47,9 +48,8 @@ describe('swap request', () => {
     await onboardAlice(user, actAs);
 
     await user.click(screen.getByRole('button', { name: 'Swap' }));
-    const poolSelect = await screen.findByLabelText('Pool');
-
-    const options = within(poolSelect).getAllByRole('option');
+    // The listbox builds its rows when it opens, so the offer is read there.
+    const options = await optionsOf(user, 'Pool');
     expect(options).toHaveLength(1);
     expect(options[0]).toHaveTextContent('USDC / EURC');
   });
@@ -59,7 +59,7 @@ describe('swap request', () => {
     await onboardAlice(user, actAs);
 
     await user.click(screen.getByRole('button', { name: 'Swap' }));
-    await user.selectOptions(await screen.findByLabelText('Direction'), 'QuoteToBase');
+    await pick(user, 'Direction', /^EURC to USDC/);
 
     expect(await screen.findByLabelText('Amount in (EURC)')).toBeInTheDocument();
     await user.type(screen.getByLabelText('Amount in (EURC)'), '10000');

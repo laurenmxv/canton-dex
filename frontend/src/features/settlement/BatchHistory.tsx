@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import type { AsyncResult } from '../../app/useAsync';
 import type { Settlement } from '../../lib/api/types';
 import { formatExact } from '../../lib/decimal';
@@ -7,7 +8,10 @@ import {
   settlementStatusTones,
   shortContract,
 } from '../../lib/labels';
-import { Badge } from '../../ui/Badge';
+import { DataTable } from '@openzeppelin/ui-components';
+import { NUMERIC } from '../../ui/table';
+import { Mono } from '../../ui/Mono';
+import { StatusBadge } from '../../ui/Badge';
 import { Card, CardHeader, DataList } from '../../ui/Card';
 import { Disclosure } from '../../ui/Disclosure';
 import { AsyncSection, EmptyState } from '../../ui/States';
@@ -29,9 +33,10 @@ export function BatchHistory({
   baseLabel: string;
   quoteLabel: string;
 }) {
+  const batchHistoryTitle = useId();
   return (
     <Card>
-      <CardHeader title="Recent batches" />
+      <CardHeader title="Recent batches" titleId={batchHistoryTitle} />
       <AsyncSection
         result={batches}
         label="Loading batches"
@@ -41,39 +46,50 @@ export function BatchHistory({
         }
       >
         {(list) => (
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Started</th>
-                <th>Trigger</th>
-                <th className="table-num">Requests</th>
-                <th>Status</th>
-                <th>Detail</th>
-              </tr>
-            </thead>
-            <tbody>
-              {list.map((batch) => (
-                <tr key={batch.settlementId}>
-                  <td>{formatDateTime(batch.createdAt)}</td>
-                  <td>{batch.trigger === 'MANUAL' ? 'Operator' : 'Automatic'}</td>
-                  <td className="table-num tabular">{batch.swapIds.length}</td>
-                  <td>
-                    <Badge
-                      tone={settlementStatusTones[batch.status]}
-                      dot={batch.status === 'SUBMITTING' || batch.status === 'PREPARING'}
-                    >
-                      {settlementStatusLabels[batch.status]}
-                    </Badge>
-                  </td>
-                  <td>
-                    <Disclosure summary="Show detail">
-                      <BatchDetail batch={batch} baseLabel={baseLabel} quoteLabel={quoteLabel} />
-                    </Disclosure>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <DataTable
+            aria-labelledby={batchHistoryTitle}
+            columns={[
+              {
+                id: 'started',
+                header: 'Started',
+                cell: (batch) => formatDateTime(batch.createdAt),
+              },
+              {
+                id: 'trigger',
+                header: 'Trigger',
+                cell: (batch) => (batch.trigger === 'MANUAL' ? 'Operator' : 'Automatic'),
+              },
+              {
+                ...NUMERIC,
+                id: 'requests',
+                header: 'Requests',
+                cell: (batch) => batch.swapIds.length,
+              },
+              {
+                id: 'status',
+                header: 'Status',
+                cell: (batch) => (
+                  <StatusBadge
+                    tone={settlementStatusTones[batch.status]}
+                    dot={batch.status === 'SUBMITTING' || batch.status === 'PREPARING'}
+                    label={settlementStatusLabels[batch.status]}
+                  />
+                ),
+              },
+              {
+                id: 'detail',
+                header: 'Detail',
+                cell: (batch) => (
+                  <Disclosure summary="Show detail">
+                    <BatchDetail batch={batch} baseLabel={baseLabel} quoteLabel={quoteLabel} />
+                  </Disclosure>
+                ),
+              },
+            ]}
+            rows={list}
+            getRowKey={(batch) => batch.settlementId}
+            className="border-0"
+          />
         )}
       </AsyncSection>
     </Card>
@@ -99,22 +115,22 @@ function BatchDetail({
     <>
       <DataList
         items={[
-          { label: 'Batch', value: <span className="mono">{batch.settlementId}</span> },
+          { label: 'Batch', value: <Mono>{batch.settlementId}</Mono> },
           { label: 'Policy version', value: String(batch.policyVersion) },
           {
             label: 'Ledger update',
             value: batch.updateId && confirmed ? (
-              <span className="mono">{shortContract(batch.updateId)}</span>
+              <Mono>{shortContract(batch.updateId)}</Mono>
             ) : (
               'Not confirmed'
             ),
           },
           ...(delta
             ? [
-                { label: `${baseLabel} change`, value: <span className="tabular">{delta.base}</span> },
+                { label: `${baseLabel} change`, value: <span className="tabular-nums">{delta.base}</span> },
                 {
                   label: `${quoteLabel} change`,
-                  value: <span className="tabular">{delta.quote}</span>,
+                  value: <span className="tabular-nums">{delta.quote}</span>,
                 },
               ]
             : []),
@@ -124,33 +140,38 @@ function BatchDetail({
         ]}
       />
       {batch.fills.length > 0 ? (
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Request</th>
-              <th className="table-num">{confirmed ? 'Paid out' : 'Projected, not paid'}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {batch.fills.map((fill) => (
-              <tr key={fill.swapId}>
-                <td className="mono">{shortContract(fill.swapId)}</td>
-                <td className="table-num tabular">
+        <DataTable
+          caption={`Fills in batch ${shortContract(batch.settlementId)}`}
+          columns={[
+            {
+              id: 'request',
+              header: 'Request',
+              cellClassName: 'font-mono text-xs',
+              cell: (fill) => shortContract(fill.swapId),
+            },
+            {
+              ...NUMERIC,
+              id: 'out',
+              header: confirmed ? 'Paid out' : 'Projected, not paid',
+              // Either side of a pair can be the output, so an unrecorded
+              // instrument stays unknown rather than being guessed at.
+              cell: (fill) => (
+                <>
                   {formatExact(fill.amountOut)}{' '}
-                  {/* Either side of a pair can be the output, so an unrecorded
-                      instrument stays unknown rather than being guessed at. */}
                   {fill.outputInstrument ? (
                     fill.outputInstrument.id
                   ) : (
-                    <span className="muted">token unknown</span>
+                    <span className="text-muted-foreground">token unknown</span>
                   )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                </>
+              ),
+            },
+          ]}
+          rows={batch.fills}
+          getRowKey={(fill) => fill.swapId}
+        />
       ) : (
-        <p className="muted text-xs">No fills</p>
+        <p className="text-muted-foreground text-xs">No fills</p>
       )}
     </>
   );

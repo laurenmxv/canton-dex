@@ -27,7 +27,7 @@ export async function registerParty(user: UserEvent): Promise<void> {
   await user.click(await screen.findByRole('button', { name: 'Simulate registration' }));
 }
 
-/** Opens a table row by the link in its first cell. */
+/** Opens a table row by the button in its first cell, which reads as a link. */
 export async function openRow(user: UserEvent, name: string): Promise<void> {
   await user.click(await screen.findByRole('button', { name }));
 }
@@ -48,7 +48,10 @@ export async function rejectRequest(user: UserEvent): Promise<void> {
 export function fieldValue(label: string): string {
   const term = screen.getByText(label, { selector: 'dt' });
   const value = term.nextElementSibling;
-  if (!value) throw new Error(`No value beside ${label}`);
+  if (!(value instanceof HTMLElement) || value.tagName !== 'DD') {
+    const found = value?.tagName.toLowerCase() ?? 'nothing';
+    throw new Error(`"${label}" is followed by <${found}>, not <dd>.`);
+  }
   return value.textContent ?? '';
 }
 

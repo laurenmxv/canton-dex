@@ -1,65 +1,90 @@
+import {
+  Banner,
+  Button,
+  EmptyState as KitEmptyState,
+} from '@openzeppelin/ui-components';
 import type { ReactNode } from 'react';
+import { TextLink } from './Link';
 import type { AsyncResult } from '../app/useAsync';
-import { Callout } from './Badge';
-import { Button } from './Button';
+
+/** The ring this venue spins while it waits, at text size. */
+function Spinner() {
+  return (
+    <span
+      aria-hidden="true"
+      className="size-4 flex-none animate-spin rounded-full border-2 border-current/25 border-t-current"
+    />
+  );
+}
+
+const SHELL = 'flex flex-col items-center gap-1.5 px-5 py-11 text-center text-sm text-muted-foreground';
 
 export function Loading({ label }: { label: string }) {
   return (
-    <div className="empty" role="status">
-      <span className="spinner" aria-hidden="true" />
-      <span className="muted">{label}…</span>
+    <div className={SHELL} role="status">
+      <Spinner />
+      <span>{label}…</span>
     </div>
   );
 }
 
 export function SkeletonRows({ rows = 3, label }: { rows?: number; label: string }) {
   return (
-    <div style={{ padding: '1rem' }}>
+    <div className="p-4">
       <span className="sr-only" role="status">
         {label}…
       </span>
-      <div className="stack-sm" aria-hidden="true">
+      <div className="flex flex-col gap-2" aria-hidden="true">
         {Array.from({ length: rows }, (_, index) => (
-          <div key={index} className="skeleton" style={{ height: '1.25rem' }} />
+          <div key={index} className="bg-muted h-5 animate-pulse rounded-sm" />
         ))}
       </div>
     </div>
   );
 }
 
+/**
+ * Nothing to show, and what to do about it.
+ *
+ * The kit draws the empty state. It takes no action of its own, and most of
+ * this venue's empty screens exist to send the reader somewhere, so the action
+ * sits under it.
+ */
 export function EmptyState({
-  icon = '◇',
+  icon,
   title,
   description,
   action,
 }: {
   icon?: ReactNode;
   title: string;
-  description?: ReactNode;
+  description?: string;
   action?: ReactNode;
 }) {
   return (
-    <div className="empty">
-      <span className="empty-icon" aria-hidden="true">
-        {icon}
-      </span>
-      <p className="empty-title">{title}</p>
-      {description ? <p>{description}</p> : null}
-      {action ? <div style={{ marginTop: '0.75rem' }}>{action}</div> : null}
+    <div className="flex flex-col items-center">
+      <KitEmptyState
+        size="small"
+        icon={icon ?? <span aria-hidden="true">◇</span>}
+        title={title}
+        description={description ?? ''}
+      />
+      {action ? <div className="pb-6">{action}</div> : null}
     </div>
   );
 }
 
 export function ErrorState({ error, onRetry }: { error: Error; onRetry?: () => void }) {
   return (
-    <div className="empty" role="alert">
-      <span className="empty-icon" aria-hidden="true">
-        !
-      </span>
-      <p className="empty-title">Something went wrong</p>
-      <p>{error.message}</p>
+    <div className="flex flex-col items-center" role="alert">
+      <KitEmptyState
+        size="small"
+        icon={<span aria-hidden="true">!</span>}
+        title="Something went wrong"
+        description={error.message}
+      />
       {onRetry ? (
-        <div style={{ marginTop: '0.75rem' }}>
+        <div className="pb-6">
           <Button variant="secondary" size="sm" onClick={onRetry}>
             Try again
           </Button>
@@ -100,7 +125,7 @@ export function AsyncSection<T>({
   return (
     <>
       {error ? (
-        <div style={{ padding: '0 1.25rem', marginTop: '0.75rem' }}>
+        <div className="mt-3 px-5">
           <RefreshFailure error={error} onRetry={reload} />
         </div>
       ) : null}
@@ -115,11 +140,9 @@ export function AsyncSection<T>({
  */
 export function RefreshFailure({ error, onRetry }: { error: Error; onRetry: () => void }) {
   return (
-    <Callout tone="warning" title="Could not refresh">
+    <Banner variant="warning" size="compact" title="Could not refresh" dismissible={false}>
       {error.message}{' '}
-      <button type="button" className="table-link" onClick={onRetry}>
-        Try again
-      </button>
-    </Callout>
+      <TextLink onClick={onRetry}>Try again</TextLink>
+    </Banner>
   );
 }

@@ -2,7 +2,6 @@ import { createDexClient } from '@canton-dex/client';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles/global.css';
-import './ui/ui.css';
 import { App } from './App';
 import { DemoRuntime, KeycloakRuntime } from './app/runtime';
 import { apiBaseUrl, authMode, keycloakConfig, snapTarget } from './auth/config';

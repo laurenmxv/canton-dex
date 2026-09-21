@@ -4,5 +4,9 @@ services:
     volumes:
       - ./docker/Dex-realm.json:/opt/keycloak/data/import/Dex-realm.json:ro
       - ./docker/keycloak/canton-dex:/opt/keycloak/themes/canton-dex:ro
-      - ./frontend/src/styles/tokens.css:/opt/keycloak/themes/canton-dex/login/resources/css/tokens.css:ro
+      # Both of these mount a directory, never a single file. An editor or a
+      # build writes a new file and renames it over the old one, which gives
+      # the path a new inode. A file mount still points at the old one, so
+      # Keycloak answers 500 for a stylesheet that is there on the host.
+      - ./frontend/src/styles:/opt/keycloak/themes/canton-dex/login/resources/shared:ro
       - ./frontend/src/assets:/opt/keycloak/themes/canton-dex/login/resources/img:ro

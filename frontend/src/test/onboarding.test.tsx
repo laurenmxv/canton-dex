@@ -70,7 +70,7 @@ describe('onboarding', () => {
     await openRow(user, 'Acme Trading Ltd');
 
     const progress = await screen.findByText('Onboarding progress');
-    const table = progress.closest('section')!;
+    const table = progress.closest<HTMLElement>('[data-slot="card"]')!;
     expect(await within(table).findByText('KYC attestation')).toBeInTheDocument();
     expect(within(table).getByText('Pool access, USDC / EURC')).toBeInTheDocument();
     expect(await screen.findByText('Completed', {}, LEDGER_WAIT)).toBeInTheDocument();
@@ -200,7 +200,7 @@ describe('what the operator is told after accepting', () => {
     await acceptAlice(user, actAs);
 
     // The status badge says the same thing, so this reads the callout itself.
-    const accepted = (await screen.findByText('Accepted')).closest<HTMLElement>('.callout')!;
+    const accepted = (await screen.findByText('Accepted')).closest<HTMLElement>('[role="alert"]')!;
     expect(within(accepted).getByText('Not registered')).toBeInTheDocument();
     // Accepting never creates or signs anything on the trader's behalf.
     expect(screen.queryByText(/Party registered/)).not.toBeInTheDocument();
@@ -228,9 +228,11 @@ describe('what the operator is told after accepting', () => {
 describe('the operator queue on screen', () => {
   function rows(): string[] {
     const table = screen.getByRole('table');
-    return Array.from(table.querySelectorAll<HTMLTableRowElement>('tbody tr')).map(
-      (row) => row.cells[0]?.textContent ?? '',
-    );
+    return Array.from(table.querySelectorAll<HTMLTableRowElement>('tbody tr')).map((row) => {
+      const cell = row.cells[0];
+      if (!cell) throw new Error('A queue row has no cells; the table markup changed.');
+      return cell.textContent ?? '';
+    });
   }
 
   async function twoRequests(user: Parameters<typeof goTo>[0], actAs: (name: string) => Promise<void>) {
@@ -276,11 +278,12 @@ describe('the operator queue on screen', () => {
 
     await user.click(screen.getByRole('button', { name: /^Country, sort/ }));
 
+    // An unsorted column carries no `aria-sort`, which reads as `none`.
     const sorted = screen
       .getAllByRole('columnheader')
-      .filter((header) => header.getAttribute('aria-sort') !== 'none')
-      .map((header) => header.textContent);
-    expect(sorted).toEqual(['Country↑']);
+      .map((header) => [header.textContent, header.getAttribute('aria-sort')] as const)
+      .filter(([, direction]) => direction !== null && direction !== 'none');
+    expect(sorted).toEqual([['Country', 'ascending']]);
   });
 
   it('keeps the order the operator chose while the queue refreshes', async () => {

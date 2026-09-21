@@ -82,12 +82,10 @@ describe('the sidebar', () => {
 
     // Switching identity rebuilds the screen, so the control is a new one.
     const foot = within(sidebar());
+    // The listbox shows who is acting on the control itself, and the role
+    // travels with the identity, so the reader always knows which one.
     const identity = foot.getByLabelText('Demo identity');
-    expect(identity).toHaveValue('acc-operator');
-    // The role travels with the identity, so the reader always knows which one.
-    expect(within(identity).getByRole('option', { selected: true })).toHaveTextContent(
-      `Venue Operations · ${roleLabels.OPERATOR}`,
-    );
+    expect(identity).toHaveTextContent(`Venue Operations · ${roleLabels.OPERATOR}`);
     // The demo switcher stands in for signing out; a real session gets a button.
     expect(foot.getByRole('button', { name: 'Reset demo data' })).toBeInTheDocument();
     expect(foot.getByRole('button', { name: /Switch to (dark|light) theme/ })).toBeInTheDocument();
@@ -138,8 +136,9 @@ describe('the sidebar on a narrow viewport', () => {
     const menu = await screen.findByRole('button', { name: 'Menu' });
     await user.click(menu);
 
-    // The first stop, not merely somewhere inside.
-    expect(screen.getByRole('button', { name: 'Close menu' })).toHaveFocus();
+    // Focus lands inside the drawer, on its own close control.
+    const drawer = await screen.findByRole('dialog', { name: 'Sections' });
+    expect(within(drawer).getByRole('button', { name: 'Close' })).toHaveFocus();
 
     await user.keyboard('{Escape}');
 
@@ -152,8 +151,8 @@ describe('the sidebar on a narrow viewport', () => {
     const { user } = renderApp();
 
     await user.click(await screen.findByRole('button', { name: 'Menu' }));
-    const drawer = screen.getByRole('dialog', { name: 'Sections' });
-    const close = within(drawer).getByRole('button', { name: 'Close menu' });
+    const drawer = await screen.findByRole('dialog', { name: 'Sections' });
+    const close = within(drawer).getByRole('button', { name: 'Close' });
 
     await user.click(close);
 
@@ -166,7 +165,13 @@ describe('the sidebar on a narrow viewport', () => {
     const { user } = renderApp();
 
     await user.click(await screen.findByRole('button', { name: 'Menu' }));
-    await user.click(document.querySelector('.scrim')!);
+    const drawer = await screen.findByRole('dialog', { name: 'Sections' });
+    // The scrim the dialog lays over the page, which is what a click away hits.
+    const scrim = drawer.previousElementSibling;
+    if (!(scrim instanceof HTMLElement)) {
+      throw new Error('The dialog has no scrim before it; the drawer markup changed.');
+    }
+    await user.pointer({ keys: '[MouseLeft]', target: scrim });
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
@@ -176,14 +181,16 @@ describe('the sidebar on a narrow viewport', () => {
     const { user } = renderApp();
 
     await user.click(await screen.findByRole('button', { name: /Menu/ }));
-    const drawer = screen.getByRole('dialog', { name: 'Sections' });
+    const drawer = await screen.findByRole('dialog', { name: 'Sections' });
 
     // Shift+Tab off the first stop wraps to the last, not out of the drawer.
     await user.tab({ shift: true });
     const stops = within(drawer).getAllByRole('button');
     expect(stops[stops.length - 1]).toHaveFocus();
 
-    for (let press = 0; press < 12; press += 1) await user.tab();
+    // One press past every stop, so the wrap is what is being observed.
+    for (let press = 0; press <= stops.length; press += 1) await user.tab();
+    expect(document.activeElement).not.toBe(document.body);
     expect(drawer).toContainElement(document.activeElement as HTMLElement);
   });
 

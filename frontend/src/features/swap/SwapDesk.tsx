@@ -1,13 +1,17 @@
+import {
+  Banner,
+  Button,
+  CardContent,
+} from '@openzeppelin/ui-components';
 import { useEffect, useRef, useState } from 'react';
 import { useDexClient, useWallet } from '../../app/runtime';
 import { useAsync, useChange } from '../../app/useAsync';
 import type { SwapActivity as SwapActivityPage } from '../../lib/api/types';
 import { isKeyIndex } from '../../wallet/types';
-import { Callout } from '../../ui/Badge';
-import { Button } from '../../ui/Button';
+import { Mono } from '../../ui/Mono';
 import { Card, CardHeader, DataList } from '../../ui/Card';
 import { Disclosure } from '../../ui/Disclosure';
-import { TextField } from '../../ui/Field';
+import { TextControl } from '../../ui/Field';
 import { EmptyState, ErrorState, Loading, RefreshFailure } from '../../ui/States';
 import { PageHeader } from '../../ui/PageHeader';
 import { confirmedPoolIds } from '../onboarding/progress';
@@ -116,14 +120,14 @@ export function SwapDesk({
   }
 
   return (
-    <div className="stack-lg fade-in page-narrow">
+    <div className="flex flex-col gap-6 fade-in max-w-3xl">
       <PageHeader
         title="Swap"
         description="The venue prices it, your wallet signs it, and the pool settles it in a batch."
       />
 
       {wallet === null ? (
-        <Callout tone="warning">No wallet configured</Callout>
+        <Banner variant="warning" size="compact" dismissible={false}>No wallet configured</Banner>
       ) : null}
 
       {catalogue.error && catalogue.data !== undefined ? (
@@ -188,9 +192,9 @@ export function SwapDesk({
       {wallet ? (
         <Card>
           <CardHeader title="Signing key" />
-          <div className="card-pad stack-sm">
+          <CardContent className="p-5 flex flex-col gap-2">
             <Disclosure summary="Key details">
-              <TextField
+              <TextControl
                 label="Canton key index"
                 type="number"
                 min={0}
@@ -205,26 +209,26 @@ export function SwapDesk({
                 items={[
                   {
                     label: 'Registered party',
-                    value: <span className="mono">{party?.partyId ?? 'Not registered'}</span>,
+                    value: <Mono>{party?.partyId ?? 'Not registered'}</Mono>,
                   },
                   {
                     label: 'Registered key',
                     value: (
-                      <span className="mono">{party?.publicKeyFingerprint ?? 'Not registered'}</span>
+                      <Mono>{party?.publicKeyFingerprint ?? 'Not registered'}</Mono>
                     ),
                   },
                   {
                     label: 'Snap',
                     value: (
-                      <span className="mono">
+                      <Mono>
                         {wallet.target.snapId}@{wallet.target.version}
-                      </span>
+                      </Mono>
                     ),
                   },
                 ]}
               />
             </Disclosure>
-          </div>
+          </CardContent>
         </Card>
       ) : null}
     </div>

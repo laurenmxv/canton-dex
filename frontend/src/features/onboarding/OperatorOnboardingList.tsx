@@ -1,12 +1,10 @@
+import { Button, DataTable, type DataTableColumn } from '@openzeppelin/ui-components';
 import { useState } from 'react';
 import { useDexClient } from '../../app/runtime';
 import { useAsync } from '../../app/useAsync';
-import {
-  formatDateTime,
-  onboardingStatusLabels,
-  onboardingStatusTones,
-} from '../../lib/labels';
-import { Badge } from '../../ui/Badge';
+import type { Onboarding } from '../../lib/api/types';
+import { formatDateTime, onboardingStatusLabels, onboardingStatusTones } from '../../lib/labels';
+import { StatusBadge } from '../../ui/Badge';
 import { Card, CardHeader } from '../../ui/Card';
 import { AsyncSection, EmptyState } from '../../ui/States';
 import { PageHeader } from '../../ui/PageHeader';
@@ -19,12 +17,13 @@ import {
   type QueueOrder,
 } from './queueOrder';
 
-const COLUMNS: readonly [QueueColumn, string][] = [
-  ['applicant', 'Applicant'],
-  ['country', 'Country'],
-  ['submitted', 'Submitted'],
-  ['status', 'Status'],
-];
+/** Heading text back to the column it names, for the sort button's own name. */
+const COLUMN_IDS: Record<string, QueueColumn | undefined> = {
+  Applicant: 'applicant',
+  Country: 'country',
+  Submitted: 'submitted',
+  Status: 'status',
+};
 
 export function OperatorOnboardingList({ onOpen }: { onOpen: (onboardingId: string) => void }) {
   const client = useDexClient();
@@ -36,8 +35,59 @@ export function OperatorOnboardingList({ onOpen }: { onOpen: (onboardingId: stri
   const total = onboardings.data?.length;
   const pending = onboardings.data?.filter((onboarding) => onboarding.review === null).length;
 
+  /**
+   * The queue orders itself.
+   *
+   * The table offers the sort affordance and reports which column was asked
+   * for; `queueOrder` decides what that means. It compares text the way a
+   * reader reads it and breaks a tie by date and then by identifier, so two
+   * identical readings never swap places between polls.
+   */
+  const columns: DataTableColumn<Onboarding>[] = [
+    {
+      id: 'applicant',
+      header: 'Applicant',
+      sortable: true,
+      cell: (onboarding) => (
+        <Button
+          variant="link"
+          size="sm"
+          className="h-auto p-0 text-foreground decoration-border hover:decoration-current"
+          onClick={() => onOpen(onboarding.id)}
+        >
+          {onboarding.application.legalName}
+        </Button>
+      ),
+    },
+    {
+      id: 'country',
+      header: 'Country',
+      sortable: true,
+      cell: (onboarding) => onboarding.application.countryCode,
+    },
+    {
+      id: 'submitted',
+      header: 'Submitted',
+      sortable: true,
+      cellClassName: 'text-muted-foreground',
+      cell: (onboarding) => formatDateTime(onboarding.createdAt),
+    },
+    {
+      id: 'status',
+      header: 'Status',
+      sortable: true,
+      cell: (onboarding) => (
+        <StatusBadge
+          tone={onboardingStatusTones[onboarding.status]}
+          dot={isWorking(onboarding)}
+          label={onboardingStatusLabels[onboarding.status]}
+        />
+      ),
+    },
+  ];
+
   return (
-    <div className="stack-lg fade-in">
+    <div className="flex flex-col gap-6 fade-in">
       <PageHeader
         title="Onboarding requests"
         description="Review each application, then grant the pool access the ledger will carry."
@@ -53,93 +103,42 @@ export function OperatorOnboardingList({ onOpen }: { onOpen: (onboardingId: stri
         <AsyncSection
           result={onboardings}
           label="Loading requests"
-          empty={
-            <EmptyState
-              title="No onboarding requests yet"
-            />
-          }
+          empty={<EmptyState title="No onboarding requests yet" />}
         >
           {(requests) => (
-            <table className="table">
-              <thead>
-                <tr>
-                  {COLUMNS.map(([column, label]) => (
-                    <SortableHeader
-                      key={column}
-                      column={column}
-                      label={label}
-                      order={order}
-                      onSort={setOrder}
-                    />
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {orderQueue(requests, order).map((onboarding) => (
-                  <tr key={onboarding.id}>
-                    <td>
-                      <button
-                        type="button"
-                        className="table-link"
-                        onClick={() => onOpen(onboarding.id)}
-                      >
-                        {onboarding.application.legalName}
-                      </button>
-                    </td>
-                    <td>{onboarding.application.countryCode}</td>
-                    <td className="muted">{formatDateTime(onboarding.createdAt)}</td>
-                    <td>
-                      <Badge
-                        tone={onboardingStatusTones[onboarding.status]}
-                        dot={isWorking(onboarding)}
-                      >
-                        {onboardingStatusLabels[onboarding.status]}
-                      </Badge>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <DataTable
+              caption="Onboarding requests"
+              columns={columns}
+              rows={orderQueue(requests, order)}
+              getRowKey={(onboarding) => onboarding.id}
+              sort={{
+                columnId: order.column,
+                direction: order.direction === 'ascending' ? 'asc' : 'desc',
+              }}
+              /*
+               * The kit cycles a column through ascending, descending and
+               * then no order at all, and reports that third press as `null`.
+               * This queue only has two directions, so a press always names a
+               * column and `queueOrder` decides which way it reads: a date
+               * opens newest first, a name opens A to Z.
+               */
+              onSortChange={(next) =>
+                setOrder((current) =>
+                  nextOrder(current, (next?.columnId as QueueColumn) ?? current.column),
+                )
+              }
+              // The kit names the order a column is already in. A heading here
+              // is a button, and it says what pressing it would do.
+              formatSortButtonName={({ columnName }) => {
+                const column = COLUMN_IDS[columnName];
+                if (!column) return `Sort by ${columnName}`;
+                return `${columnName}, sort ${nextOrder(order, column).direction}`;
+              }}
+              className="border-0"
+            />
           )}
         </AsyncSection>
       </Card>
     </div>
-  );
-}
-
-/**
- * One column heading the operator can sort by.
- *
- * `aria-sort` tells assistive technology which column is ordering the table and
- * which way, and the button carries the direction a click would produce, so the
- * heading is usable without seeing the arrow.
- */
-function SortableHeader({
-  column,
-  label,
-  order,
-  onSort,
-}: {
-  column: QueueColumn;
-  label: string;
-  order: QueueOrder;
-  onSort: (order: QueueOrder) => void;
-}) {
-  const active = order.column === column;
-  const next = nextOrder(order, column);
-  return (
-    <th aria-sort={active ? order.direction : 'none'}>
-      <button
-        type="button"
-        className="column-sort"
-        aria-label={`${label}, sort ${next.direction}`}
-        onClick={() => onSort(next)}
-      >
-        {label}
-        <span aria-hidden="true" className={active ? 'sort-arrow' : 'sort-arrow sort-arrow-idle'}>
-          {active && order.direction === 'ascending' ? '↑' : '↓'}
-        </span>
-      </button>
-    </th>
   );
 }

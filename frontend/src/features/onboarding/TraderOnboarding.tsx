@@ -1,4 +1,12 @@
-import { useState } from 'react';
+import {
+  Banner,
+  CardContent,
+  Checkbox,
+  Label,
+  LoadingButton as Button,
+  TextField,
+} from '@openzeppelin/ui-components';
+import { useForm, type FieldErrors, type Resolver } from 'react-hook-form';
 import { useDemoApi, useDexClient, useWallet } from '../../app/runtime';
 import { useAction, useAsync } from '../../app/useAsync';
 import type { Onboarding, PoolSummary } from '../../lib/api/types';
@@ -11,16 +19,15 @@ import {
   onboardingStatusTones,
   poolNameOf,
 } from '../../lib/labels';
-import { Badge, Callout } from '../../ui/Badge';
-import { Button } from '../../ui/Button';
+import { StatusBadge } from '../../ui/Badge';
 import { Card, CardHeader, DataList } from '../../ui/Card';
-import { TextField } from '../../ui/Field';
 import { SimulatedLedgerNotice } from '../../ui/SimulatedLedger';
 import { ErrorState, Loading, RefreshFailure } from '../../ui/States';
 import { Steps, type StepItem } from '../../ui/Steps';
 import { AttestationReceipt } from '../dashboard/AttestationReceipt';
 import { DocumentList } from './DocumentList';
 import { NoticeBoard } from '../../ui/NoticeBoard';
+import { Note } from '../../ui/Note';
 import { PageHeader } from '../../ui/PageHeader';
 import { useOnboardingNotices } from './notices';
 import { documentTemplates, formatSize, toDocument } from './documents';
@@ -42,7 +49,7 @@ export function TraderOnboarding() {
   }
 
   return (
-    <div className="stack-lg fade-in">
+    <div className="flex flex-col gap-6 fade-in">
       <PageHeader
         title="Onboarding"
         description="Apply, wait for the review, register your party, and let the ledger confirm."
@@ -65,101 +72,134 @@ export function TraderOnboarding() {
   );
 }
 
+interface Application {
+  legalName: string;
+  countryCode: string;
+  chosen: string[];
+}
+
+/** The venue's own bounds, checked here so an application is not sent to be refused. */
+const applicationResolver: Resolver<Application> = (values) => {
+  const found: FieldErrors<Application> = {};
+  const legalName = values.legalName.trim();
+  if (!legalName) {
+    found.legalName = { type: 'venue', message: 'Legal name is required' };
+  } else if (legalName.length > applicationLimits.legalNameMaxLength) {
+    // The backend carries the same bound, so a longer name is refused there.
+    found.legalName = {
+      type: 'venue',
+      message: `Legal name must be at most ${applicationLimits.legalNameMaxLength} characters`,
+    };
+  }
+  if (!COUNTRY_CODE_PATTERN.test(values.countryCode)) {
+    found.countryCode = {
+      type: 'venue',
+      message: 'Use a two-letter ISO country code, such as PT',
+    };
+  }
+  const { documentsMin, documentsMax } = applicationLimits;
+  if (values.chosen.length < documentsMin || values.chosen.length > documentsMax) {
+    found.chosen = {
+      type: 'venue',
+      message: `Attach between ${documentsMin} and ${documentsMax} documents`,
+    };
+  }
+  return Object.keys(found).length === 0
+    ? { values, errors: {} }
+    : { values: {}, errors: found };
+};
+
 function ApplicationForm({ onSubmitted }: { onSubmitted: () => void }) {
   const client = useDexClient();
-  const [legalName, setLegalName] = useState('');
-  const [countryCode, setCountryCode] = useState('');
-  const [chosen, setChosen] = useState<string[]>([]);
-  const [touched, setTouched] = useState(false);
+  const {
+    control,
+    getValues,
+    setValue,
+    handleSubmit,
+    watch,
+    formState: { errors },
+  } = useForm<Application>({
+    defaultValues: { legalName: '', countryCode: '', chosen: [] },
+    resolver: applicationResolver,
+    mode: 'onTouched',
+  });
 
-  const errors = {
-    legalName: legalName.trim() ? undefined : 'Legal name is required',
-    countryCode: COUNTRY_CODE_PATTERN.test(countryCode)
-      ? undefined
-      : 'Use a two-letter ISO country code, such as PT',
-    documents:
-      chosen.length >= applicationLimits.documentsMin &&
-      chosen.length <= applicationLimits.documentsMax
-        ? undefined
-        : `Attach between ${applicationLimits.documentsMin} and ${applicationLimits.documentsMax} documents`,
-  };
-  const valid = Object.values(errors).every((error) => error === undefined);
+  const chosen = watch('chosen');
 
-  const submit = useAction(() =>
-    client.onboarding.submitApplication({
-      legalName: legalName.trim(),
-      countryCode,
+  const submit = useAction(() => {
+    const values = getValues();
+    return client.onboarding.submitApplication({
+      legalName: values.legalName.trim(),
+      countryCode: values.countryCode,
       documents: documentTemplates
-        .filter((template) => chosen.includes(template.key))
+        .filter((template) => values.chosen.includes(template.key))
         .map(toDocument),
-    }),
-  );
+    });
+  });
 
   const toggle = (key: string) =>
-    setChosen((current) =>
-      current.includes(key)
-        ? current.filter((candidate) => candidate !== key)
-        : [...current, key],
+    setValue(
+      'chosen',
+      chosen.includes(key) ? chosen.filter((candidate) => candidate !== key) : [...chosen, key],
+      { shouldValidate: true },
     );
 
-  async function handleSubmit() {
-    setTouched(true);
-    if (!valid) return;
+  async function send() {
     if (await submit.perform()) onSubmitted();
   }
 
   return (
     <Card>
       <CardHeader title="Submit your application" />
-      <div className="card-pad stack">
+      <form className="flex flex-col gap-4 p-5" onSubmit={handleSubmit(send)}>
         <TextField
+          control={control}
+          id="application-legal-name"
+          name="legalName"
           label="Legal name"
-          value={legalName}
-          maxLength={applicationLimits.legalNameMaxLength}
           placeholder="Registered name of your firm"
-          error={touched ? errors.legalName : undefined}
-          onChange={(event) => setLegalName(event.target.value)}
         />
         <TextField
+          control={control}
+          id="application-country"
+          name="countryCode"
           label="Country of incorporation"
-          value={countryCode}
-          maxLength={2}
           placeholder="PT"
-          error={touched ? errors.countryCode : undefined}
-          onChange={(event) => setCountryCode(event.target.value.toUpperCase())}
+          onUserEdit={(value) =>
+            setValue('countryCode', value.toUpperCase(), { shouldValidate: false })
+          }
         />
-        <fieldset className="stack-sm">
-          <legend className="field-label" style={{ marginBottom: '0.5rem' }}>
+        <fieldset className="flex flex-col gap-2">
+          <legend className="text-xs font-medium" style={{ marginBottom: '0.5rem' }}>
             Supporting documents
           </legend>
-          <Callout tone="demo">Test documents: no files are uploaded</Callout>
+          <Note tone="demo">Test documents: no files are uploaded</Note>
           {documentTemplates.map((template) => (
-            <label key={template.key} className="doc-option">
-              <input
-                type="checkbox"
+            <Label key={template.key} className="hover:bg-surface flex items-center gap-2.5 rounded-md border px-3 py-2.5 text-sm">
+              <Checkbox
                 checked={chosen.includes(template.key)}
-                onChange={() => toggle(template.key)}
+                onCheckedChange={() => toggle(template.key)}
               />
-              <span className="doc-name">{template.fileName}</span>
-              <span className="muted text-xs">
+              <span className="min-w-0 flex-1 truncate">{template.fileName}</span>
+              <span className="text-muted-foreground text-xs">
                 {documentCategoryLabels[template.category]} · {formatSize(template.sizeBytes)}
               </span>
-            </label>
+            </Label>
           ))}
-          {touched && errors.documents ? (
-            <p className="field-error">{errors.documents}</p>
+          {errors.chosen ? (
+            <p className="text-destructive text-[0.75rem]">{errors.chosen.message}</p>
           ) : null}
         </fieldset>
-        {submit.error ? <Callout tone="danger">{submit.error.message}</Callout> : null}
-        <div className="row">
-          <Button onClick={handleSubmit} loading={submit.pending}>
+        {submit.error ? <Banner variant="error" size="compact" dismissible={false}>{submit.error.message}</Banner> : null}
+        <div className="flex items-center gap-3">
+          <Button type="submit" loading={submit.pending}>
             Submit application
           </Button>
-          <span className="muted text-xs">
+          <span className="text-muted-foreground text-xs">
             {chosen.length} document{chosen.length === 1 ? '' : 's'} attached
           </span>
         </div>
-      </div>
+      </form>
     </Card>
   );
 }
@@ -206,21 +246,19 @@ function OnboardingProgress({
       title: 'Compliance review',
       state: review ? 'done' : 'current',
       body: review ? (
-        <div className="stack-sm">
+        <div className="flex flex-col gap-2">
           {/* A badge states one thing, so it hugs its own words rather than
               stretching across the step. */}
-          <div className="row">
-            <Badge tone={rejected ? 'danger' : 'success'}>
-              {rejected ? 'Rejected' : 'Approved'}
-            </Badge>
+          <div className="flex items-center gap-3">
+            <StatusBadge tone={rejected ? 'danger' : 'success'} label={rejected ? 'Rejected' : 'Approved'} />
           </div>
-          <p className="muted text-xs">
+          <p className="text-muted-foreground text-xs">
             {rejected ? 'No pool access granted' : `Approved for ${approvedNames.join(', ')}`}
           </p>
         </div>
       ) : (
-        <div className="stack-sm">
-          <p className="muted text-xs">Waiting for the venue operator</p>
+        <div className="flex flex-col gap-2">
+          <p className="text-muted-foreground text-xs">Waiting for the venue operator</p>
           <div>
             <Button size="sm" variant="secondary" onClick={onChanged}>
               Check for updates
@@ -251,15 +289,13 @@ function OnboardingProgress({
             : 'todo',
       body:
         onboarding.ledgerSteps.length > 0 ? (
-          <div className="stack-sm">
+          <div className="flex flex-col gap-2">
             {simulated ? <SimulatedLedgerNotice /> : null}
-            <ul className="stack-sm" aria-live="polite">
+            <ul className="flex flex-col gap-2" aria-live="polite">
               {onboarding.ledgerSteps.map((step) => (
-                <li key={step.key} className="row-between">
+                <li key={step.key} className="flex items-center justify-between gap-3">
                   <span>{ledgerStepLabel(step.key, (poolId) => poolNameOf(pools, poolId))}</span>
-                  <Badge tone={ledgerStepTones[step.status]} dot={step.status === 'SUBMITTING'}>
-                    {step.status}
-                  </Badge>
+                  <StatusBadge tone={ledgerStepTones[step.status]} dot={step.status === 'SUBMITTING'} label={step.status} />
                 </li>
               ))}
             </ul>
@@ -269,7 +305,7 @@ function OnboardingProgress({
   ];
 
   return (
-    <div className="stack">
+    <div className="flex flex-col gap-4">
       <NoticeBoard notices={updates.notices} onDismiss={updates.dismiss} />
 
       <Card>
@@ -277,17 +313,14 @@ function OnboardingProgress({
           title="Your onboarding"
           description={`Reference ${onboarding.id}`}
           actions={
-            <Badge
+            <StatusBadge
               tone={onboardingStatusTones[onboarding.status]}
-              dot={isWorking(onboarding)}
-            >
-              {onboardingStatusLabels[onboarding.status]}
-            </Badge>
+              dot={isWorking(onboarding)} label={onboardingStatusLabels[onboarding.status]} />
           }
         />
-        <div className="card-pad">
+        <CardContent className="p-5">
           <Steps steps={steps} />
-        </div>
+        </CardContent>
       </Card>
 
       {/* The receipt belongs where the reader is waiting, not one screen away. */}

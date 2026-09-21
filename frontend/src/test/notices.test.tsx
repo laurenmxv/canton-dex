@@ -7,7 +7,6 @@ import { TraderOnboarding } from '../features/onboarding/TraderOnboarding';
 import { noticesBetween } from '../features/onboarding/notices';
 import { testClient } from './clients';
 import type { LedgerStep, Onboarding, Profile } from '../lib/api/types';
-import '../styles/global.css';
 
 const DAVID: Profile = {
   accountId: 'david',
@@ -236,21 +235,21 @@ describe('what the trader is shown while they wait', () => {
     renderTrader([ATTESTED]);
     await screen.findByText('KYC attestation');
     cleanup();
-    renderTrader([ATTESTED]);
+    const user = renderTrader([ATTESTED]);
 
     // No announcement, because nothing changed while the reader was watching,
     // and the receipt is there to be read instead.
     expect(await screen.findByText('KYC attestation')).toBeInTheDocument();
-    expect(screen.getByText(CONTRACT_ID)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Proof and details/ }));
+    expect(await screen.findByText(CONTRACT_ID)).toBeInTheDocument();
     expect(screen.queryByText('KYC attestation confirmed')).not.toBeInTheDocument();
   });
 });
 
 describe('notices and identity', () => {
   it('never carries one caller’s announcement into another caller’s screen', async () => {
-    const first = renderTrader([record(), APPROVED]);
+    renderTrader([record(), APPROVED]);
     await screen.findByText('Application approved', {}, { timeout: 15_000 });
-    void first;
 
     // A different caller's screen is a different tree: it starts with nothing
     // to announce, because it has never seen this record change.

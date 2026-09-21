@@ -1,10 +1,19 @@
+import {
+  Banner,
+  CardContent,
+  Checkbox,
+  Input,
+  Label,
+  LoadingButton as Button,
+} from '@openzeppelin/ui-components';
 import { useState } from 'react';
 import { useDexClient, useSession } from '../../app/runtime';
 import { useAction, type AsyncResult } from '../../app/useAsync';
 import { errorCode, type SettlementMonitoring, type SettlementPolicy } from '../../lib/api/types';
 import { claimRunKey, outstandingRunKey, resolveRunKey } from '../../lib/runKey';
-import { Badge, Callout } from '../../ui/Badge';
-import { Button } from '../../ui/Button';
+import { Mono } from '../../ui/Mono';
+import { TextLink } from '../../ui/Link';
+import { StatusBadge } from '../../ui/Badge';
 import { Card, CardHeader } from '../../ui/Card';
 import { AsyncSection } from '../../ui/States';
 
@@ -15,6 +24,16 @@ import { AsyncSection } from '../../ui/States';
  * venue-wide switch. What is shown is what the venue's database answered, so a
  * reload shows the saved settings rather than anything this browser kept.
  */
+/**
+ * The batch-size slider.
+ *
+ * The kit has no slider: `NumberField` is the nearest thing it exports, and it
+ * draws a text input. The exact value beside this one is that field's job; this
+ * is the coarse control, so it stays a native range with the kit's own frame.
+ */
+const SLIDER =
+  'border-input bg-card accent-primary h-10 w-full rounded-md border px-0 text-sm transition-colors focus-visible:border-primary focus-visible:ring-primary/20 focus-visible:ring-3 focus-visible:outline-none';
+
 export function PolicyControls({
   poolId,
   policy,
@@ -32,9 +51,7 @@ export function PolicyControls({
         title="Settlement"
         actions={
           policy.data ? (
-            <Badge tone={policy.data.automaticEnabled ? 'progress' : 'neutral'} dot={policy.data.automaticEnabled}>
-              {policy.data.automaticEnabled ? 'Automatic' : 'Manual'}
-            </Badge>
+            <StatusBadge tone={policy.data.automaticEnabled ? 'progress' : 'neutral'} dot={policy.data.automaticEnabled} label={policy.data.automaticEnabled ? 'Automatic' : 'Manual'} />
           ) : null
         }
       />
@@ -110,17 +127,19 @@ function PolicyEditor({
   const busy = save.pending || run.pending;
 
   return (
-    <div className="card-pad stack">
-      <div className="row-between">
+    <CardContent className="p-5 flex flex-col gap-4">
+      <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="card-title">
+          <p className="text-[0.9375rem] font-semibold tracking-[-0.01em]">
             Ready {monitoring?.readyCount ?? '—'} / {saved.batchSize}
           </p>
           {/* The badge above reports the saved mode; this marks a draft that
               has not reached the venue. */}
-          {changed ? <p className="card-desc">Unsaved changes</p> : null}
+          {changed ? (
+            <p className="text-muted-foreground mt-0.5 text-xs">Unsaved changes</p>
+          ) : null}
         </div>
-        <div className="row">
+        <div className="flex items-center gap-3">
           <Button
             variant="secondary"
             size="sm"
@@ -142,14 +161,14 @@ function PolicyEditor({
         </div>
       </div>
 
-      <div className="grid-2">
-        <div className="field">
-          <label className="field-label" htmlFor={`batch-size-${poolId}`}>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="flex flex-col gap-1.5">
+          <Label className="text-xs font-medium" htmlFor={`batch-size-${poolId}`}>
             Batch target
-          </label>
+          </Label>
           <input
             id={`batch-size-${poolId}`}
-            className="control"
+            className={SLIDER}
             type="range"
             min={1}
             max={saved.maxBatchSize}
@@ -158,17 +177,16 @@ function PolicyEditor({
             disabled={busy}
             onChange={(event) => setTyped(String(proposeBatchSize(Number(event.target.value))))}
           />
-          <p className="field-hint" id={`batch-size-${poolId}-hint`}>
+          <p className="text-muted-foreground text-[0.75rem]" id={`batch-size-${poolId}-hint`}>
             1 to {saved.maxBatchSize}
           </p>
         </div>
-        <div className="field">
-          <label className="field-label" htmlFor={`batch-size-exact-${poolId}`}>
+        <div className="flex flex-col gap-1.5">
+          <Label className="text-xs font-medium" htmlFor={`batch-size-exact-${poolId}`}>
             Batch target, exact
-          </label>
-          <input
+          </Label>
+          <Input
             id={`batch-size-exact-${poolId}`}
-            className="control"
             type="number"
             inputMode="numeric"
             min={1}
@@ -185,40 +203,37 @@ function PolicyEditor({
         </div>
       </div>
 
-      <div className="row">
-        <label className="row" htmlFor={`automatic-${poolId}`}>
-          <input
+      <div className="flex items-center gap-3">
+        <Label className="flex items-center gap-3" htmlFor={`automatic-${poolId}`}>
+          <Checkbox
             id={`automatic-${poolId}`}
-            type="checkbox"
             role="switch"
             checked={automaticEnabled}
             disabled={busy}
-            onChange={(event) => setAutomaticEnabled(event.target.checked)}
+            onCheckedChange={(next) => setAutomaticEnabled(next === true)}
           />
           <span>Automatic settlement</span>
-        </label>
+        </Label>
       </div>
 
       {stale ? (
-        <Callout tone="warning" title="These settings changed elsewhere">
-          <button type="button" className="table-link" onClick={onReload}>
-            Reload settings
-          </button>
-        </Callout>
+        <Banner variant="warning" title="These settings changed elsewhere" size="compact" dismissible={false}>
+          <TextLink onClick={onReload}>Reload settings</TextLink>
+        </Banner>
       ) : save.error ? (
-        <Callout tone="danger">{save.error.message}</Callout>
+        <Banner variant="error" size="compact" dismissible={false}>{save.error.message}</Banner>
       ) : null}
 
       {outstanding ? (
-        <Callout tone="warning" title="Batch status unknown">
+        <Banner variant="warning" title="Batch status unknown" size="compact" dismissible={false}>
           {run.error ? `${run.error.message} ` : ''}
-          <span className="mono">{outstanding}</span>
-        </Callout>
+          <Mono>{outstanding}</Mono>
+        </Banner>
       ) : run.error ? (
-        <Callout tone="danger">{run.error.message}</Callout>
+        <Banner variant="error" size="compact" dismissible={false}>{run.error.message}</Banner>
       ) : null}
 
-      <div className="row">
+      <div className="flex items-center gap-3">
         <Button
           size="sm"
           loading={save.pending}
@@ -232,8 +247,8 @@ function PolicyEditor({
         >
           Save settings
         </Button>
-        <span className="muted text-xs">Saved version {saved.version}</span>
+        <span className="text-muted-foreground text-xs">Saved version {saved.version}</span>
       </div>
-    </div>
+    </CardContent>
   );
 }

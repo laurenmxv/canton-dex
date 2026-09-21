@@ -4,32 +4,32 @@ import { afterEach, beforeEach } from 'vitest';
 import { installMatchMedia, resetViewport } from './viewport';
 
 /**
- * Node 26 ships a `localStorage` global that stays disabled without
- * `--localstorage-file`, and it shadows the one jsdom provides. Browsers have
- * the real thing, so this only restores what the test environment removed.
- */
-if (typeof window !== 'undefined' && !window.localStorage) {
-  const entries = new Map<string, string>();
-  const memoryStorage: Storage = {
-    get length() {
-      return entries.size;
-    },
-    key: (index) => Array.from(entries.keys())[index] ?? null,
-    getItem: (key) => entries.get(key) ?? null,
-    setItem: (key, value) => void entries.set(key, String(value)),
-    removeItem: (key) => void entries.delete(key),
-    clear: () => entries.clear(),
-  };
-  Object.defineProperty(window, 'localStorage', { value: memoryStorage, configurable: true });
-}
-
-/**
  * Everything below is about a browser. A test that drives node tooling runs
  * without one, and has nothing here to set up or clean.
  */
 const inBrowser = typeof window !== 'undefined';
 
 if (inBrowser) installMatchMedia();
+
+/**
+ * Three answers a browser gives and jsdom does not.
+ *
+ * The kit's listbox trigger probes `hasPointerCapture` on pointer-down, so
+ * without it no listbox opens at all. The open listbox calls `scrollIntoView`
+ * on the active option. The popper that carries it measures its anchor through
+ * a `ResizeObserver` before it places itself, and waits forever without one.
+ */
+if (inBrowser) {
+  const element = window.Element.prototype as unknown as Record<string, unknown>;
+  element['hasPointerCapture'] ??= () => false;
+  element['scrollIntoView'] ??= () => {};
+
+  window.ResizeObserver ??= class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+}
 
 beforeEach(() => {
   if (!inBrowser) return;

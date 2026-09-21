@@ -1,9 +1,10 @@
+import { LoadingButton as Button } from '@openzeppelin/ui-components';
 import { useDemoApi, useDexClient } from '../../app/runtime';
 import { useAsync } from '../../app/useAsync';
 import type { Onboarding } from '../../lib/api/types';
 import { onboardingStatusLabels, onboardingStatusTones, shortParty } from '../../lib/labels';
-import { Badge } from '../../ui/Badge';
-import { Button } from '../../ui/Button';
+import { Mono } from '../../ui/Mono';
+import { StatusBadge } from '../../ui/Badge';
 import { Card, CardHeader } from '../../ui/Card';
 import { PageHeader } from '../../ui/PageHeader';
 import { AsyncSection, EmptyState, ErrorState, RefreshFailure } from '../../ui/States';
@@ -41,13 +42,13 @@ export function TraderDashboard({
   const party = onboarding.data?.party?.partyId;
 
   return (
-    <div className="stack-lg fade-in">
+    <div className="flex flex-col gap-6 fade-in">
       <PageHeader
         title="Dashboard"
         description={
           party ? (
             <>
-              Trading as <span className="mono">{shortParty(party)}</span>
+              Trading as <Mono>{shortParty(party)}</Mono>
             </>
           ) : undefined
         }
@@ -72,11 +73,11 @@ export function TraderDashboard({
         />
       )}
 
-      <div className="card-grid">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(19rem,1fr))] items-start gap-4">
         <Card>
           <CardHeader
             title="Pools open to you"
-            actions={open.length > 0 ? <Badge tone="neutral">{open.length}</Badge> : null}
+            actions={open.length > 0 ? <StatusBadge tone="neutral" label={String(open.length)} /> : null}
           />
           <AsyncSection
             result={catalogue}
@@ -126,27 +127,25 @@ function StatusStrip({
   onGo: (target: NextStepTarget) => void;
 }) {
   if (loading && onboarding === undefined) {
-    return <div className="skeleton" style={{ height: '5rem', borderRadius: 'var(--radius-lg)' }} />;
+    return <div className="bg-muted animate-pulse rounded-sm" style={{ height: '5rem', borderRadius: 'var(--radius-lg)' }} />;
   }
 
   const step = nextStep(onboarding ?? null, eligible);
   return (
-    <div className="status-strip">
-      <div className="status-strip-text">
-        <p className="status-strip-headline">{step.headline}</p>
-        {step.detail ? <p className="muted text-xs">{step.detail}</p> : null}
+    <div className="border-primary-border shadow-card flex flex-wrap items-center gap-4 rounded-lg border bg-[linear-gradient(120deg,var(--primary-soft)_0%,var(--card)_62%)] px-5 py-4">
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <p className="font-semibold">{step.headline}</p>
+        {step.detail ? <p className="text-muted-foreground text-xs">{step.detail}</p> : null}
       </div>
-      <div className="status-strip-actions">
+      <div className="flex flex-wrap items-center gap-2.5">
         {onboarding ? (
-          <Badge tone={onboardingStatusTones[onboarding.status]} dot={isWorking(onboarding)}>
-            {onboardingStatusLabels[onboarding.status]}
-          </Badge>
+          <StatusBadge tone={onboardingStatusTones[onboarding.status]} dot={isWorking(onboarding)} label={onboardingStatusLabels[onboarding.status]} />
         ) : (
-          <Badge tone="neutral">Not started</Badge>
+          <StatusBadge tone="neutral" label="Not started" />
         )}
         {step.action ? (
           <Button
-            variant={step.primary ? 'primary' : 'secondary'}
+            variant={step.primary ? 'default' : 'secondary'}
             onClick={() => onGo(step.action!.target)}
           >
             {step.action.label}

@@ -1,3 +1,10 @@
+import { useId } from 'react';
+import {
+  Banner,
+  CardContent,
+  DataTable,
+} from '@openzeppelin/ui-components';
+import { NUMERIC } from '../../ui/table';
 import type { AsyncResult } from '../../app/useAsync';
 import type { SettlementMonitoring, SettlementRequest } from '../../lib/api/types';
 import { formatDecimal } from '../../lib/decimal';
@@ -8,7 +15,7 @@ import {
   swapStatusLabels,
   swapStatusTones,
 } from '../../lib/labels';
-import { Badge, Callout } from '../../ui/Badge';
+import { StatusBadge } from '../../ui/Badge';
 import { Card, CardHeader } from '../../ui/Card';
 import { AsyncSection, EmptyState } from '../../ui/States';
 
@@ -29,11 +36,13 @@ export function QueueTable({
   monitoring: SettlementMonitoring | undefined;
   now: number;
 }) {
+  const queueTitle = useId();
   const blockedId = monitoring?.blockedSwapId ?? null;
 
   return (
     <Card>
       <CardHeader
+        titleId={queueTitle}
         title="Queue"
         // The venue's two counts are not the queue's length and do not add up
         // to it: `pendingCount` counts only the requests whose own command is
@@ -47,7 +56,7 @@ export function QueueTable({
         }
         actions={
           monitoring?.oldestSubmittedAt ? (
-            <span className="muted text-xs">
+            <span className="text-muted-foreground text-xs">
               Oldest waiting {formatAge(monitoring.oldestSubmittedAt, now)}
               {monitoring.nearestDeadline
                 ? ` · nearest deadline in ${formatCountdown(monitoring.nearestDeadline, now)}`
@@ -60,18 +69,18 @@ export function QueueTable({
       {/* The venue names a blocked request, and it also names a setting that
           stops this pool dispatching at all, which has no request behind it. */}
       {monitoring?.blockedReason ? (
-        <div className="card-pad">
-          <Callout
-            tone="warning"
+        <CardContent className="p-5">
+          <Banner
+            variant="warning"
             title={
               blockedId
                 ? 'The head of this queue cannot settle'
                 : 'This pool cannot dispatch a batch'
             }
-          >
+           size="compact" dismissible={false}>
             {monitoring.blockedReason}
-          </Callout>
-        </div>
+          </Banner>
+        </CardContent>
       ) : null}
 
       <AsyncSection
@@ -81,48 +90,64 @@ export function QueueTable({
         empty={<EmptyState title="Nothing outstanding" />}
       >
         {(requests) => (
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Order</th>
-                <th>Request</th>
-                <th className="table-num">Amount in</th>
-                <th className="table-num">Minimum out</th>
-                <th>Status</th>
-                <th>Waiting</th>
-                <th>Deadline</th>
-              </tr>
-            </thead>
-            <tbody>
-              {requests.map((request) => (
-                <tr key={request.swapId}>
-                  <td className="tabular">
-                    {request.arrivalSequence === null ? '—' : request.arrivalSequence}
-                  </td>
-                  <td className="mono">{shortContract(request.swapId)}</td>
-                  <td className="table-num tabular">
-                    {formatDecimal(request.amountIn)} {request.inputInstrument.id}
-                  </td>
-                  <td className="table-num tabular">
-                    {formatDecimal(request.minOut)} {request.outputInstrument.id}
-                  </td>
-                  <td>
-                    <Badge
-                      tone={
-                        request.swapId === blockedId ? 'warning' : swapStatusTones[request.status]
-                      }
-                    >
-                      {swapStatusLabels[request.status]}
-                    </Badge>
-                  </td>
-                  <td>
-                    {request.submittedAt === null ? '—' : formatAge(request.submittedAt, now)}
-                  </td>
-                  <td>{formatCountdown(request.settlementDeadline, now)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <DataTable
+            aria-labelledby={queueTitle}
+            columns={[
+              {
+                id: 'order',
+                header: 'Order',
+                cellClassName: 'tabular-nums',
+                cell: (request) =>
+                  request.arrivalSequence === null ? '—' : request.arrivalSequence,
+              },
+              {
+                id: 'request',
+                header: 'Request',
+                cellClassName: 'font-mono text-xs',
+                cell: (request) => shortContract(request.swapId),
+              },
+              {
+                ...NUMERIC,
+                id: 'amount-in',
+                header: 'Amount in',
+                cell: (request) =>
+                  `${formatDecimal(request.amountIn)} ${request.inputInstrument.id}`,
+              },
+              {
+                ...NUMERIC,
+                id: 'min-out',
+                header: 'Minimum out',
+                cell: (request) =>
+                  `${formatDecimal(request.minOut)} ${request.outputInstrument.id}`,
+              },
+              {
+                id: 'status',
+                header: 'Status',
+                cell: (request) => (
+                  <StatusBadge
+                    tone={
+                      request.swapId === blockedId ? 'warning' : swapStatusTones[request.status]
+                    }
+                    label={swapStatusLabels[request.status]}
+                  />
+                ),
+              },
+              {
+                id: 'waiting',
+                header: 'Waiting',
+                cell: (request) =>
+                  request.submittedAt === null ? '—' : formatAge(request.submittedAt, now),
+              },
+              {
+                id: 'deadline',
+                header: 'Deadline',
+                cell: (request) => formatCountdown(request.settlementDeadline, now),
+              },
+            ]}
+            rows={requests}
+            getRowKey={(request) => request.swapId}
+            className="border-0"
+          />
         )}
       </AsyncSection>
     </Card>

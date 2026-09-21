@@ -56,7 +56,7 @@ export function Holdings() {
           tokens.balances.length === 0 ? (
             <EmptyState title="No tokens yet" />
           ) : (
-            <ul className="holdings">
+            <ul className="flex flex-col">
               {held(tokens.balances).map((balance) => (
                 <Holding key={keyOf(balance)} balance={balance} />
               ))}
@@ -71,26 +71,26 @@ export function Holdings() {
 function Holding({ balance }: { balance: TokenBalance }) {
   const locked = !isNone(balance.locked);
   return (
-    <li className="holding">
-      <div className="holding-main">
+    <li className="flex flex-col gap-1 border-b px-5 py-3 last:border-b-0">
+      <div className="flex items-center gap-3">
         <TokenLogo symbol={balance.symbol} seed={keyOf(balance)} />
-        <div className="holding-name">
-          <span className="holding-symbol">{balance.symbol}</span>
-          <span className="muted text-xs mono">{balance.instrument.id}</span>
+        <div className="flex min-w-0 flex-1 flex-col [&>*]:truncate">
+          <span className="text-sm font-semibold">{balance.symbol}</span>
+          <span className="text-muted-foreground text-xs font-mono">{balance.instrument.id}</span>
         </div>
-        <div className="holding-figures">
+        <div className="flex min-w-0 flex-col items-end text-right">
           {/* At the instrument's own precision: a whole satoshi shown to six
               places would read as nothing. */}
-          <span className="holding-amount tabular">
+          <span className="text-[0.9375rem] font-semibold tabular-nums">
             {formatExact(balance.available, balance.decimals)}
           </span>
-          <span className="muted text-xs">available</span>
+          <span className="text-muted-foreground text-xs">available</span>
         </div>
       </div>
       {/* A request's allocation reserves this. It returns if that request is
           reclaimed, so it is said beside the total rather than subtracted. */}
       {locked ? (
-        <p className="holding-locked muted text-xs tabular">
+        <p className="text-muted-foreground text-right text-xs tabular-nums">
           {formatExact(balance.locked, balance.decimals)} locked ·{' '}
           {formatExact(balance.total, balance.decimals)} total
         </p>

@@ -171,8 +171,39 @@ class PartySignaturesTest {
 
   @Test
   void hintSuggestionProducesValidAsciiAndBoundedIdentifiers() {
-    assertThat(OnboardingStore.suggestHint("Dávid Pérez")).isEqualTo("david_perez");
+    assertThat(OnboardingStore.suggestHint("Dávid Pérez")).isEqualTo("dex_david_perez");
+    assertThat(OnboardingStore.suggestHint("Acme Trading Ltd")).isEqualTo("dex_acme_trading_ltd");
+    assertThat(OnboardingStore.suggestHint("123")).isEqualTo("dex_123");
+    assertThat(OnboardingStore.suggestHint("名字")).isEqualTo("dex_trader");
+    assertThat(OnboardingStore.suggestHint("a".repeat(120))).hasSize(64);
     for (String name : List.of("123", "名字", "a".repeat(120), "- _ ?"))
-      assertThat(OnboardingStore.suggestHint(name)).matches("[a-z][a-z0-9_]{0,63}");
+      new ReviewDecision(
+              ReviewDecision.Decision.APPROVED, List.of("pool"), OnboardingStore.suggestHint(name))
+          .validate();
+  }
+
+  @Test
+  void approvedHintsMustKeepTheDexPrefixAndAValidBoundedName() {
+    for (String hint :
+        List.of(
+            "david_perez",
+            "dex",
+            "dex_",
+            "dex__",
+            "DEX_david",
+            "dex_Dávid",
+            "dex_bad name",
+            "dex_" + "a".repeat(61)))
+      assertThatThrownBy(
+              () ->
+                  new ReviewDecision(ReviewDecision.Decision.APPROVED, List.of("pool"), hint)
+                      .validate())
+          .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(
+            () ->
+                new ReviewDecision(ReviewDecision.Decision.APPROVED, List.of("pool"), null)
+                    .validate())
+        .isInstanceOf(IllegalArgumentException.class);
+    new ReviewDecision(ReviewDecision.Decision.REJECTED, List.of(), null).validate();
   }
 }

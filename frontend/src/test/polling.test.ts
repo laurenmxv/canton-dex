@@ -30,7 +30,7 @@ describe('what a screen keeps watching', () => {
     },
   );
 
-  it.each(['COMPLETED', 'REJECTED'] as const)('stops at %s, which nothing will move', (status) => {
+  it.each(['COMPLETED', 'REJECTED', 'PARTY_CONFLICT'] as const)('stops at %s, which nothing will move', (status) => {
     expect(isSettling(at(status))).toBe(false);
     expect(isReconciling(at(status))).toBe(false);
   });

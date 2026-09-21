@@ -2,6 +2,7 @@ package com.openzeppelin.dex.http;
 
 import com.openzeppelin.dex.canton.LedgerAvailability;
 import com.openzeppelin.dex.onboarding.OnboardingConflict;
+import com.openzeppelin.dex.onboarding.PartyAlreadyExists;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.ConstraintViolationException;
 import java.io.IOException;
@@ -51,6 +52,12 @@ public final class ApiErrors implements HandlerFilterFunction<ServerResponse, Se
       return problem(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage());
     } catch (com.openzeppelin.dex.pools.PoolConflict e) {
       return problem(HttpStatus.CONFLICT, e.getMessage());
+    } catch (PartyAlreadyExists e) {
+      var detail = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, e.getMessage());
+      detail.setProperty("code", "PARTY_ALREADY_EXISTS");
+      return ServerResponse.status(HttpStatus.CONFLICT)
+          .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+          .body(detail);
     } catch (OnboardingConflict e) {
       return problem(HttpStatus.CONFLICT, e.getMessage());
     } catch (DuplicateKeyException e) {

@@ -17,8 +17,8 @@ export interface ProblemDetails {
   instance?: string;
   /**
    * The venue's own name for the rule that refused, such as `QUOTE_EXPIRED` or
-   * `LEDGER_UNAVAILABLE`. It is an extension member the backend adds to the
-   * swap, settlement and availability problems, and is absent from the rest.
+   * `PARTY_ALREADY_EXISTS` or `LEDGER_UNAVAILABLE`. Present when callers need
+   * to distinguish rules that share an HTTP status.
    */
   code?: string;
 }

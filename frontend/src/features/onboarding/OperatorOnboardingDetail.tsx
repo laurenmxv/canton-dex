@@ -316,7 +316,7 @@ function ReviewPanel({
           label="Party name"
           error={
             touched && !hintValid
-              ? 'Use lowercase letters, digits and underscores, starting with a letter'
+              ? 'Start with dex_, followed by a name using lowercase letters, digits and underscores'
               : undefined
           }
           value={hint}

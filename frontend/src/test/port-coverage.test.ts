@@ -114,7 +114,7 @@ async function walkEveryFlow(calls: Calls) {
   await operator.admin.reviewOnboarding(created.id, {
     decision: 'APPROVED',
     approvedPoolIds: ['pool-usdc-eurc'],
-    partyHint: 'acme_trading',
+    partyHint: 'dex_acme_trading',
   });
 
   // The trader registers their own party. A real one signs in their wallet;

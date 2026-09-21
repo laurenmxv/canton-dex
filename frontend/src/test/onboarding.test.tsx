@@ -92,6 +92,20 @@ describe('onboarding', () => {
     expect(screen.getByRole('button', { name: /Accept with 1 pool/ })).toBeInTheDocument();
   });
 
+  it('suggests a dex name and refuses approval without its prefix', async () => {
+    const { user, actAs } = renderApp();
+    await submitApplication(user, 'Dávid Pérez');
+    await actAs('Venue Operations');
+    await openRow(user, 'Dávid Pérez');
+    const hint = await screen.findByLabelText('Party name');
+    expect(hint).toHaveValue('dex_david_perez');
+    await user.clear(hint);
+    await user.type(hint, 'david_perez');
+    await approveForPool(user, 'USDC / EURC');
+    expect(await screen.findByText(/Start with dex_/)).toBeInTheDocument();
+    expect(screen.queryByText('Accepted')).not.toBeInTheDocument();
+  });
+
   it('grants no pool access when the operator rejects', async () => {
     const { user, actAs } = renderApp();
 

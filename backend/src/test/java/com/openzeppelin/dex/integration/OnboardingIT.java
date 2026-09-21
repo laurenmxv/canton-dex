@@ -13,6 +13,52 @@ import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 @EnabledIfSystemProperty(named = "scenario", matches = "onboarding|all")
 class OnboardingIT {
   @Test
+  void existingPartyReturnsConflictAndNeverBindsOrIssuesContracts() throws Exception {
+    try (var test = new BackendFixture()) {
+      String token = test.token(test.trader("existing-party"));
+      var created = test.create(token);
+      String id = created.path("id").asString(), path = "/v1/onboardings/" + id;
+      test.approve(id);
+      var key = BackendFixture.keyPair();
+      var publicKey = Map.of("publicKey", BackendFixture.publicKey(key));
+      var prepared = test.request("POST", path + "/party/prepare", token, publicKey, 200);
+      var submission = BackendFixture.sign(key, prepared.path("party"));
+      // Register through another user first: the local quota permits one allocation per user.
+      String existingOwnerToken = test.token(test.trader("existing-party-owner"));
+      var existingOwner = test.create(existingOwnerToken);
+      test.approve(existingOwner.path("id").asString());
+      String subject =
+          test.fixtures
+              .sql()
+              .sql("SELECT subject FROM accounts WHERE id=?")
+              .param(UUID.fromString(existingOwner.path("accountId").asString()))
+              .query(String.class)
+              .single();
+      try (var transport = DevelopmentFixtures.connection(DevelopmentFixtures.operatorIdentity())) {
+        RegistrationAuthorityAssertions.allocateBeforeBackendSubmission(
+            transport,
+            existingOwnerToken,
+            subject,
+            prepared.path("party"),
+            submission.get("signature").toString());
+      }
+      var error = test.request("POST", path + "/party/submit", token, submission, 409);
+      assertThat(error.path("code").asString()).isEqualTo("PARTY_ALREADY_EXISTS");
+      assertThat(error.path("detail").asString())
+          .isEqualTo("This party already exists. Registration was stopped.");
+      var conflict = test.request("GET", "/v1/onboardings/mine", token, null, 200);
+      assertThat(conflict.path("status").asString()).isEqualTo("PARTY_CONFLICT");
+      assertThat(conflict.path("party").path("status").asString()).isEqualTo("CONFLICT");
+      assertThat(conflict.path("party").path("confirmed").asBoolean()).isFalse();
+      assertThat(conflict.path("ledgerSteps").isEmpty()).isTrue();
+      test.request("POST", path + "/party/prepare", token, publicKey, 409);
+      test.request("POST", path + "/party/submit", token, submission, 409);
+      assertThat(test.request("GET", path, token, null, 200)).isEqualTo(conflict);
+      assertThat(test.request("GET", "/v1/me", token, null, 200).path("partyId").isNull()).isTrue();
+    }
+  }
+
+  @Test
   void approvedNewExternalPartyUsesValidSignatureAndConfirmedLedgerReceipt() throws Exception {
     try (var test = new BackendFixture()) {
       String name = test.trader("david"), token = test.token(name);
@@ -28,7 +74,7 @@ class OnboardingIT {
               "approvedPoolIds",
               List.of(test.poolId()),
               "partyHint",
-              "david_test");
+              "dex_david_test");
       String reviewPath = "/v1/admin/onboardings/" + id + "/review",
           operator = test.token("operator");
       try (var transport = DevelopmentFixtures.connection(DevelopmentFixtures.operatorIdentity())) {
@@ -45,7 +91,7 @@ class OnboardingIT {
               "approvedPoolIds",
               List.of("fake-pool"),
               "partyHint",
-              "david_test"),
+              "dex_david_test"),
           400);
       test.request(
           "POST",
@@ -71,6 +117,7 @@ class OnboardingIT {
         RegistrationAuthorityAssertions.ordinaryUser(transport, token, subject, null);
       }
       var prep = test.request("POST", path + "/party/prepare", token, publicKey, 200);
+      assertThat(prep.path("party").path("partyId").asString()).startsWith("dex_david_test::");
       assertThat(test.request("POST", path + "/party/prepare", token, publicKey, 200))
           .isEqualTo(prep);
       test.request(

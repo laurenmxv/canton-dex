@@ -17,6 +17,7 @@ export type OnboardingStatus =
   | 'REJECTED'
   | 'PARTY_SUBMITTING'
   | 'PARTY_UNRESOLVED'
+  | 'PARTY_CONFLICT'
   | 'LEDGER_PENDING'
   | 'LEDGER_SUBMITTING'
   | 'LEDGER_UNRESOLVED'
@@ -25,7 +26,7 @@ export type OnboardingStatus =
 export type LedgerStepStatus = 'PENDING' | 'SUBMITTING' | 'CONFIRMED' | 'UNRESOLVED';
 
 /** How far the external party registration has travelled. */
-export type PartyStatus = 'PREPARED' | 'SUBMITTING' | 'CONFIRMED' | 'UNRESOLVED';
+export type PartyStatus = 'PREPARED' | 'SUBMITTING' | 'CONFIRMED' | 'UNRESOLVED' | 'CONFLICT';
 
 export type ReviewDecisionValue = 'APPROVED' | 'REJECTED';
 
@@ -140,7 +141,7 @@ export interface Onboarding {
   party: PartyPreparation | null;
   /** Empty until an approved review and a registered party open the ledger work. */
   ledgerSteps: LedgerStep[];
-  /** The party name the backend proposes to the operator, who may edit it. */
+  /** The backend proposes dex_<normalized legal name>; edits must keep the dex_ prefix. */
   suggestedPartyHint: string;
 }
 

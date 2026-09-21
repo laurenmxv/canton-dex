@@ -134,7 +134,16 @@ class DatabaseSchemaIT {
                 () -> sql.sql("INSERT INTO pool_pair_claims(pair_key) VALUES('C/D')").update())
             .isInstanceOf(DataIntegrityViolationException.class);
 
+        sql.sql("UPDATE onboardings SET party_status='CONFLICT' WHERE id=?")
+            .param(onboarding)
+            .update();
         initializer.execute(dataSource);
+        assertThat(
+                sql.sql("SELECT party_status FROM onboardings WHERE id=?")
+                    .param(onboarding)
+                    .query(String.class)
+                    .single())
+            .isEqualTo("CONFLICT");
         assertThat(accounts.authenticate("test-issuer", "david", "David").id())
             .isEqualTo(david.id());
         assertThat(

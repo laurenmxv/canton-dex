@@ -2,6 +2,7 @@ package com.openzeppelin.dex.http;
 
 import static org.assertj.core.api.Assertions.*;
 
+import com.openzeppelin.dex.onboarding.PartyAlreadyExists;
 import com.openzeppelin.dex.swaps.SwapFailure;
 import io.grpc.Status;
 import java.lang.reflect.Proxy;
@@ -74,5 +75,15 @@ class ApiErrorsTest {
         ignored -> {
           throw failure;
         });
+  }
+
+  @Test
+  void duplicatePartyReturnsAnExplicitConflict() throws Exception {
+    var response = fail(new PartyAlreadyExists());
+    assertThat(response.statusCode().value()).isEqualTo(409);
+    var detail = (ProblemDetail) ((EntityResponse<?>) response).entity();
+    assertThat(detail.getProperties()).containsEntry("code", "PARTY_ALREADY_EXISTS");
+    assertThat(detail.getDetail())
+        .isEqualTo("This party already exists. Registration was stopped.");
   }
 }

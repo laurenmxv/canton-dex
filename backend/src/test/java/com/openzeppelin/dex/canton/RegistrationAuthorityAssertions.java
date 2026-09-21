@@ -93,6 +93,27 @@ public final class RegistrationAuthorityAssertions {
       String ownerSubject,
       JsonNode party,
       String signature) {
+    var parties =
+        PartyManagementServiceGrpc.newBlockingStub(transport.authenticatedChannel(token))
+            .withDeadlineAfter(10, TimeUnit.SECONDS);
+    denied(() -> parties.allocateExternalParty(allocationRequest(ownerSubject, party, signature)));
+  }
+
+  public static void allocateBeforeBackendSubmission(
+      LedgerConnection transport,
+      String token,
+      String ownerSubject,
+      JsonNode party,
+      String signature) {
+    var response =
+        PartyManagementServiceGrpc.newBlockingStub(transport.authenticatedChannel(token))
+            .withDeadlineAfter(60, TimeUnit.SECONDS)
+            .allocateExternalParty(allocationRequest(ownerSubject, party, signature));
+    assertThat(response.getPartyId()).isEqualTo(party.path("partyId").asString());
+  }
+
+  private static AllocateExternalPartyRequest allocationRequest(
+      String ownerSubject, JsonNode party, String signature) {
     var request =
         AllocateExternalPartyRequest.newBuilder()
             .setUserId(ownerSubject)
@@ -113,10 +134,7 @@ public final class RegistrationAuthorityAssertions {
                     AllocateExternalPartyRequest.SignedTransaction.newBuilder()
                         .setTransaction(
                             ByteString.copyFrom(Base64.getDecoder().decode(tx.asString())))));
-    var parties =
-        PartyManagementServiceGrpc.newBlockingStub(transport.authenticatedChannel(token))
-            .withDeadlineAfter(10, TimeUnit.SECONDS);
-    denied(() -> parties.allocateExternalParty(request.build()));
+    return request.build();
   }
 
   private static void denied(Runnable action) {

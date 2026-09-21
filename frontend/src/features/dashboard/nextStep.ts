@@ -80,6 +80,14 @@ export function nextStep(
         action: { label: 'View progress', target: 'onboarding' },
       };
 
+    case 'PARTY_CONFLICT':
+      return {
+        headline: 'Party registration stopped',
+        detail: 'This party already exists',
+        primary: false,
+        action: { label: 'View onboarding', target: 'onboarding' },
+      };
+
     case 'LEDGER_PENDING':
     case 'LEDGER_SUBMITTING':
       return {

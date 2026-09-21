@@ -91,6 +91,15 @@ describe('the trader’s next step', () => {
     expect(step.action?.target).toBe('onboarding');
   });
 
+  it('shows an existing-party conflict without offering registration or trading', () => {
+    expect(nextStep(onboardingAt('PARTY_CONFLICT'), 0)).toMatchObject({
+      headline: 'Party registration stopped',
+      detail: 'This party already exists',
+      primary: false,
+      action: { label: 'View onboarding', target: 'onboarding' },
+    });
+  });
+
   it('never promises a balance, a portfolio or a settlement', () => {
     const statuses: OnboardingStatus[] = [
       'AWAITING_REVIEW_AND_PARTY',

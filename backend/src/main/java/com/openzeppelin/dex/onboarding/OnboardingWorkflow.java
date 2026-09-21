@@ -2,6 +2,8 @@ package com.openzeppelin.dex.onboarding;
 
 import com.openzeppelin.dex.iam.Account;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import org.slf4j.*;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -12,6 +14,7 @@ public final class OnboardingWorkflow {
   private final OnboardingStore store;
   private final OnboardingLedger ledger;
   private final ExternalParties parties;
+  private final ConcurrentMap<UUID, Integer> activeRegistrations = new ConcurrentHashMap<>();
 
   public OnboardingWorkflow(
       OnboardingStore store, OnboardingLedger ledger, ExternalParties parties) {
@@ -27,12 +30,25 @@ public final class OnboardingWorkflow {
 
   public Onboarding submitParty(
       UUID id, Account caller, PartySubmission submission, String accessToken) {
+    activeRegistrations.merge(id, 1, Integer::sum);
+    try {
+      return allocateParty(id, caller, submission, accessToken);
+    } finally {
+      activeRegistrations.computeIfPresent(id, (ignored, count) -> count == 1 ? null : count - 1);
+    }
+  }
+
+  private Onboarding allocateParty(
+      UUID id, Account caller, PartySubmission submission, String accessToken) {
     if (store.claimParty(id, caller, submission)) {
       try {
         parties.allocate(
             caller, accessToken, store.get(id).party(), store.topology(id), submission.signature());
         if (parties.confirmed(accessToken, store.get(id).party())) store.confirmParty(id);
         else store.unresolvedParty(id);
+      } catch (PartyAlreadyExists e) {
+        store.conflictedParty(id);
+        throw e;
       } catch (org.springframework.security.access.AccessDeniedException e) {
         store.deniedParty(id);
         throw e;
@@ -54,22 +70,38 @@ public final class OnboardingWorkflow {
 
   private Onboarding refreshParty(Onboarding current, Account caller, String accessToken) {
     if (current != null
+        // Wait for the allocation result before reconciling a concurrent status poll.
+        && !activeRegistrations.containsKey(current.id())
         && current.party() != null
         && !current.party().confirmed()
         && java.util.Set.of("SUBMITTING", "UNRESOLVED").contains(current.party().status())) {
-      boolean confirmed;
+      boolean confirmed = false;
       try {
         confirmed = parties.confirmed(accessToken, current.party());
       } catch (RuntimeException e) {
-        store.unresolvedParty(current.id());
         LOG.warn("External party {} remains unconfirmed: {}", current.id(), e.toString());
-        return store.getOwned(current.id(), caller);
       }
-      if (confirmed) store.confirmParty(current.id());
-      else store.unresolvedParty(current.id());
+      finishPartyRefresh(current.id(), confirmed);
       return store.getOwned(current.id(), caller);
     }
     return current;
+  }
+
+  private void finishPartyRefresh(UUID id, boolean confirmed) {
+    // A retry may have started or finished while the Canton lookup was in flight.
+    activeRegistrations.compute(
+        id,
+        (ignored, count) -> {
+          if (count == null) {
+            var party = store.get(id).party();
+            if (party != null
+                && java.util.Set.of("SUBMITTING", "UNRESOLVED").contains(party.status())) {
+              if (confirmed) store.confirmParty(id);
+              else store.unresolvedParty(id);
+            }
+          }
+          return count;
+        });
   }
 
   @Scheduled(fixedDelay = 3000)

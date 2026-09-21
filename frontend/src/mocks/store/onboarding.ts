@@ -37,6 +37,7 @@ export function deriveStatus(onboarding: Onboarding): OnboardingStatus {
   if (review?.decision === 'REJECTED') return 'REJECTED';
   if (review === null) return bound ? 'AWAITING_REVIEW' : 'AWAITING_REVIEW_AND_PARTY';
   if (party?.status === 'UNRESOLVED') return 'PARTY_UNRESOLVED';
+  if (party?.status === 'CONFLICT') return 'PARTY_CONFLICT';
   if (party?.status === 'SUBMITTING') return 'PARTY_SUBMITTING';
   if (!bound) return 'AWAITING_PARTY';
   const steps = onboarding.ledgerSteps;
@@ -138,11 +139,12 @@ function requireText(value: string, label: string, maxLength: number): string {
 /** The party name the venue proposes, derived from the applicant's own name. */
 export function suggestPartyHint(legalName: string): string {
   const hint = legalName
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .slice(0, 64);
-  return PARTY_HINT_PATTERN.test(hint) ? hint : 'trader';
+    .replace(/^_+|_+$/g, '');
+  return `dex_${hint || 'trader'}`.slice(0, 64);
 }
 
 function readDocuments(documents: OnboardingDocument[]): OnboardingDocument[] {

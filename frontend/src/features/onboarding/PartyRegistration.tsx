@@ -35,6 +35,14 @@ export function PartyRegistration({
 }) {
   const party = onboarding.party;
 
+  if (party?.status === 'CONFLICT') {
+    return (
+      <Callout tone="danger">
+        This party already exists. Registration was stopped.
+      </Callout>
+    );
+  }
+
   if (party?.confirmed) {
     return (
       <DataList

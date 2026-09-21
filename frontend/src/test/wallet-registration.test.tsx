@@ -5,7 +5,7 @@ import { DexProvider, type Session } from '../app/runtime';
 import { TraderOnboarding } from '../features/onboarding/TraderOnboarding';
 import type { DemoApi } from '../lib/api/demo';
 import type { DexClient } from '../lib/api/port';
-import type { Onboarding, PartyPreparation, Profile } from '../lib/api/types';
+import { DomainError, type Onboarding, type PartyPreparation, type Profile } from '../lib/api/types';
 import { hexToBase64 } from '../wallet/encoding';
 import { createMetaMaskWallet } from '../wallet/metamask';
 import { WalletError, type CantonWallet } from '../wallet/types';
@@ -390,6 +390,75 @@ describe('a development snap', () => {
 });
 
 describe('a preparation the venue is still settling', () => {
+  it('refreshes a rejected registration and keeps the conflict after reload', async () => {
+    const conflict = approved({ status: 'PARTY_CONFLICT', party: party({ status: 'CONFLICT' }) });
+    let current = approved({ party: party() });
+    const confirmParty = vi.fn(async () => {
+      current = conflict;
+      throw new DomainError(
+        'This party already exists. Registration was stopped.',
+        'CONFLICT',
+        'PARTY_ALREADY_EXISTS',
+      );
+    });
+    const signTopology = vi.fn(async () => ({ signature: SIGNATURE, fingerprint: '1220aa' }));
+    const wallet = stubWallet({ signTopology });
+    const mine = vi.fn(() => Promise.resolve(current));
+    const user = renderWallet(current, wallet, {
+      mine,
+      confirmParty,
+    });
+    await user.click(await screen.findByRole('button', { name: 'Connect MetaMask' }));
+    await user.click(await screen.findByRole('button', { name: 'Sign and register with MetaMask' }));
+    await waitFor(() => {
+      expect(mine).toHaveBeenCalledTimes(2);
+      expect(screen.getByText('This party already exists. Registration was stopped.')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Sign and register/ })).not.toBeInTheDocument();
+    });
+    cleanup();
+    renderWallet(conflict, wallet, { confirmParty });
+    expect(await screen.findByText('This party already exists. Registration was stopped.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Connect MetaMask|Sign and register/ })).not.toBeInTheDocument();
+    expect(confirmParty).toHaveBeenCalledTimes(1);
+    expect(signTopology).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['pending', 'failed'] as const)(
+    'stops signing immediately when the conflict refresh is %s',
+    async (refresh) => {
+      const current = approved({ party: party() });
+      const mine = vi.fn<DexClient['onboarding']['mine']>()
+        .mockResolvedValueOnce(current)
+        .mockImplementation(() =>
+          refresh === 'pending'
+            ? new Promise<Onboarding>(() => {})
+            : Promise.reject(new Error('Refresh unavailable')),
+        );
+      const confirmParty = vi.fn(async () => {
+        throw new DomainError(
+          'This party already exists. Registration was stopped.',
+          'CONFLICT',
+          'PARTY_ALREADY_EXISTS',
+        );
+      });
+      const signTopology = vi.fn(async () => ({ signature: SIGNATURE, fingerprint: '1220aa' }));
+      const user = renderWallet(current, stubWallet({ signTopology }), { mine, confirmParty });
+
+      await user.click(await screen.findByRole('button', { name: 'Connect MetaMask' }));
+      await user.click(await screen.findByRole('button', { name: 'Sign and register with MetaMask' }));
+
+      expect(await screen.findByText('This party already exists. Registration was stopped.')).toBeInTheDocument();
+      await waitFor(() => expect(mine).toHaveBeenCalledTimes(2));
+      if (refresh === 'failed') {
+        expect(await screen.findByText('Refresh unavailable')).toBeInTheDocument();
+      }
+      expect(screen.queryByRole('button', { name: /Connect MetaMask|Sign and register/ })).not.toBeInTheDocument();
+      expect(screen.queryByLabelText('Canton key index')).not.toBeInTheDocument();
+      expect(signTopology).toHaveBeenCalledTimes(1);
+      expect(confirmParty).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it.each([
     ['SUBMITTING' as const, 'Registering'],
     ['UNRESOLVED' as const, 'Confirming'],

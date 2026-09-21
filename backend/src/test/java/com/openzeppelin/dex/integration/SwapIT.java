@@ -248,7 +248,7 @@ class SwapIT {
         "POST",
         "/v1/admin/onboardings/" + id + "/review",
         f.token("operator"),
-        Map.of("decision", "APPROVED", "approvedPoolIds", pools, "partyHint", "swap_test"),
+        Map.of("decision", "APPROVED", "approvedPoolIds", pools, "partyHint", "dex_swap_test"),
         200);
     var prepared =
         f.request(

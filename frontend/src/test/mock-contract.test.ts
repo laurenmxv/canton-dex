@@ -42,7 +42,7 @@ const application = {
 const APPROVAL = {
   decision: 'APPROVED' as const,
   approvedPoolIds: ['pool-usdc-eurc'],
-  partyHint: 'acme_trading',
+  partyHint: 'dex_acme_trading',
 };
 
 describe('the caller', () => {
@@ -151,12 +151,12 @@ describe('review', () => {
     const first = await operator.admin.reviewOnboarding(seeded!.id, {
       decision: 'APPROVED',
       approvedPoolIds: ['pool-usdc-eurc', 'pool-cc-usdc', 'pool-usdc-eurc'],
-      partyHint: 'sullivan_capital',
+      partyHint: 'dex_sullivan_capital',
     });
     const second = await operator.admin.reviewOnboarding(seeded!.id, {
       decision: 'APPROVED',
       approvedPoolIds: ['pool-cc-usdc', 'pool-usdc-eurc'],
-      partyHint: 'sullivan_capital',
+      partyHint: 'dex_sullivan_capital',
     });
 
     expect(first.review?.approvedPoolIds).toEqual(['pool-cc-usdc', 'pool-usdc-eurc']);
@@ -186,12 +186,12 @@ describe('review', () => {
     ).rejects.toThrow('Unknown pool');
   });
 
-  it('refuses an approval whose party name the ledger would not accept', async () => {
+  it.each(['Not A Hint', 'acme_trading', 'dex_', 'dex__'])('refuses the invalid party name %s', async (partyHint) => {
     const operator = world().as('acc-operator');
     const [seeded] = await operator.admin.listOnboardings();
 
     await expect(
-      operator.admin.reviewOnboarding(seeded!.id, { ...APPROVAL, partyHint: 'Not A Hint' }),
+      operator.admin.reviewOnboarding(seeded!.id, { ...APPROVAL, partyHint }),
     ).rejects.toThrow('party name');
   });
 

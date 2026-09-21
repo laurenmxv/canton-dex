@@ -63,7 +63,7 @@ public final class BackendFixture implements AutoCloseable {
             "approvedPoolIds",
             List.of(poolId()),
             "partyHint",
-            "david_test"),
+            "dex_david_test"),
         200);
   }
 

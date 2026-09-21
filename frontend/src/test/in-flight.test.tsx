@@ -40,7 +40,7 @@ async function tradingAlice() {
   await operator.client.admin.reviewOnboarding(onboarding.id, {
     decision: 'APPROVED',
     approvedPoolIds: ['pool-usdc-eurc', 'pool-cc-usdc'],
-    partyHint: 'acme_trading',
+    partyHint: 'dex_acme_trading',
   });
   const prepared = await alice.client.onboarding.prepareParty(onboarding.id, {
     publicKey: PUBLIC_KEY,

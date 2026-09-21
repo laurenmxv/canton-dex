@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS onboardings (
     multi_hash TEXT,
     synchronizer_id TEXT,
     topology_transactions JSONB,
-    party_status TEXT CHECK (party_status IN ('PREPARED', 'SUBMITTING', 'CONFIRMED', 'UNRESOLVED')),
+    party_status TEXT CHECK (party_status IN ('PREPARED', 'SUBMITTING', 'CONFIRMED', 'UNRESOLVED', 'CONFLICT')),
     prepared_participant_id TEXT
 );
 

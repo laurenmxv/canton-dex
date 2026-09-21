@@ -137,10 +137,12 @@ public class OnboardingStore {
           var current = get(id);
           approved(current);
           if (current.party() != null) {
+            if (current.party().status().equals("CONFLICT")) throw new PartyAlreadyExists();
             if (!current.party().publicKey().equals(key))
               throw new OnboardingConflict("A different key is already prepared");
             return current;
           }
+          ReviewDecision.validatePartyHint(current.review().partyHint());
           String synchronizer =
               sql.sql("SELECT synchronizer_id FROM venue_configuration WHERE id=1")
                   .query(String.class)
@@ -181,6 +183,9 @@ public class OnboardingStore {
           if (current.party() == null
               || !current.party().preparationId().equals(submission.preparationId()))
             throw new OnboardingConflict("Preparation does not belong to this onboarding");
+          if (current.party().status().equals("CONFLICT")) throw new PartyAlreadyExists();
+          if (current.party().status().equals("PREPARED"))
+            ReviewDecision.validatePartyHint(current.review().partyHint());
           PartySignatures.verify(current.party(), submission.signature());
           return sql.sql(
                       "UPDATE onboardings SET party_status='SUBMITTING' WHERE id=? AND party_status='PREPARED'")
@@ -227,6 +232,13 @@ public class OnboardingStore {
   void unresolvedParty(UUID id) {
     sql.sql(
             "UPDATE onboardings SET party_status='UNRESOLVED' WHERE id=? AND party_status='SUBMITTING'")
+        .param(id)
+        .update();
+  }
+
+  void conflictedParty(UUID id) {
+    sql.sql(
+            "UPDATE onboardings SET party_status='CONFLICT' WHERE id=? AND party_status='SUBMITTING'")
         .param(id)
         .update();
   }
@@ -330,7 +342,7 @@ public class OnboardingStore {
             .toLowerCase(Locale.ROOT)
             .replaceAll("[^a-z0-9]+", "_")
             .replaceAll("^_+|_+$", "");
-    if (hint.isEmpty() || !Character.isLetter(hint.charAt(0))) hint = "trader_" + hint;
+    hint = "dex_" + (hint.isEmpty() ? "trader" : hint);
     return hint.substring(0, Math.min(64, hint.length()));
   }
 
@@ -388,6 +400,7 @@ public class OnboardingStore {
           : switch (party.status()) {
             case "SUBMITTING" -> "PARTY_SUBMITTING";
             case "UNRESOLVED" -> "PARTY_UNRESOLVED";
+            case "CONFLICT" -> "PARTY_CONFLICT";
             default -> "AWAITING_PARTY";
           };
     if (steps.stream().anyMatch(s -> s.status() == LedgerStep.Status.UNRESOLVED))

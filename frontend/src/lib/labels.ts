@@ -34,6 +34,7 @@ export const onboardingStatusLabels: Record<OnboardingStatus, string> = {
   REJECTED: 'Rejected',
   PARTY_SUBMITTING: 'Registering party',
   PARTY_UNRESOLVED: 'Confirming registration',
+  PARTY_CONFLICT: 'Party already exists',
   LEDGER_PENDING: 'Ledger pending',
   LEDGER_SUBMITTING: 'Ledger submitting',
   LEDGER_UNRESOLVED: 'Confirming on the ledger',
@@ -47,6 +48,7 @@ export const onboardingStatusTones: Record<OnboardingStatus, Tone> = {
   REJECTED: 'danger',
   PARTY_SUBMITTING: 'progress',
   PARTY_UNRESOLVED: 'warning',
+  PARTY_CONFLICT: 'danger',
   LEDGER_PENDING: 'progress',
   LEDGER_SUBMITTING: 'progress',
   LEDGER_UNRESOLVED: 'warning',
@@ -201,6 +203,7 @@ export const partyStatusLabels: Record<PartyStatus, string> = {
   SUBMITTING: 'Registering',
   CONFIRMED: 'Registered',
   UNRESOLVED: 'Confirming',
+  CONFLICT: 'Party already exists',
 };
 
 export const partyStatusTones: Record<PartyStatus, Tone> = {
@@ -208,6 +211,7 @@ export const partyStatusTones: Record<PartyStatus, Tone> = {
   SUBMITTING: 'progress',
   CONFIRMED: 'success',
   UNRESOLVED: 'warning',
+  CONFLICT: 'danger',
 };
 
 // -------------------------------------------------------------- domain lookups

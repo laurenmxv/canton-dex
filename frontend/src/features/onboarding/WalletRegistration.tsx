@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useDexClient } from '../../app/runtime';
 import { useAction, useLive } from '../../app/useAsync';
-import type { Onboarding } from '../../lib/api/types';
+import { venueErrorCode, type Onboarding } from '../../lib/api/types';
 import { partyStatusLabels, partyStatusTones, shortParty } from '../../lib/labels';
 import { Badge, Callout } from '../../ui/Badge';
 import { Button } from '../../ui/Button';
@@ -85,6 +85,14 @@ export function WalletRegistration({
   const failure = connect.error ?? prepare.error ?? register.error;
   const busy = connect.pending || prepare.pending || register.pending;
 
+  if (venueErrorCode(register.error) === 'PARTY_ALREADY_EXISTS') {
+    return (
+      <Callout tone="danger">
+        This party already exists. Registration was stopped.
+      </Callout>
+    );
+  }
+
   return (
     <div className="stack-sm">
       {snap.local && !identity ? (
@@ -138,7 +146,8 @@ export function WalletRegistration({
             loading={register.pending}
             disabled={busy}
             onClick={async () => {
-              if (await register.perform(party)) onChanged();
+              await register.perform(party);
+              if (live()) onChanged();
             }}
           >
             Sign and register with MetaMask

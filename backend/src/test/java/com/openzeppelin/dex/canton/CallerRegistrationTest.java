@@ -4,8 +4,11 @@ import static org.assertj.core.api.Assertions.*;
 
 import com.daml.ledger.api.v2.admin.PartyManagementServiceGrpc;
 import com.daml.ledger.api.v2.admin.PartyManagementServiceOuterClass.*;
+import com.google.protobuf.Any;
+import com.google.rpc.ErrorInfo;
 import com.openzeppelin.dex.iam.*;
 import com.openzeppelin.dex.onboarding.Onboarding;
+import com.openzeppelin.dex.onboarding.PartyAlreadyExists;
 import io.grpc.*;
 import io.grpc.netty.shaded.io.grpc.netty.NettyServerBuilder;
 import io.grpc.stub.StreamObserver;
@@ -19,12 +22,17 @@ class CallerRegistrationTest {
   void registrationRelaysEachCallerTokenAndNeverUsesProvisionerCredentials() throws Exception {
     var requests = new ArrayList<AllocateExternalPartyRequest>();
     var tokens = new ArrayList<String>();
+    var failure = new java.util.concurrent.atomic.AtomicReference<StatusRuntimeException>();
     var rpc =
         new PartyManagementServiceGrpc.PartyManagementServiceImplBase() {
           @Override
           public void allocateExternalParty(
               AllocateExternalPartyRequest request,
               StreamObserver<AllocateExternalPartyResponse> observer) {
+            if (failure.get() != null) {
+              observer.onError(failure.get());
+              return;
+            }
             requests.add(request);
             observer.onNext(
                 AllocateExternalPartyResponse.newBuilder().setPartyId("david::key").build());
@@ -108,6 +116,50 @@ class CallerRegistrationTest {
                       "AA=="))
           .isInstanceOf(IllegalArgumentException.class);
       assertThat(requests).hasSize(2);
+      for (var duplicate :
+          List.of(
+              Status.ALREADY_EXISTS
+                  .withDescription("EXTERNAL_PARTY_ALREADY_EXISTS(10,test): Party already exists")
+                  .asRuntimeException(),
+              Status.INVALID_ARGUMENT
+                  .withDescription(
+                      "INVALID_ARGUMENT(8,test): EXTERNAL_PARTY_ALREADY_EXISTS(10,test): Party already exists")
+                  .asRuntimeException(),
+              Status.INVALID_ARGUMENT
+                  .withDescription(
+                      "INVALID_ARGUMENT(8,test): The submitted request has invalid arguments: Party dex_david_test::1220fa7429be... already exists on synchronizer global-domain::12202c7087a9...")
+                  .asRuntimeException(),
+              io.grpc.protobuf.StatusProto.toStatusRuntimeException(
+                  com.google.rpc.Status.newBuilder()
+                      .setCode(Status.Code.ALREADY_EXISTS.value())
+                      .addDetails(
+                          Any.pack(
+                              ErrorInfo.newBuilder()
+                                  .setReason("EXTERNAL_PARTY_ALREADY_EXISTS")
+                                  .build()))
+                      .build()))) {
+        failure.set(duplicate);
+        assertThatThrownBy(
+                () ->
+                    parties.allocate(caller, "token", party, party.topologyTransactions(), "AA=="))
+            .isInstanceOf(PartyAlreadyExists.class);
+      }
+      for (var other :
+          List.of(
+              Status.ALREADY_EXISTS
+                  .withDescription("Another resource already exists")
+                  .asRuntimeException(),
+              Status.INVALID_ARGUMENT.withDescription("Invalid topology").asRuntimeException(),
+              Status.UNAVAILABLE.asRuntimeException(),
+              Status.DEADLINE_EXCEEDED.asRuntimeException())) {
+        failure.set(other);
+        assertThatThrownBy(
+                () ->
+                    parties.allocate(caller, "token", party, party.topologyTransactions(), "AA=="))
+            .isInstanceOfSatisfying(
+                StatusRuntimeException.class,
+                e -> assertThat(e.getStatus().getCode()).isEqualTo(other.getStatus().getCode()));
+      }
     } finally {
       parties.close();
       server.shutdownNow().awaitTermination();

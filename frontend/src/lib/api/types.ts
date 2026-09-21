@@ -109,7 +109,7 @@ export const applicationLimits = {
 } as const;
 
 /** The party name an operator may approve with, as the backend accepts it. */
-export const PARTY_HINT_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
+export const PARTY_HINT_PATTERN = /^dex_[a-z0-9][a-z0-9_]{0,59}$/;
 
 // ------------------------------------------------- demo-only pools and swaps
 

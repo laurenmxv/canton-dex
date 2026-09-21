@@ -18,11 +18,16 @@ public record ReviewDecision(
 
   public void validate() {
     if (decision == Decision.APPROVED) {
-      if (approvedPoolIds.isEmpty()
-          || partyHint == null
-          || !partyHint.matches("[a-z][a-z0-9_]{0,63}"))
+      if (approvedPoolIds.isEmpty())
         throw new IllegalArgumentException("Approval requires pools and a valid partyHint");
+      validatePartyHint(partyHint);
     } else if (!approvedPoolIds.isEmpty() || partyHint != null)
       throw new IllegalArgumentException("Rejection cannot include pools or a partyHint");
+  }
+
+  static void validatePartyHint(String hint) {
+    if (hint == null || !hint.matches("dex_[a-z0-9][a-z0-9_]{0,59}"))
+      throw new IllegalArgumentException(
+          "Party hint must start with dex_ and contain a name using lowercase letters, digits and underscores (64 characters maximum)");
   }
 }

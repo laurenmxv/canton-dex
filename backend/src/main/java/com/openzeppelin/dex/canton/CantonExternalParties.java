@@ -17,10 +17,13 @@ import jakarta.annotation.PreDestroy;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 @Component
 public final class CantonExternalParties implements ExternalParties {
+  private static final Logger LOG = LoggerFactory.getLogger(CantonExternalParties.class);
   private final LedgerConnection registration;
 
   private final String identityProviderId;
@@ -147,8 +150,38 @@ public final class CantonExternalParties implements ExternalParties {
           || e.getStatus().getCode() == Status.Code.PERMISSION_DENIED)
         throw new org.springframework.security.access.AccessDeniedException(
             "User registration authorization was rejected", e);
+      if (partyAlreadyExists(e)) {
+        LOG.info("External party allocation conflict for {}: {}", party.partyId(), e.getStatus());
+        throw new PartyAlreadyExists();
+      }
       throw e;
     }
+  }
+
+  private static boolean partyAlreadyExists(StatusRuntimeException failure) {
+    var status = io.grpc.protobuf.StatusProto.fromThrowable(failure);
+    if (status != null) {
+      for (var detail : status.getDetailsList()) {
+        if (detail.is(com.google.rpc.ErrorInfo.class)) {
+          try {
+            if (detail
+                .unpack(com.google.rpc.ErrorInfo.class)
+                .getReason()
+                .equals("EXTERNAL_PARTY_ALREADY_EXISTS")) return true;
+          } catch (com.google.protobuf.InvalidProtocolBufferException ignored) {
+            // Fall back to Canton's error code in the status description.
+          }
+        }
+      }
+    }
+    // Canton 3.5 may wrap only the cause in INVALID_ARGUMENT, losing the original error code.
+    var description = failure.getStatus().getDescription();
+    return (failure.getStatus().getCode() == Status.Code.ALREADY_EXISTS
+            || failure.getStatus().getCode() == Status.Code.INVALID_ARGUMENT)
+        && description != null
+        && (description.matches("(?s).*\\bEXTERNAL_PARTY_ALREADY_EXISTS\\([0-9]+,[^)]*\\):.*")
+            || description.matches(
+                "(?:INVALID_ARGUMENT\\([0-9]+,[^)]*\\): The submitted request has invalid arguments: )?Party \\S+ already exists on synchronizer \\S+"));
   }
 
   @Override

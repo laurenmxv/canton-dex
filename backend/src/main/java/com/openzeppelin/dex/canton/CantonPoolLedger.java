@@ -5,6 +5,7 @@ import static com.openzeppelin.dex.pools.PoolModels.*;
 import com.daml.ledger.api.v2.EventOuterClass.*;
 import com.daml.ledger.api.v2.TransactionOuterClass.Transaction;
 import com.daml.ledger.javaapi.data.DamlRecord;
+import com.daml.ledger.javaapi.data.Value;
 import com.openzeppelin.dex.canton.generated.pool.*;
 import com.openzeppelin.dex.canton.generated.poolfactory.*;
 import com.openzeppelin.dex.pools.PoolLedger;
@@ -64,7 +65,8 @@ public final class CantonPoolLedger implements PoolLedger {
       throw new IllegalStateException("Proposal package mismatch");
     var proposal =
         PoolProposal.valueDecoder().decode(DamlRecord.fromProto(event.getCreateArguments()));
-    if (!proposal.settings.dvo.equals(party)
+    if (proposal.accepted
+        || !proposal.settings.dvo.equals(party)
         || !proposal.factoryCid.contractId.equals(factoryId)
         || !same(PoolEncoding.from(proposal.settings), expected))
       throw new IllegalStateException("Stored and ledger proposal differ");
@@ -207,7 +209,8 @@ public final class CantonPoolLedger implements PoolLedger {
     if (!supported(e.getTemplateId(), PoolProposal.TEMPLATE_ID)) return Optional.empty();
     var p = PoolProposal.valueDecoder().decode(DamlRecord.fromProto(e.getCreateArguments()));
     var expected = pending.proposal();
-    if (!p.factoryCid.contractId.equals(expected.factoryId())
+    if (p.accepted
+        || !p.factoryCid.contractId.equals(expected.factoryId())
         || !p.venueOperator.equals(operator())
         || !same(PoolEncoding.from(p.settings), expected.settings())
         || !e.getSignatoriesList().equals(List.of(operator()))
@@ -233,16 +236,32 @@ public final class CantonPoolLedger implements PoolLedger {
   }
 
   public Detail accepted(Transaction tx, Proposal p) {
+    return accepted(tx, p, operator());
+  }
+
+  static Detail accepted(Transaction tx, Proposal p, String operator) {
     var events =
         tx.getEventsList().stream().filter(Event::hasCreated).map(Event::getCreated).toList();
-    if (events.size() != 3)
-      throw new IllegalStateException("Pool acceptance must create exactly three contracts");
+    if (events.size() != 4)
+      throw new IllegalStateException(
+          "Pool acceptance must create an approval and three pool contracts");
+    var approvalEvent = exact(events, PoolProposal.TEMPLATE_ID_WITH_PACKAGE_ID);
+    var approval =
+        PoolProposal.valueDecoder()
+            .decode(DamlRecord.fromProto(approvalEvent.getCreateArguments()));
+    if (!approval.accepted
+        || !approval.factoryCid.contractId.equals(p.factoryId())
+        || !approval.venueOperator.equals(operator)
+        || !same(PoolEncoding.from(approval.settings), p.settings())
+        || !Set.copyOf(approvalEvent.getSignatoriesList())
+            .equals(Set.of(operator, p.settings().dvo())))
+      throw new IllegalStateException("Approved pool proposal differs from submitted settings");
     var pool = exact(events, Pool.TEMPLATE_ID_WITH_PACKAGE_ID);
     var config = exact(events, PoolConfig.TEMPLATE_ID_WITH_PACKAGE_ID);
     var state = exact(events, PoolState.TEMPLATE_ID_WITH_PACKAGE_ID);
-    for (var event : events)
+    for (var event : List.of(pool, config, state))
       if (!event.getSignatoriesList().equals(List.of(p.settings().dvo()))
-          || !event.getObserversList().contains(operator()))
+          || !event.getObserversList().contains(operator))
         throw new IllegalStateException("Pool authority differs");
     var result = detail(pool, config, state, p.name());
     if (!same(result.settings(), p.settings()))
@@ -254,9 +273,28 @@ public final class CantonPoolLedger implements PoolLedger {
             .anyMatch(
                 e ->
                     e.getContractId().equals(p.factoryId())
+                        && supported(e.getTemplateId(), PoolFactory.TEMPLATE_ID)
                         && e.getChoice().equals("PoolFactory_CreatePool")
-                        && !e.getConsuming());
+                        && !e.getConsuming()
+                        && e.getActingPartiesList().equals(List.of(p.settings().dvo()))
+                        && PoolFactory_CreatePool.valueDecoder()
+                            .decode(Value.fromProto(e.getChoiceArgument()))
+                            .proposalCid
+                            .contractId
+                            .equals(approvalEvent.getContractId()));
     if (!factoryCall) throw new IllegalStateException("Matching factory call is missing");
+    boolean approvalConsumed =
+        tx.getEventsList().stream()
+            .filter(Event::hasExercised)
+            .map(Event::getExercised)
+            .anyMatch(
+                e ->
+                    e.getContractId().equals(approvalEvent.getContractId())
+                        && supported(e.getTemplateId(), PoolProposal.TEMPLATE_ID)
+                        && e.getChoice().equals("PoolProposal_Consume")
+                        && e.getConsuming()
+                        && e.getActingPartiesList().equals(List.of(p.settings().dvo())));
+    if (!approvalConsumed) throw new IllegalStateException("Pool approval was not consumed");
     return result;
   }
 

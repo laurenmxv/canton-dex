@@ -260,7 +260,8 @@ public final class TestTokenFixture {
                 PoolProposal.TEMPLATE_ID,
                 PoolProposal.valueDecoder(),
                 p ->
-                    p.factoryCid.contractId.equals(factory.getContractId())
+                    !p.accepted
+                        && p.factoryCid.contractId.equals(factory.getContractId())
                         && CantonPoolLedger.same(
                             PoolEncoding.from(p.settings), PoolEncoding.from(settings)));
         if (proposals.isEmpty()) {

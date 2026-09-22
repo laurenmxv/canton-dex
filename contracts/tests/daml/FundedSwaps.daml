@@ -15,7 +15,7 @@ import OpenZeppelin.TokenCIP112V1.Holding (TokenHolding(..))
 import OpenZeppelin.TokenCIP112V1.Registry (TokenRules(..), TokenRules_Mint(..))
 import Pool
 import PoolAccess
-import PoolFactory (PoolContracts(..), PoolFactory(..), PoolFactory_CreatePool(..))
+import PoolFactory (PoolContracts(..))
 import Splice.Api.Token.AllocationInstructionV2 qualified as AI
 import Splice.Api.Token.AllocationV2 qualified as A
 import Splice.Api.Token.HoldingV2 qualified as H
@@ -46,10 +46,7 @@ setupWithReserves baseReserve quoteReserve = do
   parties <- allocateParties ()
   let settings = (settingsFor parties) with baseReserve; quoteReserve
       rules admin = TokenRules with admin; maxTTL = days 1; lockGrace = hours 1
-  factoryCid <- submit parties.dvo $ createCmd PoolFactory with
-    dvo = parties.dvo; venueOperator = parties.venueOperator
-  originalPool <- submit parties.dvo $
-    exerciseCmd factoryCid PoolFactory_CreatePool with settings
+  (_, originalPool) <- poolFixtureWithSettings parties settings
   baseRulesCid <- submit parties.baseRegistrar $ createCmd (rules parties.baseRegistrar)
   quoteRulesCid <- submit parties.quoteRegistrar $ createCmd (rules parties.quoteRegistrar)
   Some baseDisclosure <- queryDisclosure @TokenRules parties.baseRegistrar baseRulesCid

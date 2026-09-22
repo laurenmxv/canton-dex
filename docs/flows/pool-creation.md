@@ -4,14 +4,15 @@
 
 Stores `venueOperator`'s proposed pool settings and factory reference for `dvo` to accept or reject.
 
-- **Signatory:** `venueOperator`.
+- **Signatories:** `venueOperator`; also `settings.dvo` when `accepted = True`.
 - **Observer:** `settings.dvo`.
 
 | Choice | Controller | Action |
 | --- | --- | --- |
-| **`PoolProposal_Accept`** | `settings.dvo`. | Consumes the proposal, checks the matching factory, and calls `PoolFactory_CreatePool` with the proposed settings. |
-| **`PoolProposal_Reject`** | `settings.dvo`. | Consumes the proposal without creating a pool. |
-| **`PoolProposal_Withdraw`** | `venueOperator`. | Consumes the proposal without creating a pool. |
+| **`PoolProposal_Accept`** | `settings.dvo`. | Consumes the pending proposal, checks the matching factory, and recreates `PoolProposal` with `accepted = True`. Calls `PoolFactory_CreatePool` with the new contract ID. |
+| **`PoolProposal_Reject`** | `settings.dvo`. | Consumes a pending proposal without creating a pool. |
+| **`PoolProposal_Withdraw`** | `venueOperator`. | Consumes a pending proposal without creating a pool. |
+| **`PoolProposal_Consume`** | `settings.dvo`. | Consumes an accepted proposal during pool creation so it cannot be reused. |
 
 ## `template PoolFactory`
 
@@ -22,10 +23,10 @@ Creates pools authorized by `dvo`, with their configuration and initial state.
 
 | Choice | Controller | Action |
 | --- | --- | --- |
-| **`PoolFactory_ProposePool`** (nonconsuming) | `venueOperator`. | Validates settings and creates `PoolProposal` for `dvo`. |
-| **`PoolFactory_CreatePool`** (nonconsuming) | `dvo`. | Validates settings and creates `Pool`, `PoolConfig`, and `PoolState` atomically. |
+| **`PoolFactory_ProposePool`** (nonconsuming) | `venueOperator`. | Validates settings and creates `PoolProposal` with `accepted = False`. |
+| **`PoolFactory_CreatePool`** (nonconsuming) | `dvo`. | Receives a `PoolProposal` contract ID, checks `accepted = True`, its factory, parties, and settings, and consumes it. Creates `Pool`, `PoolConfig`, and `PoolState` atomically. |
 
-`dvo` can also call `PoolFactory_CreatePool` directly, without a proposal.
+`PoolFactory_CreatePool` requires an active approval signed by both `venueOperator` and `dvo`.
 
 The backend submits proposals and withdrawals as `venueOperator` and tracks confirmed ledger outcomes. `dvo` accepts or rejects proposals.
 

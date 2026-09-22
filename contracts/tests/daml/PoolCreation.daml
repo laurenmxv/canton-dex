@@ -2,6 +2,7 @@ module PoolCreation where
 
 import DA.Assert ((===))
 import DA.Foldable (forA_)
+import DA.List (sort)
 import DA.Optional (mapOptional)
 import Daml.Script
 import Errors
@@ -23,12 +24,11 @@ main = script do
     exerciseCmd factoryCid PoolFactory_ProposePool with settings
   Some pending <- queryContractId parties.dvo proposal
   pending.settings === settings
+  pending.accepted === False
   signatory pending === [parties.venueOperator]
   observer pending === [parties.dvo]
 
   forA_ [parties.venueOperator, trader] $ \actor -> do
-    submitMustFail (actAs actor <> readAs parties.dvo) $
-      exerciseCmd factoryCid PoolFactory_CreatePool with settings
     submitMustFail (actAs actor <> readAs parties.dvo) $
       exerciseCmd proposal PoolProposal_Accept
     submitMustFail (actAs actor <> readAs parties.dvo) $
@@ -45,17 +45,22 @@ main = script do
   noPools <- query @Pool parties.dvo
   noPools === []
 
-  debug "Acceptance consumes the proposal and creates all three contracts atomically."
+  debug "Acceptance consumes the proposal and approval, and creates the pool atomically."
   (contracts, transaction) <- submitResultAndTree (actAs parties.dvo) $
     exerciseCmd proposal PoolProposal_Accept
   let creates = createdContracts transaction.rootEvents
   length transaction.rootEvents === 1
-  length creates === 3
+  length creates === 4
+  let [approvedCid] = mapOptional (\event -> fromAnyContractId @PoolProposal event.contractId) creates
   mapOptional (\event -> fromAnyContractId @Pool event.contractId) creates === [contracts.poolCid]
   mapOptional (\event -> fromAnyContractId @PoolConfig event.contractId) creates === [contracts.configCid]
   mapOptional (\event -> fromAnyContractId @PoolState event.contractId) creates === [contracts.stateCid]
   consumed <- queryContractId parties.venueOperator proposal
   consumed === None
+  queryContractId parties.dvo approvedCid >>= (=== None)
+  query @PoolProposal parties.venueOperator >>= (=== [])
+  submitMustFail parties.dvo $
+    exerciseCmd factoryCid PoolFactory_CreatePool with proposalCid = approvedCid
   submitMustFail parties.dvo $ exerciseCmd proposal PoolProposal_Accept
   currentFactory <- queryContractId parties.dvo factoryCid
   currentFactory === Some factory
@@ -111,10 +116,6 @@ main = script do
   invalidSettings parties factoryCid trader
   mismatchedFactory parties factoryCid
 
-  debug "Direct creation remains available to DVO, with no proposal required."
-  direct <- submit parties.dvo $ exerciseCmd factoryCid PoolFactory_CreatePool with settings
-  Some directPool <- queryContractId parties.venueOperator direct.poolCid
-  directPool === expectedPool
   submitMustFail parties.dvo $ createCmd (factory with venueOperator = parties.dvo)
   submitMustFail parties.dvo $ createCmd (expectedPool with venueOperator = parties.dvo)
   submitMustFail parties.dvo $ createCmd (expectedConfig with venueOperator = parties.dvo)
@@ -151,10 +152,10 @@ invalidSettings parties factoryCid stranger = do
   forA_ invalid $ \badSettings -> do
     submitFailsWith eInvalidPoolSettings (actAs parties.venueOperator) $
       exerciseCmd factoryCid PoolFactory_ProposePool with settings = badSettings
-    submitFailsWith eInvalidPoolSettings (actAs parties.dvo) $
-      exerciseCmd factoryCid PoolFactory_CreatePool with settings = badSettings
     submitMustFail parties.venueOperator $ createCmd PoolProposal with
-      factoryCid; venueOperator = parties.venueOperator; settings = badSettings
+      factoryCid; venueOperator = parties.venueOperator; settings = badSettings; accepted = False
+    submitMustFail (actAs [parties.dvo, parties.venueOperator]) $ createCmd PoolProposal with
+      factoryCid; venueOperator = parties.venueOperator; settings = badSettings; accepted = True
     pools <- query @Pool parties.dvo
     proposals <- query @PoolProposal parties.venueOperator
     pools === beforePools
@@ -172,15 +173,13 @@ mismatchedFactory parties factoryCid = do
         quoteAccount = settings.quoteAccount with owner = Some otherDvo
   submitFailsWith eFactoryAuthorityMismatch (actAs parties.venueOperator) $
     exerciseCmd factoryCid PoolFactory_ProposePool with settings = otherSettings
-  submitFailsWith eFactoryAuthorityMismatch (actAs parties.dvo) $
-    exerciseCmd factoryCid PoolFactory_CreatePool with settings = otherSettings
   -- Raw creates are possible: acceptance must validate the actual factory.
   forA_
     [ (otherSettings, parties.venueOperator, eFactoryAuthorityMismatch)
     , (settings, otherOperator, eFactoryOperatorMismatch)
     ] $ \(proposalSettings, proposer, expectedError) -> do
       let proposal = PoolProposal with
-            factoryCid; venueOperator = proposer; settings = proposalSettings
+            factoryCid; venueOperator = proposer; settings = proposalSettings; accepted = False
       cid <- submit proposer $ createCmd proposal
       beforePools <- query @Pool parties.dvo
       beforeConfigs <- query @PoolConfig parties.dvo
@@ -196,3 +195,88 @@ mismatchedFactory parties factoryCid = do
       afterConfigs === beforeConfigs
       afterStates === beforeStates
       submit proposer $ exerciseCmd cid PoolProposal_Withdraw
+
+factoryRequiresApproval : Script ()
+factoryRequiresApproval = script do
+  parties <- allocateParties ()
+  stranger <- allocateParty "Stranger"
+  let settings = settingsFor parties
+      factory = PoolFactory parties.dvo parties.venueOperator
+  factoryCid <- submit parties.dvo $ createCmd factory
+  otherFactoryCid <- submit parties.dvo $ createCmd factory
+  pendingCid <- submit parties.venueOperator $
+    exerciseCmd factoryCid PoolFactory_ProposePool with settings
+  let approval = PoolProposal with
+        factoryCid; venueOperator = parties.venueOperator; settings; accepted = True
+
+  debug "A pending proposal is not an approval, and neither party can forge approval alone."
+  submitFailsWith ePoolProposalNotAccepted (actAs parties.dvo) $
+    exerciseCmd factoryCid PoolFactory_CreatePool with proposalCid = pendingCid
+  submitFailsWith ePoolProposalNotAccepted (actAs parties.dvo) $
+    exerciseCmd pendingCid PoolProposal_Consume
+  forA_ [parties.dvo, parties.venueOperator, stranger] $ \actor ->
+    submitMustFail actor $ createCmd approval
+  query @Pool parties.dvo >>= (=== [])
+  query @PoolProposal parties.dvo >>= (=== [(pendingCid, approval with accepted = False)])
+
+  approvedCid <- submit (actAs [parties.dvo, parties.venueOperator]) $ createCmd approval
+  sort (signatory approval) === sort [parties.venueOperator, parties.dvo]
+  submitFailsWith ePoolProposalAlreadyAccepted (actAs parties.dvo) $
+    exerciseCmd approvedCid PoolProposal_Accept
+  submitFailsWith ePoolProposalAlreadyAccepted (actAs parties.dvo) $
+    exerciseCmd approvedCid PoolProposal_Reject
+  submitFailsWith ePoolProposalAlreadyAccepted (actAs parties.venueOperator) $
+    exerciseCmd approvedCid PoolProposal_Withdraw
+  forA_ [parties.venueOperator, stranger] $ \actor -> do
+    submitMustFail (actAs actor <> readAs parties.dvo) $
+      exerciseCmd factoryCid PoolFactory_CreatePool with proposalCid = approvedCid
+    submitMustFail (actAs actor <> readAs parties.dvo) $
+      exerciseCmd approvedCid PoolProposal_Consume
+
+  debug "Approval is bound to one exact factory, even when the parties match."
+  submitFailsWith eFactoryProposalMismatch (actAs parties.dvo) $
+    exerciseCmd otherFactoryCid PoolFactory_CreatePool with proposalCid = approvedCid
+  queryContractId parties.dvo approvedCid >>= (=== Some approval)
+  query @Pool parties.dvo >>= (=== [])
+  query @PoolConfig parties.dvo >>= (=== [])
+  query @PoolState parties.dvo >>= (=== [])
+
+  pool <- submit parties.dvo $
+    exerciseCmd factoryCid PoolFactory_CreatePool with proposalCid = approvedCid
+  queryContractId parties.dvo approvedCid >>= (=== None)
+  submitMustFail parties.dvo $
+    exerciseCmd factoryCid PoolFactory_CreatePool with proposalCid = approvedCid
+  pools <- query @Pool parties.dvo
+  map fst pools === [pool.poolCid]
+
+factoryChecksApprovedParties : Script ()
+factoryChecksApprovedParties = script do
+  parties <- allocateParties ()
+  otherDvo <- allocateParty "OtherDvo"
+  otherOperator <- allocateParty "OtherOperator"
+  factoryCid <- submit parties.dvo $ createCmd PoolFactory with
+    dvo = parties.dvo; venueOperator = parties.venueOperator
+  let settings = settingsFor parties
+      otherSettings = settings with
+        dvo = otherDvo
+        lpTokenInstrumentId = settings.lpTokenInstrumentId with admin = otherDvo
+        baseAccount = settings.baseAccount with owner = Some otherDvo
+        quoteAccount = settings.quoteAccount with owner = Some otherDvo
+  forA_
+    [ (otherSettings, parties.venueOperator, eFactoryAuthorityMismatch)
+    , (settings, otherOperator, eFactoryOperatorMismatch)
+    ] $ \(approvedSettings, proposer, expectedError) -> do
+      let approval = PoolProposal with
+            factoryCid; venueOperator = proposer; settings = approvedSettings; accepted = True
+      approvedCid <- submit (actAs [approvedSettings.dvo, proposer]) $ createCmd approval
+      if approvedSettings.dvo /= parties.dvo then
+        -- The factory's DVO cannot even fetch another DVO's approval.
+        submitMustFail (actAs parties.dvo <> readAs proposer) $
+          exerciseCmd factoryCid PoolFactory_CreatePool with proposalCid = approvedCid
+      else
+        submitFailsWith expectedError (actAs parties.dvo) $
+          exerciseCmd factoryCid PoolFactory_CreatePool with proposalCid = approvedCid
+      queryContractId proposer approvedCid >>= (=== Some approval)
+      query @Pool parties.dvo >>= (=== [])
+      query @PoolConfig parties.dvo >>= (=== [])
+      query @PoolState parties.dvo >>= (=== [])

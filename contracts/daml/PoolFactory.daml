@@ -1,5 +1,5 @@
 -- | Creates pools with approval from the pool authority (dvo).
--- The operator can propose the settings; token backing is added separately.
+-- The operator proposes the settings; token backing is added separately.
 module PoolFactory where
 
 import Errors
@@ -45,12 +45,19 @@ template PoolFactory
           factoryCid = self
           venueOperator
           settings
+          accepted = False
 
     nonconsuming choice PoolFactory_CreatePool : PoolContracts
-      with settings : PoolSettings
+      with proposalCid : ContractId PoolProposal
       controller dvo
       do
+        proposal <- fetch proposalCid
+        assertMsg ePoolProposalNotAccepted proposal.accepted
+        assertMsg eFactoryProposalMismatch (proposal.factoryCid == self)
+        assertMsg eFactoryOperatorMismatch (proposal.venueOperator == venueOperator)
+        let settings = proposal.settings
         requirePoolSettings dvo settings
+        exercise proposalCid PoolProposal_Consume
         poolCid <- create Pool with
           dvo
           venueOperator
@@ -80,24 +87,31 @@ template PoolProposal
     factoryCid : ContractId PoolFactory
     venueOperator : Party
     settings : PoolSettings
+    accepted : Bool
   where
-    signatory venueOperator
+    signatory venueOperator :: (if accepted then [settings.dvo] else [])
     observer settings.dvo
     ensure validSettings settings && settings.dvo /= venueOperator
 
     choice PoolProposal_Accept : PoolContracts
       controller settings.dvo
       do
+        assertMsg ePoolProposalAlreadyAccepted (not accepted)
         validateProposalFactory this
-        exercise factoryCid PoolFactory_CreatePool with settings
+        proposalCid <- create this with accepted = True
+        exercise factoryCid PoolFactory_CreatePool with proposalCid
 
     choice PoolProposal_Reject : ()
       controller settings.dvo
-      do pure ()
+      do assertMsg ePoolProposalAlreadyAccepted (not accepted)
 
     choice PoolProposal_Withdraw : ()
       controller venueOperator
-      do pure ()
+      do assertMsg ePoolProposalAlreadyAccepted (not accepted)
+
+    choice PoolProposal_Consume : ()
+      controller settings.dvo
+      do assertMsg ePoolProposalNotAccepted accepted
 
 requireFactoryAuthority : Party -> Party -> Update ()
 requireFactoryAuthority expected actual =

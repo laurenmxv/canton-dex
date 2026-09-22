@@ -9,6 +9,15 @@ eFactoryAuthorityMismatch = "Factory authority mismatch"
 eFactoryOperatorMismatch : Text
 eFactoryOperatorMismatch = "Factory operator mismatch"
 
+eFactoryProposalMismatch : Text
+eFactoryProposalMismatch = "Approved proposal belongs to another factory"
+
+ePoolProposalNotAccepted : Text
+ePoolProposalNotAccepted = "Pool proposal is not accepted"
+
+ePoolProposalAlreadyAccepted : Text
+ePoolProposalAlreadyAccepted = "Pool proposal is already accepted"
+
 eInvalidPoolSettings : Text
 eInvalidPoolSettings = "Invalid pool settings"
 

@@ -8,7 +8,6 @@ import Test.Assertions
 import Fixtures
 import FundedSwaps
 import Pool
-import PoolFactory
 import Splice.Api.Token.HoldingV2 qualified as H
 import Splice.Api.Token.AllocationV2 qualified as A
 import Lib.Swap
@@ -20,9 +19,7 @@ providerAccountsSupportFundedSwap = script do
   let poolAccount = H.Account with
         owner = Some f.parties.dvo; provider = Some f.parties.venueOperator; id = ""
       settings = (settingsFor f.parties) with baseAccount = poolAccount; quoteAccount = poolAccount
-  factoryCid <- submit f.parties.dvo $ createCmd PoolFactory with
-    dvo = f.parties.dvo; venueOperator = f.parties.venueOperator
-  pool <- submit f.parties.dvo $ exerciseCmd factoryCid PoolFactory_CreatePool with settings
+  (_, pool) <- poolFixtureWithSettings f.parties settings
   base <- mint f.baseRulesCid f.parties.baseRegistrar poolAccount "BASE" 997.0
   quote <- mint f.quoteRulesCid f.parties.quoteRegistrar poolAccount "QUOTE" 1000.0
   wrongBase <- mint f.baseRulesCid f.parties.baseRegistrar (poolAccount with provider = None) "BASE" 997.0

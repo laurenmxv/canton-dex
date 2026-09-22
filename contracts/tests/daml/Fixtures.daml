@@ -35,14 +35,16 @@ settingsFor parties = PoolSettings with
   quoteReserve = 1000.0
   lpTokenSupply = 1000.0
 
--- Prepare an existing pool without replaying the proposal workflow.
 poolFixture : Parties -> Script (ContractId PoolFactory, PoolContracts)
-poolFixture parties = do
-  let settings = settingsFor parties
+poolFixture parties = poolFixtureWithSettings parties (settingsFor parties)
+
+poolFixtureWithSettings : Parties -> PoolSettings -> Script (ContractId PoolFactory, PoolContracts)
+poolFixtureWithSettings parties settings = do
   factoryCid <- submit parties.dvo $ createCmd PoolFactory with
     dvo = parties.dvo; venueOperator = parties.venueOperator
-  contracts <- submit parties.dvo $
-    exerciseCmd factoryCid PoolFactory_CreatePool with settings
+  proposalCid <- submit parties.venueOperator $
+    exerciseCmd factoryCid PoolFactory_ProposePool with settings
+  contracts <- submit parties.dvo $ exerciseCmd proposalCid PoolProposal_Accept
   pure (factoryCid, contracts)
 
 accessFixture : Party -> Party -> ContractId Pool

@@ -12,7 +12,6 @@ Stores `venueOperator`'s proposed pool settings and factory reference for `dvo` 
 | **`PoolProposal_Accept`** | `settings.dvo`. | Consumes the pending proposal, checks the matching factory, and recreates `PoolProposal` with `accepted = True`. Calls `PoolFactory_CreatePool` with the new contract ID. |
 | **`PoolProposal_Reject`** | `settings.dvo`. | Consumes a pending proposal without creating a pool. |
 | **`PoolProposal_Withdraw`** | `venueOperator`. | Consumes a pending proposal without creating a pool. |
-| **`PoolProposal_Consume`** | `settings.dvo`. | Consumes an accepted proposal during pool creation so it cannot be reused. |
 
 ## `template PoolFactory`
 
@@ -24,7 +23,7 @@ Creates pools authorized by `dvo`, with their configuration and initial state.
 | Choice | Controller | Action |
 | --- | --- | --- |
 | **`PoolFactory_ProposePool`** (nonconsuming) | `venueOperator`. | Validates settings and creates `PoolProposal` with `accepted = False`. |
-| **`PoolFactory_CreatePool`** (nonconsuming) | `dvo`. | Receives a `PoolProposal` contract ID, checks `accepted = True`, its factory, parties, and settings, and consumes it. Creates `Pool`, `PoolConfig`, and `PoolState` atomically. |
+| **`PoolFactory_CreatePool`** (nonconsuming) | `dvo` and `venueOperator`, through `PoolProposal_Accept`. | Receives a `PoolProposal` contract ID, checks `accepted = True`, its factory, parties, and settings, and archives it. Creates `Pool`, `PoolConfig`, and `PoolState` atomically. |
 
 `PoolFactory_CreatePool` requires an active approval signed by both `venueOperator` and `dvo`.
 

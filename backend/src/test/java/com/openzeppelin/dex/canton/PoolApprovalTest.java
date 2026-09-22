@@ -56,12 +56,25 @@ class PoolApprovalTest {
       events.remove(missing);
       assertRejected(events);
     }
+    for (int exercise : List.of(4, 5)) {
+      for (String actor : List.of("dvo", "operator")) {
+        var events = new ArrayList<>(original);
+        events.set(
+            exercise,
+            Event.newBuilder()
+                .setExercised(
+                    original.get(exercise).getExercised().toBuilder()
+                        .clearActingParties()
+                        .addActingParties(actor))
+                .build());
+        assertRejected(events);
+      }
+    }
     var consumption = original.get(5).getExercised();
     for (var invalid :
         List.of(
             consumption.toBuilder().setConsuming(false).build(),
-            consumption.toBuilder().setContractId("other-approval").build(),
-            consumption.toBuilder().clearActingParties().addActingParties("operator").build())) {
+            consumption.toBuilder().setContractId("other-approval").build())) {
       var events = new ArrayList<>(original);
       events.set(5, Event.newBuilder().setExercised(invalid).build());
       assertRejected(events);
@@ -190,6 +203,7 @@ class PoolApprovalTest {
                     .setChoice("PoolFactory_CreatePool")
                     .setConsuming(false)
                     .addActingParties("dvo")
+                    .addActingParties("operator")
                     .setChoiceArgument(
                         new PoolFactory_CreatePool(new PoolProposal.ContractId("approval"))
                             .toValue()
@@ -200,9 +214,10 @@ class PoolApprovalTest {
                 ExercisedEvent.newBuilder()
                     .setContractId("approval")
                     .setTemplateId(PoolProposal.TEMPLATE_ID_WITH_PACKAGE_ID.toProto())
-                    .setChoice("PoolProposal_Consume")
+                    .setChoice("Archive")
                     .setConsuming(true)
-                    .addActingParties("dvo"))
+                    .addActingParties("dvo")
+                    .addActingParties("operator"))
             .build());
   }
 

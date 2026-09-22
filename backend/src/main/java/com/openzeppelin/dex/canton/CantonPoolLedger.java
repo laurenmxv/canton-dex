@@ -276,7 +276,8 @@ public final class CantonPoolLedger implements PoolLedger {
                         && supported(e.getTemplateId(), PoolFactory.TEMPLATE_ID)
                         && e.getChoice().equals("PoolFactory_CreatePool")
                         && !e.getConsuming()
-                        && e.getActingPartiesList().equals(List.of(p.settings().dvo()))
+                        && Set.copyOf(e.getActingPartiesList())
+                            .equals(Set.of(p.settings().dvo(), operator))
                         && PoolFactory_CreatePool.valueDecoder()
                             .decode(Value.fromProto(e.getChoiceArgument()))
                             .proposalCid
@@ -291,9 +292,10 @@ public final class CantonPoolLedger implements PoolLedger {
                 e ->
                     e.getContractId().equals(approvalEvent.getContractId())
                         && supported(e.getTemplateId(), PoolProposal.TEMPLATE_ID)
-                        && e.getChoice().equals("PoolProposal_Consume")
+                        && e.getChoice().equals("Archive")
                         && e.getConsuming()
-                        && e.getActingPartiesList().equals(List.of(p.settings().dvo())));
+                        && Set.copyOf(e.getActingPartiesList())
+                            .equals(Set.of(p.settings().dvo(), operator)));
     if (!approvalConsumed) throw new IllegalStateException("Pool approval was not consumed");
     return result;
   }

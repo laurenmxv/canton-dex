@@ -49,7 +49,7 @@ template PoolFactory
 
     nonconsuming choice PoolFactory_CreatePool : PoolContracts
       with proposalCid : ContractId PoolProposal
-      controller dvo
+      controller dvo, venueOperator
       do
         proposal <- fetch proposalCid
         assertMsg ePoolProposalNotAccepted proposal.accepted
@@ -57,7 +57,7 @@ template PoolFactory
         assertMsg eFactoryOperatorMismatch (proposal.venueOperator == venueOperator)
         let settings = proposal.settings
         requirePoolSettings dvo settings
-        exercise proposalCid PoolProposal_Consume
+        archive proposalCid
         poolCid <- create Pool with
           dvo
           venueOperator
@@ -108,10 +108,6 @@ template PoolProposal
     choice PoolProposal_Withdraw : ()
       controller venueOperator
       do assertMsg ePoolProposalAlreadyAccepted (not accepted)
-
-    choice PoolProposal_Consume : ()
-      controller settings.dvo
-      do assertMsg ePoolProposalNotAccepted accepted
 
 requireFactoryAuthority : Party -> Party -> Update ()
 requireFactoryAuthority expected actual =

@@ -37,8 +37,47 @@ swapOutputAtScale outputScale feeBps reserveIn reserveOut amountIn =
         quantumAtoms = intToNumeric @0 (10 ^ (10 - outputScale))
         numerator = reserveOutAtoms * inputAtoms * feeMultiplier
         denominator = (reserveInAtoms * 10000.0 + inputAtoms * feeMultiplier) * quantumAtoms
-        roundedQuanta = Numeric.div @0 numerator denominator
-        quanta = if roundedQuanta * denominator > numerator
-          then roundedQuanta - 1.0
-          else roundedQuanta
+        quanta = integerFloorDivision numerator denominator
     in Numeric.shift @10 (quanta * quantumAtoms)
+
+-- | Liquidity uses ten-decimal LP shares; this supply remains permanently unredeemable.
+minimumLiquidity : Decimal
+minimumLiquidity = 0.0000001
+
+-- | Atomic arithmetic rounds once to the output precision; overflow rejects the operation.
+liquidityRatio : Int -> Numeric.RoundingMode -> Decimal -> Decimal -> Decimal -> Decimal
+liquidityRatio decimals rounding amount numerator denominator =
+  let top = Numeric.shift @0 amount * Numeric.shift @0 numerator
+      quantum = intToNumeric @0 (10 ^ (10 - decimals))
+      bottom = Numeric.shift @0 denominator * quantum
+      floor = integerFloorDivision top bottom
+      result = case rounding of
+        Numeric.RoundingFloor -> floor
+        Numeric.RoundingCeiling -> if floor * bottom < top then floor + 1.0 else floor
+        _ -> error "unsupported liquidity rounding"
+  in Numeric.shift @10 (result * quantum)
+
+-- | Integer Newton iteration gives the exact floor, including the final quantum.
+initialLpSupply : Decimal -> Decimal -> Decimal
+initialLpSupply base quote =
+  Numeric.shift @10 (integerSquareRoot (Numeric.shift @0 (Numeric.mul @20 base quote)))
+
+-- | Nonnegative integer division. Start below the floor so its product cannot overflow.
+integerFloorDivision : Numeric 0 -> Numeric 0 -> Numeric 0
+integerFloorDivision top bottom =
+  let candidate = max 0.0 (Numeric.div @0 top bottom - 1.0)
+      remainder = top - candidate * bottom
+  in if remainder >= bottom then candidate + 1.0 else candidate
+
+integerSquareRoot : Numeric 0 -> Numeric 0
+integerSquareRoot value
+  | value < 0.0 = error "negative square root"
+  | value < 2.0 = value
+  | otherwise = squareRootStep value (integerFloorDivision value 2.0 + 1.0) 128
+
+squareRootStep : Numeric 0 -> Numeric 0 -> Int -> Numeric 0
+squareRootStep value current remaining =
+  let next = integerFloorDivision (current + integerFloorDivision value current) 2.0
+  in if next >= current then current
+     else if remaining == 0 then error "square root iteration limit"
+     else squareRootStep value next (remaining - 1)

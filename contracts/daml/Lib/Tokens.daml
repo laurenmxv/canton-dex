@@ -4,6 +4,7 @@ module Lib.Tokens where
 import Errors
 import DA.List (dedup)
 import DA.Numeric qualified as Numeric
+import DA.Text qualified as Text
 import DA.TextMap qualified as TextMap
 import Splice.Api.Token.AllocationV2 qualified as A
 import Splice.Api.Token.AllocationInstructionV2 qualified as AI
@@ -11,7 +12,7 @@ import Splice.Api.Token.HoldingV2 qualified as H
 import Splice.Api.Token.MetadataV1
 import Splice.TokenStandard.Utils (accountParties)
 
--- | Instrument, factory references and precision fixed when the pool is funded.
+-- | Instrument, factory references and precision fixed when the pool is created.
 data Token = Token with
     instrument : H.InstrumentId
     allocationFactory : ContractId AI.AllocationFactory
@@ -27,7 +28,6 @@ emptyArgs = ExtraArgs with context = emptyChoiceContext; meta = emptyMetadata
 validateToken : Party -> Token -> Update ()
 validateToken actor token = do
   assertMsg eUnsupportedTokenPrecision (token.decimals >= 0 && token.decimals <= 10)
-  -- Funding fixes the approved factories; signed allocations must match them.
   allocationFactory <- exercise token.allocationFactory AI.AllocationFactory_PublicFetch with actors = [actor]
   settlementFactory <- exercise token.settlementFactory A.SettlementFactory_PublicFetch with actors = [actor]
   assertMsg eAllocationFactoryAdminMismatch (allocationFactory.admin == token.instrument.admin)
@@ -54,22 +54,49 @@ validateHolding token account holding = do
 quantized : Token -> Decimal -> Bool
 quantized token amount = Numeric.roundNumeric token.decimals Numeric.RoundingFloor amount == amount
 
+metadataPrefix : Text
+metadataPrefix = "dex.reference.openzeppelin.com/"
+
+minOutKey : Text
+minOutKey = metadataPrefix <> "min-out-amount"
+
+minLpOutKey : Text
+minLpOutKey = metadataPrefix <> "min-lp-out-amount"
+
+minBaseOutKey : Text
+minBaseOutKey = metadataPrefix <> "min-base-out-amount"
+
+minQuoteOutKey : Text
+minQuoteOutKey = metadataPrefix <> "min-quote-out-amount"
+
+-- | Canonical decimal minima, checked against the signed request before settlement.
+minimumMetadata : Text -> Decimal -> Metadata
+minimumMetadata key amount =
+  let value = case Text.splitOn "." (show amount) of
+        [whole, "0"] -> whole
+        _ -> show amount
+  in Metadata with values = TextMap.singleton key value
+
+-- | Empty funding permits receipt; positive funding reserves the exact spending budget.
+iterationFunding : Token -> Decimal -> Optional (TextMap.TextMap Decimal)
+iterationFunding token amount = Some (if amount == 0.0 then TextMap.empty else TextMap.singleton token.instrument.id amount)
+
 -- | Build a committed allocation with a deadline and the supplied legs and funding.
 allocationSpec : Token -> H.Account -> Time -> [A.TransferLegSide]
-  -> Optional (TextMap.TextMap Decimal) -> A.AllocationSpecification
-allocationSpec token authorizer deadline transferLegSides nextIterationFunding = A.AllocationSpecification with
+  -> Optional (TextMap.TextMap Decimal) -> Metadata -> A.AllocationSpecification
+allocationSpec token authorizer deadline transferLegSides nextIterationFunding meta = A.AllocationSpecification with
   admin = token.instrument.admin; authorizer; transferLegSides; nextIterationFunding
-  settlementDeadline = Some deadline; committed = True; meta = emptyMetadata
+  settlementDeadline = Some deadline; committed = True; meta
 
 -- | Allocate through the issuer factory and return the allocation plus change holdings.
 -- Abort unless allocation completes synchronously.
 allocate : Token -> A.SettlementInfo -> H.Account -> Time -> Time
-  -> [A.TransferLegSide] -> Optional (TextMap.TextMap Decimal) -> [ContractId H.Holding]
+  -> [A.TransferLegSide] -> Optional (TextMap.TextMap Decimal) -> Metadata -> [ContractId H.Holding]
   -> ExtraArgs -> Update (ContractId A.Allocation, [ContractId H.Holding])
-allocate token settlement authorizer requestedAt deadline sides reserve inputs extraArgs = do
+allocate token settlement authorizer requestedAt deadline sides reserve meta inputs extraArgs = do
   result <- exercise token.allocationFactory AI.AllocationFactory_Allocate with
     settlement; requestedAt; inputHoldingCids = inputs
-    allocation = allocationSpec token authorizer deadline sides reserve
+    allocation = allocationSpec token authorizer deadline sides reserve meta
     actors = accountParties token.instrument.admin authorizer; extraArgs
   cid <- requireCompletedAllocation result.output
   pure (cid, concatMap snd (TextMap.toList result.authorizerChangeCids))

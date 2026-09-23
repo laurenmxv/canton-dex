@@ -62,3 +62,17 @@ largeAmounts = script do
   swapOutput 0.0 2000000.0 6000000.0 2000000.0 === 3000000.0
   swapOutput 30.0 2991000.0 6000000.0 3000000.0 === 3000000.0
   swapOutputAtScale 6 30.0 997.0 1000.0 1000000000.0 === 999.999
+
+liquidityRounding : Script ()
+liquidityRounding = script do
+  initialLpSupply 100.0 400.0 === 200.0
+  initialLpSupply 1.0 2.0 === 1.4142135623
+  initialLpSupply 0.000001 0.000001 === 0.000001
+  liquidityRatio 6 Numeric.RoundingFloor 1.0 1.0 3.0 === 0.333333
+  liquidityRatio 6 Numeric.RoundingCeiling 1.0 1.0 3.0 === 0.333334
+  initialLpSupply 999999999.0 999999999.0 === 999999999.0
+  initialLpSupply 999999999.9999999999 999999999.9999999999 === 999999999.9999999999
+  liquidityRatio 10 Numeric.RoundingFloor 999999999.9999999999 999999999.9999999999 1164153218269348144.5847505093
+    === 0.8589934591
+  liquidityRatio 10 Numeric.RoundingCeiling 999999999.9999999999 999999999.9999999999 1164153218269348144.5847505093
+    === 0.8589934592

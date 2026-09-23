@@ -1,27 +1,18 @@
--- | Defines the pool, its fee and reserves, and receipts for completed swaps.
--- Connects reserves to token holdings and settles each swap batch as one transaction.
+-- | Defines the pool, its fee and reserves, and receipts for swaps and liquidity.
+-- Connects reserves to token holdings and settles each batch as one transaction.
 module Pool where
 
 import Errors
-import Splice.Api.Token.HoldingV2 (Account, InstrumentId)
+import Splice.Api.Token.HoldingV2 (Account)
 import Lib.Math
 import Lib.Tokens
-import DA.Optional (isNone)
+import Lib.Liquidity
 import Splice.Api.Token.HoldingV2 qualified as H
 import Splice.Api.Token.AllocationV2 qualified as A
-import Splice.TokenStandard.Utils (basicAccount, toAnyContractId)
-import DA.Assert (assertDeadlineExceeded)
 import DA.List (dedup)
 import Lib.Swap
 
-data PoolFunding = PoolFunding with
-    baseToken : Token
-    quoteToken : Token
-    baseHoldingCids : [ContractId H.Holding]
-    quoteHoldingCids : [ContractId H.Holding]
-  deriving (Eq, Show)
-
-data BatchResult = BatchResult with
+data SwapBatchResult = SwapBatchResult with
     stateCid : ContractId PoolState
     receiptCids : [ContractId SwapReceipt]
     amountsOut : [Decimal]
@@ -44,27 +35,33 @@ template SwapReceipt
     signatory dvo, venueOperator
     observer trader
 
--- | Keeps the token pair and accounts, and handles funding, swaps and expired token locks.
+-- | Keeps the token pair and accounts, and settles swaps and liquidity.
 template Pool
   with
     dvo : Party
     venueOperator : Party
-    baseInstrumentId : InstrumentId
-    quoteInstrumentId : InstrumentId
+    baseToken : Token
+    quoteToken : Token
+    lpToken : Token
     baseAccount : Account
     quoteAccount : Account
-    lpTokenInstrumentId : InstrumentId
   where
     signatory dvo
     observer venueOperator
     ensure dvo /= venueOperator
-      && baseInstrumentId /= quoteInstrumentId
-      && lpTokenInstrumentId.admin == dvo
+      && baseToken.instrument /= quoteToken.instrument
+      && lpToken.instrument.admin == dvo
+      && lpToken.decimals == 10
+      && lpToken.instrument /= baseToken.instrument
+      && lpToken.instrument /= quoteToken.instrument
       && baseAccount.owner == Some dvo
       && quoteAccount.owner == Some dvo
+      && baseAccount.provider == Some venueOperator
+      && quoteAccount.provider == Some venueOperator
+      && baseAccount /= quoteAccount
 
     -- | Settle an ordered batch atomically and replace the state once with its final backing.
-    nonconsuming choice Pool_Swap : BatchResult
+    nonconsuming choice Pool_Swap : SwapBatchResult
       with
         configCid : ContractId PoolConfig
         stateCid : ContractId PoolState
@@ -73,44 +70,47 @@ template Pool
       controller dvo, venueOperator
       do
         (config, state) <- loadComponents this self configCid stateCid
-        funding <- requireFunding state
+        assertMsg ePoolNotFunded (state.lpTokenSupply > 0.0)
         validateBatch batchId requests
         let route = SwapRoute with
               poolCid = self; dvo; venueOperator
-              baseToken = funding.baseToken; quoteToken = funding.quoteToken; baseAccount; quoteAccount
-        validateBacking this state funding
-        (next, nextFunding, receipts, amountsOut) <- settleRequests route config.feeBps batchId state funding requests
-        validateBacking this next nextFunding
+              baseToken; quoteToken; baseAccount; quoteAccount
+        validateBacking this state
+        (next, receipts, amountsOut) <- settleRequests route config.feeBps batchId state requests
+        validateBacking this next
         archive stateCid
-        nextCid <- create next with funding = Some nextFunding
-        pure BatchResult with stateCid = nextCid; receiptCids = receipts; amountsOut
+        nextCid <- create next
+        pure SwapBatchResult with stateCid = nextCid; receiptCids = receipts; amountsOut
 
-    -- | Return expired allocations to their trader without requiring current pool access.
-    nonconsuming choice Pool_WithdrawSwap : [A.AllocationResult]
-      with
-        trader : Party
-        withdrawals : [AllocationWithdrawal]
-      controller trader
-      do
-        validateWithdrawals withdrawals
-        forA withdrawals $ \withdrawal -> do
-          allocation <- view <$> fetch withdrawal.allocationCid
-          validateWithdrawal self trader allocation
-          result <- exercise withdrawal.allocationCid A.Allocation_Withdraw with actors = [trader]; extraArgs = withdrawal.extraArgs
-          requireWithdrawalComplete result
-          pure result
-
-    nonconsuming choice Pool_Fund : ContractId PoolState
+    nonconsuming choice Pool_AddLiquidity : AddLiquidityBatchResult
       with
         configCid : ContractId PoolConfig
         stateCid : ContractId PoolState
-        funding : PoolFunding
-      controller dvo
+        requests : [DepositBatchRequest Pool]
+      controller dvo, venueOperator
+      do
+        (config, state) <- loadComponents this self configCid stateCid
+        validateDepositBatch requests
+        validateBacking this state
+        (next, receipts, outcomes) <- settleDeposits this self config.initialRatio state requests
+        archive stateCid
+        nextCid <- create next
+        pure AddLiquidityBatchResult with stateCid = nextCid; receiptCids = receipts; outcomes
+
+    nonconsuming choice Pool_WithdrawLiquidity : WithdrawLiquidityBatchResult
+      with
+        configCid : ContractId PoolConfig
+        stateCid : ContractId PoolState
+        requests : [WithdrawalBatchRequest Pool]
+      controller dvo, venueOperator
       do
         (_, state) <- loadComponents this self configCid stateCid
-        validateInitialFunding this state funding
+        validateWithdrawalBatch requests
+        validateBacking this state
+        (next, receipts, outcomes) <- settleWithdrawals this self state requests
         archive stateCid
-        create state with funding = Some funding
+        nextCid <- create next
+        pure WithdrawLiquidityBatchResult with stateCid = nextCid; receiptCids = receipts; outcomes
 
 -- | Stores the swap fee, which the pool authority (dvo) can update.
 template PoolConfig
@@ -119,10 +119,11 @@ template PoolConfig
     dvo : Party
     venueOperator : Party
     feeBps : Decimal
+    initialRatio : Decimal
   where
     signatory dvo
     observer venueOperator
-    ensure dvo /= venueOperator && validFee feeBps
+    ensure dvo /= venueOperator && validFee feeBps && initialRatio > 0.0
 
     choice PoolConfig_Update : ContractId PoolConfig
       with newFeeBps : Decimal
@@ -140,50 +141,42 @@ template PoolState
     baseReserve : Decimal
     quoteReserve : Decimal
     lpTokenSupply : Decimal
-    funding : Optional PoolFunding
+    baseHoldingCids : [ContractId H.Holding]
+    quoteHoldingCids : [ContractId H.Holding]
   where
     signatory dvo
     observer venueOperator
     ensure dvo /= venueOperator
-      && baseReserve > 0.0 && quoteReserve > 0.0 && lpTokenSupply > 0.0
+      && ((baseReserve == 0.0 && quoteReserve == 0.0 && lpTokenSupply == 0.0
+          && null baseHoldingCids && null quoteHoldingCids)
+        || (baseReserve > 0.0 && quoteReserve > 0.0 && lpTokenSupply >= minimumLiquidity))
+
+maxSettlementBatchSize : Int
+maxSettlementBatchSize = 20
 
 -- | Require a named, bounded batch with no reused allocation.
 validateBatch : Text -> [BatchRequest pool] -> Update ()
 validateBatch batchId requests = do
   assertMsg eBatchIdRequired (batchId /= "")
-  assertMsg eInvalidBatchSize (not (null requests) && length requests <= 20)
+  assertMsg eInvalidBatchSize (not (null requests) && length requests <= maxSettlementBatchSize)
   let allocationCids = concatMap (\item -> [item.request.inputAllocation, item.request.outputAllocation]) requests
   assertMsg eDuplicateAllocation (length allocationCids == length (dedup allocationCids))
 
--- | Accept one or two distinct allocations for recovery.
-validateWithdrawals : [AllocationWithdrawal] -> Update ()
-validateWithdrawals withdrawals = do
-  let allocationCids = map (.allocationCid) withdrawals
-  assertMsg eInvalidWithdrawalSize (not (null allocationCids) && length allocationCids <= 2)
-  assertMsg eDuplicateWithdrawalAllocation (length allocationCids == length (dedup allocationCids))
+validateDepositBatch : [DepositBatchRequest pool] -> Update ()
+validateDepositBatch requests = do
+  assertMsg eInvalidBatchSize (not (null requests) && length requests <= maxSettlementBatchSize)
+  assertMsg eInitialLiquidityBatch
+    (length requests == 1 || all (\item -> item.request.terms.mode == Proportional) requests)
+  let allocationCids = concatMap (\item ->
+        [item.request.baseAllocation, item.request.quoteAllocation, item.request.lpAllocation]) requests
+  assertMsg eDuplicateAllocation (length allocationCids == length (dedup allocationCids))
 
--- | The trader may recover only their expired allocations for this pool.
-validateWithdrawal : ContractId Pool -> Party -> A.AllocationView -> Update ()
-validateWithdrawal poolCid trader allocation = do
-  assertMsg eWithdrawalAccountMismatch (allocation.allocation.authorizer == basicAccount trader)
-  assertMsg eWithdrawalPoolMismatch (allocation.settlement.cid == Some (toAnyContractId poolCid))
-  case allocation.allocation.settlementDeadline of
-    Some deadline -> assertDeadlineExceeded allocationSettlementDeadlineLabel deadline
-    None -> abort eWithdrawalDeadlineRequired
-
-requireWithdrawalComplete : A.AllocationResult -> Update ()
-requireWithdrawalComplete result =
-  assertMsg eTokenWithdrawalIncomplete (result.output == A.AllocationResult_Withdrawn)
-
--- | Initial backing must match the unfunded pool's instruments and reserves.
-validateInitialFunding : Pool -> PoolState -> PoolFunding -> Update ()
-validateInitialFunding pool state funding = do
-  assertMsg ePoolAlreadyFunded (isNone state.funding)
-  assertMsg eFundingInstrumentMismatch
-    (funding.baseToken.instrument == pool.baseInstrumentId && funding.quoteToken.instrument == pool.quoteInstrumentId)
-  validateToken pool.dvo funding.baseToken
-  validateToken pool.dvo funding.quoteToken
-  validateBacking pool state funding
+validateWithdrawalBatch : [WithdrawalBatchRequest pool] -> Update ()
+validateWithdrawalBatch requests = do
+  assertMsg eInvalidBatchSize (not (null requests) && length requests <= maxSettlementBatchSize)
+  let allocationCids = concatMap (\item ->
+        [item.request.baseAllocation, item.request.quoteAllocation, item.request.lpAllocation]) requests
+  assertMsg eDuplicateAllocation (length allocationCids == length (dedup allocationCids))
 
 requireValidFee : Decimal -> Update ()
 requireValidFee feeBps = assertMsg eInvalidFee (validFee feeBps)
@@ -202,33 +195,133 @@ loadComponents pool poolCid configCid stateCid = do
     (state.dvo == pool.dvo && state.venueOperator == pool.venueOperator)
   pure (config, state)
 
--- | Require token backing before settlement.
-requireFunding : PoolState -> Update PoolFunding
-requireFunding state = case state.funding of
-  Some funding -> pure funding
-  None -> abort ePoolNotFunded
-
 -- | Verify that the actual holdings exactly match both recorded reserves.
-validateBacking : Pool -> PoolState -> PoolFunding -> Update ()
-validateBacking pool state funding = do
-  baseTotal <- holdingTotal funding.baseToken pool.baseAccount funding.baseHoldingCids
-  quoteTotal <- holdingTotal funding.quoteToken pool.quoteAccount funding.quoteHoldingCids
+validateBacking : Pool -> PoolState -> Update ()
+validateBacking pool state = do
+  baseTotal <- holdingTotal pool.baseToken pool.baseAccount state.baseHoldingCids
+  quoteTotal <- holdingTotal pool.quoteToken pool.quoteAccount state.quoteHoldingCids
   assertMsg eBaseReserveNotBacked (baseTotal == state.baseReserve)
   assertMsg eQuoteReserveNotBacked (quoteTotal == state.quoteReserve)
 
 -- | Price each request against the previous result and collect receipts; leave state replacement to Pool_Swap.
-settleRequests : SwapRoute Pool -> Decimal -> Text -> PoolState -> PoolFunding -> [BatchRequest Pool]
-  -> Update (PoolState, PoolFunding, [ContractId SwapReceipt], [Decimal])
-settleRequests _ _ _ state funding [] = pure (state, funding, [], [])
-settleRequests route feeBps batchId state funding (item :: rest) = do
-  result <- settleRequest route feeBps state.baseReserve state.quoteReserve funding.baseHoldingCids funding.quoteHoldingCids item
+settleRequests : SwapRoute Pool -> Decimal -> Text -> PoolState -> [BatchRequest Pool]
+  -> Update (PoolState, [ContractId SwapReceipt], [Decimal])
+settleRequests _ _ _ state [] = pure (state, [], [])
+settleRequests route feeBps batchId state (item :: rest) = do
+  result <- settleRequest route feeBps state.baseReserve state.quoteReserve state.baseHoldingCids state.quoteHoldingCids item
   settledAt <- getTime
   let request = item.request
   receipt <- create SwapReceipt with
     dvo = route.dvo; venueOperator = route.venueOperator; trader = request.trader; poolCid = route.poolCid
     inputAllocation = request.inputAllocation; outputAllocation = request.outputAllocation
     batchId; terms = request.terms; amountOut = result.amountOut; settledAt
-  let nextState = state with baseReserve = result.baseReserve; quoteReserve = result.quoteReserve
-      nextFunding = funding with baseHoldingCids = result.baseHoldingCids; quoteHoldingCids = result.quoteHoldingCids
-  (finalState, finalFunding, receipts, amounts) <- settleRequests route feeBps batchId nextState nextFunding rest
-  pure (finalState, finalFunding, receipt :: receipts, result.amountOut :: amounts)
+  let nextState = state with
+        baseReserve = result.baseReserve; quoteReserve = result.quoteReserve
+        baseHoldingCids = result.baseHoldingCids; quoteHoldingCids = result.quoteHoldingCids
+  (finalState, receipts, amounts) <- settleRequests route feeBps batchId nextState rest
+  pure (finalState, receipt :: receipts, result.amountOut :: amounts)
+
+-- | Both liquidity paths expose the same durable settlement evidence.
+template LiquidityReceipt
+  with
+    dvo : Party
+    venueOperator : Party
+    trader : Party
+    poolCid : ContractId Pool
+    requestId : Text
+    outcome : LiquidityOutcome
+    settledAt : Time
+  where
+    signatory dvo, venueOperator
+    observer trader
+
+data WithdrawLiquidityBatchResult = WithdrawLiquidityBatchResult with
+    stateCid : ContractId PoolState
+    receiptCids : [ContractId LiquidityReceipt]
+    outcomes : [WithdrawalOutcome]
+  deriving (Eq, Show)
+
+data AddLiquidityBatchResult = AddLiquidityBatchResult with
+    stateCid : ContractId PoolState
+    receiptCids : [ContractId LiquidityReceipt]
+    outcomes : [DepositOutcome]
+  deriving (Eq, Show)
+
+settleDeposits : Pool -> ContractId Pool -> Decimal -> PoolState -> [DepositBatchRequest Pool]
+  -> Update (PoolState, [ContractId LiquidityReceipt], [DepositOutcome])
+settleDeposits _ _ _ state [] = pure (state, [], [])
+settleDeposits pool poolCid initialRatio state (item :: rest) = do
+  let route = liquidityRoute pool poolCid
+      request = item.request
+      terms = request.terms
+      tokenArgs = item.tokenArgs
+      initial = state.lpTokenSupply == 0.0
+  assertMsg "deposit pool mismatch" (request.poolCid == poolCid)
+  validateLiquidityTrader route request.trader
+  validateDepositTerms route terms
+  assertMsg "deposit mode does not match pool state" ((terms.mode == InitializeOnly) == initial)
+  let outcome = depositAmounts route initialRatio state.baseReserve state.quoteReserve state.lpTokenSupply terms
+      settlement = liquiditySettlement route (depositId terms)
+  validateDepositAmounts initialRatio state.baseReserve state.quoteReserve terms outcome
+  baseHoldingCids <- settleDepositAsset pool.baseToken pool.baseAccount request.trader settlement terms.settlementDeadline "base"
+    terms.maxBaseAmount outcome.baseRefund state.baseReserve state.baseHoldingCids request.baseAllocation
+    tokenArgs.baseAllocationArgs tokenArgs.baseSettlementArgs
+  quoteHoldingCids <- settleDepositAsset pool.quoteToken pool.quoteAccount request.trader settlement terms.settlementDeadline "quote"
+    terms.maxQuoteAmount outcome.quoteRefund state.quoteReserve state.quoteHoldingCids request.quoteAllocation
+    tokenArgs.quoteAllocationArgs tokenArgs.quoteSettlementArgs
+  settleMint route request outcome.lpAmount tokenArgs.lpAllocationArgs tokenArgs.lpSettlementArgs
+  let next = state with
+        baseReserve = state.baseReserve + outcome.baseAmount
+        quoteReserve = state.quoteReserve + outcome.quoteAmount
+        lpTokenSupply = state.lpTokenSupply + outcome.lpAmount + (if initial then minimumLiquidity else 0.0)
+        baseHoldingCids; quoteHoldingCids
+  validateBacking pool next
+  settledAt <- getTime
+  receipt <- create LiquidityReceipt with
+    dvo = pool.dvo; venueOperator = pool.venueOperator; trader = request.trader; poolCid
+    requestId = terms.requestId; outcome = LiquidityDeposited outcome; settledAt
+  (finalState, receipts, outcomes) <- settleDeposits pool poolCid initialRatio next rest
+  pure (finalState, receipt :: receipts, outcome :: outcomes)
+
+liquidityRoute : Pool -> ContractId Pool -> LiquidityRoute Pool
+liquidityRoute pool poolCid = LiquidityRoute with
+  poolCid; dvo = pool.dvo; venueOperator = pool.venueOperator
+  baseToken = pool.baseToken; quoteToken = pool.quoteToken; lpToken = pool.lpToken
+  baseAccount = pool.baseAccount; quoteAccount = pool.quoteAccount
+
+settleWithdrawals : Pool -> ContractId Pool -> PoolState -> [WithdrawalBatchRequest Pool]
+  -> Update (PoolState, [ContractId LiquidityReceipt], [WithdrawalOutcome])
+settleWithdrawals _ _ state [] = pure (state, [], [])
+settleWithdrawals pool poolCid state (item :: rest) = do
+  let route = liquidityRoute pool poolCid
+      request = item.request
+      terms = request.terms
+      tokenArgs = item.tokenArgs
+  assertMsg "withdrawal pool mismatch" (request.poolCid == poolCid)
+  validateLiquidityTrader route request.trader
+  validateWithdrawalTerms route terms
+  assertMsg "withdrawal exceeds circulating LP supply" (state.lpTokenSupply > minimumLiquidity
+    && terms.lpAmount <= state.lpTokenSupply - minimumLiquidity)
+  let outcome = withdrawalAmounts route state.baseReserve state.quoteReserve state.lpTokenSupply terms
+      settlement = liquiditySettlement route (withdrawalId terms)
+  assertMsg eWithdrawalBelowMinimumOutput (outcome.baseAmount > 0.0 && outcome.quoteAmount > 0.0
+    && outcome.baseAmount >= terms.minBaseOut && outcome.quoteAmount >= terms.minQuoteOut)
+  baseHoldingCids <- settleWithdrawalAsset pool.baseToken pool.baseAccount request.trader settlement terms.settlementDeadline "base" minBaseOutKey
+    terms.minBaseOut outcome.baseAmount state.baseReserve state.baseHoldingCids request.baseAllocation
+    tokenArgs.baseAllocationArgs tokenArgs.baseSettlementArgs
+  quoteHoldingCids <- settleWithdrawalAsset pool.quoteToken pool.quoteAccount request.trader settlement terms.settlementDeadline "quote" minQuoteOutKey
+    terms.minQuoteOut outcome.quoteAmount state.quoteReserve state.quoteHoldingCids request.quoteAllocation
+    tokenArgs.quoteAllocationArgs tokenArgs.quoteSettlementArgs
+  settleBurn route request tokenArgs.lpAllocationArgs tokenArgs.lpSettlementArgs
+  let next = state with
+        baseReserve = state.baseReserve - outcome.baseAmount
+        quoteReserve = state.quoteReserve - outcome.quoteAmount
+        lpTokenSupply = state.lpTokenSupply - outcome.lpAmount
+        baseHoldingCids; quoteHoldingCids
+  validateBacking pool next
+  settledAt <- getTime
+  receipt <- create LiquidityReceipt with
+    dvo = pool.dvo; venueOperator = pool.venueOperator; trader = request.trader; poolCid
+    requestId = terms.requestId; outcome = LiquidityWithdrawn outcome; settledAt
+  (finalState, receipts, outcomes) <- settleWithdrawals pool poolCid next rest
+  pure (finalState, receipt :: receipts, outcome :: outcomes)

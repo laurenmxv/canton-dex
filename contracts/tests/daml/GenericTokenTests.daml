@@ -3,14 +3,19 @@ module GenericTokenTests where
 import Test.Errors
 import DA.Assert ((===))
 import DA.TextMap qualified as TextMap
-import DA.Time (addRelTime, seconds)
+import DA.Time (addRelTime, minutes, seconds)
+import DA.Optional (isNone)
 import Daml.Script
 import Errors
 import Test.Assertions
 import Fixtures
 import FundedSwaps
 import Lib.Tokens (emptyArgs)
-import Pool
+import Lib.Liquidity
+import PoolAccess
+import Splice.TokenStandard.Utils (basicAccount)
+import OpenZeppelin.TokenCIP112V1.Holding (TokenHolding(..))
+import Splice.Api.Token.HoldingV2 qualified as H
 import Splice.Api.Token.AllocationInstructionV2 qualified as AI
 import Splice.Api.Token.AllocationV2 qualified as A
 import Splice.Api.Token.MetadataV1
@@ -18,7 +23,7 @@ import Lib.Swap
 import SwapRequestTests (prepareArgs)
 import VenueDelegation
 
--- These adapters exercise standard interface dispatch and context forwarding.
+-- These adapters exercise strict iterated allocations and context forwarding.
 -- The original OZ registry remains responsible for token issuance and settlement.
 template ContextAllocationFactory
   with
@@ -33,6 +38,8 @@ template ContextAllocationFactory
       allocationFactory_allocateExtraObservers _ = []
       allocationFactory_allocateImpl _ arg = do
         assertMsg eAllocationContextMismatch (arg.extraArgs == expectedArgs)
+        assertMsg "Registry rejects initial legs with iteration funding"
+          (null arg.allocation.transferLegSides || isNone arg.allocation.nextIterationFunding)
         exercise delegate arg
 
 template ContextSettlementFactory
@@ -81,9 +88,10 @@ contextArgs label = ExtraArgs with
   context = ChoiceContext with values = TextMap.fromList [("test-context", AV_Text label)]
   meta = Metadata with values = TextMap.fromList [("test-metadata", label)]
 
-separateFactoriesReceiveAllocationAndSettlementContext : Script ()
-separateFactoriesReceiveAllocationAndSettlementContext = script do
+strictFactoriesSupportSwapLiquidityAndContext : Script ()
+strictFactoriesSupportSwapLiquidityAndContext = script do
   f <- setup ()
+  originalSettings <- settingsFor f.parties
   let baseAllocationArgs = contextArgs "base-allocation"
       quoteAllocationArgs = contextArgs "quote-allocation"
       baseSettlementArgs = contextArgs "base-settlement"
@@ -92,35 +100,55 @@ separateFactoriesReceiveAllocationAndSettlementContext = script do
     admin = f.parties.baseRegistrar; delegate = f.route.baseToken.allocationFactory; expectedArgs = baseAllocationArgs
   quoteAllocationFactory <- submit f.parties.quoteRegistrar $ createCmd ContextAllocationFactory with
     admin = f.parties.quoteRegistrar; delegate = f.route.quoteToken.allocationFactory; expectedArgs = quoteAllocationArgs
+  lpAllocationFactory <- submit f.parties.dvo $ createCmd ContextAllocationFactory with
+    admin = f.parties.dvo; delegate = originalSettings.lpAllocationFactory; expectedArgs = emptyArgs
   baseSettlementFactory <- submit f.parties.baseRegistrar $ createCmd ContextSettlementFactory with
     admin = f.parties.baseRegistrar; delegate = f.route.baseToken.settlementFactory; expectedArgs = baseSettlementArgs
   quoteSettlementFactory <- submit f.parties.quoteRegistrar $ createCmd ContextSettlementFactory with
     admin = f.parties.quoteRegistrar; delegate = f.route.quoteToken.settlementFactory; expectedArgs = quoteSettlementArgs
   Some baseAllocationDisclosure <- queryDisclosure @ContextAllocationFactory f.parties.baseRegistrar baseAllocationFactory
   Some quoteAllocationDisclosure <- queryDisclosure @ContextAllocationFactory f.parties.quoteRegistrar quoteAllocationFactory
+  Some lpAllocationDisclosure <- queryDisclosure @ContextAllocationFactory f.parties.dvo lpAllocationFactory
   Some baseSettlementDisclosure <- queryDisclosure @ContextSettlementFactory f.parties.baseRegistrar baseSettlementFactory
   Some quoteSettlementDisclosure <- queryDisclosure @ContextSettlementFactory f.parties.quoteRegistrar quoteSettlementFactory
   let adapterDisclosures =
-        [baseAllocationDisclosure, quoteAllocationDisclosure, baseSettlementDisclosure, quoteSettlementDisclosure]
+        [baseAllocationDisclosure, quoteAllocationDisclosure, lpAllocationDisclosure, baseSettlementDisclosure, quoteSettlementDisclosure]
       baseToken = f.route.baseToken with
         allocationFactory = toInterfaceContractId @AI.AllocationFactory baseAllocationFactory
         settlementFactory = toInterfaceContractId @A.SettlementFactory baseSettlementFactory
       quoteToken = f.route.quoteToken with
         allocationFactory = toInterfaceContractId @AI.AllocationFactory quoteAllocationFactory
         settlementFactory = toInterfaceContractId @A.SettlementFactory quoteSettlementFactory
-  (_, pool) <- poolFixture f.parties
-  base <- mint f.baseRulesCid f.parties.baseRegistrar f.route.baseAccount "BASE" 997.0
-  quote <- mint f.quoteRulesCid f.parties.quoteRegistrar f.route.quoteAccount "QUOTE" 1000.0
-  rules <- rulesDisclosures f
-  stateCid <- submit (actAs f.parties.dvo <> discloseMany (adapterDisclosures <> rules)) $
-    exerciseCmd pool.poolCid Pool_Fund with
+  let settings = originalSettings with
+        baseToken; quoteToken; lpAllocationFactory = toInterfaceContractId @AI.AllocationFactory lpAllocationFactory
+  (_, pool) <- poolFixtureWithSettings f.parties settings
+  empty0 <- emptyFixture f.parties pool settings
+  let empty = empty0 with
+        baseRulesCid = f.baseRulesCid; quoteRulesCid = f.quoteRulesCid
+        lpRulesCid = fromInterfaceContractId originalSettings.lpAllocationFactory
+  seeder <- allocateParty "ContextInitialLP"
+  (_, seederAccess) <- accessFixture f.parties.venueOperator seeder pool.poolCid
+  base <- mint f.baseRulesCid f.parties.baseRegistrar (basicAccount seeder) "BASE" 997.0
+  quote <- mint f.quoteRulesCid f.parties.quoteRegistrar (basicAccount seeder) "QUOTE" 1000.0
+  rules <- rulesDisclosures empty
+  now <- getTime
+  let terms = DepositTerms with
+        requestId = "context-seed"; mode = InitializeOnly
+        maxBaseAmount = 997.0; maxQuoteAmount = 1000.0; minLpOut = 0.0
+        minRatio = 1.0; maxRatio = 2.0; settlementDeadline = addRelTime now (minutes 10)
+      tokenArgs = liquidityArgs with
+        baseAllocationArgs; quoteAllocationArgs; baseSettlementArgs; quoteSettlementArgs
+  deposit <- submit (actAs seeder <> discloseMany (adapterDisclosures <> rules)) $
+    exerciseCmd seederAccess PoolAccess_RequestLiquidityDeposit with
+      terms; requestedAt = now; baseHoldingCids = [base]; quoteHoldingCids = [quote]
+      baseAllocationArgs; quoteAllocationArgs; lpAllocationArgs = emptyArgs
+  initialized <- submit (actAs f.parties.venueOperator <> discloseMany (adapterDisclosures <> rules)) $
+    exerciseCmd empty.delegationCid VenueDelegation_AddLiquidity with
       configCid = pool.configCid; stateCid = pool.stateCid
-      funding = PoolFunding with baseToken; quoteToken; baseHoldingCids = [base]; quoteHoldingCids = [quote]
-  delegationCid <- submit f.parties.dvo $ createCmd VenueDelegation with
-    dvo = f.parties.dvo; venueOperator = f.parties.venueOperator; poolCid = pool.poolCid
-  let candidate = f with
-        pool = (pool with stateCid); delegationCid
-        route = (f.route with poolCid = pool.poolCid; baseToken; quoteToken)
+      requests = [DepositSettlementRequest seederAccess (DepositBatchRequest deposit tokenArgs)]
+  let stateCid = initialized.stateCid
+      delegationCid = empty.delegationCid
+      candidate = empty with pool = pool with stateCid
   trader <- allocateParty "ContextTrader"
   (accessCid, args) <- prepareArgs candidate trader "context-swap"
   candidateRules <- rulesDisclosures candidate
@@ -149,6 +177,50 @@ separateFactoriesReceiveAllocationAndSettlementContext = script do
   state.quoteReserve === 990.099010
   availableBalance trader quoteToken.instrument >>= (=== 9.900990)
 
+  -- A funded pool must also accept a proportional deposit with unused funding returned.
+  moreBase <- mint f.baseRulesCid f.parties.baseRegistrar (basicAccount seeder) "BASE" 10.0
+  moreQuote <- mint f.quoteRulesCid f.parties.quoteRegistrar (basicAccount seeder) "QUOTE" 20.0
+  nextDeposit <- submit (actAs seeder <> discloseMany (adapterDisclosures <> rules)) $
+    exerciseCmd seederAccess PoolAccess_RequestLiquidityDeposit with
+      terms = terms with
+        requestId = "context-proportional"; mode = Proportional
+        maxBaseAmount = 10.0; maxQuoteAmount = 20.0; minLpOut = 1.0; minRatio = 0.5
+      requestedAt = now; baseHoldingCids = [moreBase]; quoteHoldingCids = [moreQuote]
+      baseAllocationArgs; quoteAllocationArgs; lpAllocationArgs = emptyArgs
+  nextDisclosures <- settlementDisclosures candidate result.stateCid
+  added <- submit (actAs f.parties.venueOperator <> discloseMany (adapterDisclosures <> nextDisclosures)) $
+    exerciseCmd delegationCid VenueDelegation_AddLiquidity with
+      configCid = pool.configCid; stateCid = result.stateCid
+      requests = [DepositSettlementRequest seederAccess (DepositBatchRequest nextDeposit tokenArgs)]
+  let [addedOutcome] = added.outcomes
+  quoteRefund <- availableBalance seeder quoteToken.instrument
+  assertMsg "unused quote funding is returned" (quoteRefund > 0.0)
+  quoteRefund === 20.0 - addedOutcome.quoteAmount
+  addedState <- assertBacking candidate added.stateCid
+  (length addedState.baseHoldingCids, length addedState.quoteHoldingCids) === (1, 1)
+  Some poolValue <- queryContractId f.parties.dvo pool.poolCid
+  lpBefore <- availableBalance seeder poolValue.lpToken.instrument
+  lpHoldings <- query @TokenHolding seeder
+  let lpHoldingCids = [toInterfaceContractId @H.Holding cid | (cid, holding) <- lpHoldings,
+        holding.holding.instrumentId == poolValue.lpToken.instrument, isNone holding.holding.lock]
+  redemption <- submit (actAs seeder <> discloseMany (adapterDisclosures <> rules)) $
+    exerciseCmd seederAccess PoolAccess_RequestLiquidityWithdrawal with
+      terms = WithdrawalTerms with
+        requestId = "context-redemption"; lpAmount = 10.0; minBaseOut = 0.1; minQuoteOut = 0.1
+        settlementDeadline = terms.settlementDeadline
+      requestedAt = now; lpHoldingCids
+      baseAllocationArgs; quoteAllocationArgs; lpAllocationArgs = emptyArgs
+  redemptionDisclosures <- settlementDisclosures candidate added.stateCid
+  removed <- submit (actAs f.parties.venueOperator <> discloseMany (adapterDisclosures <> redemptionDisclosures)) $
+    exerciseCmd delegationCid VenueDelegation_WithdrawLiquidity with
+      configCid = pool.configCid; stateCid = added.stateCid
+      requests = [WithdrawalSettlementRequest seederAccess (WithdrawalBatchRequest redemption tokenArgs)]
+  let [removedOutcome] = removed.outcomes
+  assertMsg "withdrawal pays both assets" (removedOutcome.baseAmount >= 0.1 && removedOutcome.quoteAmount >= 0.1)
+  availableBalance seeder poolValue.lpToken.instrument >>= (=== (lpBefore - 10.0))
+  retained <- assertBacking candidate removed.stateCid
+  (length retained.baseHoldingCids, length retained.quoteHoldingCids) === (1, 1)
+
 genericAllocationReceivesWithdrawalContext : Script ()
 genericAllocationReceivesWithdrawalContext = script do
   f <- setup ()
@@ -165,11 +237,11 @@ genericAllocationReceivesWithdrawalContext = script do
   disclosures <- rulesDisclosures f
   let allocationCid = toInterfaceContractId @A.Allocation cid
       options = actAs trader <> discloseMany disclosures
-  submitFailsWith eWithdrawalContextMismatch options $ exerciseCmd f.pool.poolCid Pool_WithdrawSwap with
-    trader; withdrawals = [AllocationWithdrawal with allocationCid; extraArgs = emptyArgs]
+  submitFailsWith eWithdrawalContextMismatch options $ exerciseCmd prepared.accessCid PoolAccess_RecoverAllocations with
+    withdrawals = [AllocationWithdrawal with allocationCid; extraArgs = emptyArgs]
   queryInterfaceContractId @A.Allocation trader allocationCid >>= (=== Some allocationView)
-  results <- submit options $ exerciseCmd f.pool.poolCid Pool_WithdrawSwap with
-    trader; withdrawals = [AllocationWithdrawal with allocationCid; extraArgs = expectedArgs]
+  results <- submit options $ exerciseCmd prepared.accessCid PoolAccess_RecoverAllocations with
+    withdrawals = [AllocationWithdrawal with allocationCid; extraArgs = expectedArgs]
   map (.output) results === [A.AllocationResult_Withdrawn]
   queryInterfaceContractId @A.Allocation trader allocationCid >>= (=== None)
   queryInterfaceContractId @A.Allocation trader request.inputAllocation >>= (=== Some originalView)
@@ -191,8 +263,8 @@ pendingWithdrawalPreservesAllocation = script do
   before <- query @ContextAllocation trader
   disclosures <- rulesDisclosures f
   submitFailsWith eTokenWithdrawalIncomplete (actAs trader <> discloseMany disclosures) $
-    exerciseCmd f.pool.poolCid Pool_WithdrawSwap with
-      trader; withdrawals = [withdrawal allocationCid]
+    exerciseCmd prepared.accessCid PoolAccess_RecoverAllocations with
+      withdrawals = [withdrawal allocationCid]
   query @ContextAllocation trader >>= (=== before)
   queryInterfaceContractId @A.Allocation trader allocationCid >>= (=== Some allocationView)
   queryInterfaceContractId @A.Allocation trader request.inputAllocation >>= (=== Some originalView)

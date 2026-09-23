@@ -3,21 +3,21 @@
 module PoolFactory where
 
 import Errors
-import Splice.Api.Token.HoldingV2 (Account, InstrumentId)
+import Splice.Api.Token.HoldingV2 (Account(..), InstrumentId(..))
 import Pool
+import Lib.Tokens
+import Splice.Api.Token.AllocationV2 qualified as A
+import Splice.Api.Token.AllocationInstructionV2 qualified as AI
 import Lib.Math (validFee)
 
 data PoolSettings = PoolSettings with
     dvo : Party
-    baseInstrumentId : InstrumentId
-    quoteInstrumentId : InstrumentId
-    baseAccount : Account
-    quoteAccount : Account
-    lpTokenInstrumentId : InstrumentId
+    poolId : Text
+    baseToken : Token
+    quoteToken : Token
+    lpAllocationFactory : ContractId AI.AllocationFactory
+    lpSettlementFactory : ContractId A.SettlementFactory
     feeBps : Decimal
-    baseReserve : Decimal
-    quoteReserve : Decimal
-    lpTokenSupply : Decimal
   deriving (Eq, Show)
 
 data PoolContracts = PoolContracts with
@@ -46,6 +46,7 @@ template PoolFactory
           venueOperator
           settings
           accepted = False
+          initialRatio = None
 
     nonconsuming choice PoolFactory_CreatePool : PoolContracts
       with proposalCid : ContractId PoolProposal
@@ -58,27 +59,37 @@ template PoolFactory
         let settings = proposal.settings
         requirePoolSettings dvo settings
         archive proposalCid
+        let lpToken = Token with
+              instrument = InstrumentId with admin = dvo; id = "lp:" <> settings.poolId
+              allocationFactory = settings.lpAllocationFactory
+              settlementFactory = settings.lpSettlementFactory
+              decimals = 10
+        validateToken dvo settings.baseToken
+        validateToken dvo settings.quoteToken
+        validateToken dvo lpToken
+        initialRatio <- case proposal.initialRatio of
+          Some ratio -> pure ratio
+          None -> abort "accepted proposal requires an initial ratio"
         poolCid <- create Pool with
-          dvo
-          venueOperator
-          baseInstrumentId = settings.baseInstrumentId
-          quoteInstrumentId = settings.quoteInstrumentId
-          baseAccount = settings.baseAccount
-          quoteAccount = settings.quoteAccount
-          lpTokenInstrumentId = settings.lpTokenInstrumentId
+          dvo; venueOperator
+          baseToken = settings.baseToken; quoteToken = settings.quoteToken; lpToken
+          baseAccount = Account with owner = Some dvo; provider = Some venueOperator; id = "base:" <> settings.poolId
+          quoteAccount = Account with owner = Some dvo; provider = Some venueOperator; id = "quote:" <> settings.poolId
         configCid <- create PoolConfig with
           poolCid
           dvo
           venueOperator
           feeBps = settings.feeBps
+          initialRatio
         stateCid <- create PoolState with
           poolCid
           dvo
           venueOperator
-          baseReserve = settings.baseReserve
-          quoteReserve = settings.quoteReserve
-          lpTokenSupply = settings.lpTokenSupply
-          funding = None
+          baseReserve = 0.0
+          quoteReserve = 0.0
+          lpTokenSupply = 0.0
+          baseHoldingCids = []
+          quoteHoldingCids = []
         pure PoolContracts with poolCid; configCid; stateCid
 
 -- | Holds the operator's proposed pool settings for dvo to accept or reject.
@@ -88,17 +99,21 @@ template PoolProposal
     venueOperator : Party
     settings : PoolSettings
     accepted : Bool
+    initialRatio : Optional Decimal
   where
     signatory venueOperator :: (if accepted then [settings.dvo] else [])
     observer settings.dvo
     ensure validSettings settings && settings.dvo /= venueOperator
+      && (if accepted then optional False (> 0.0) initialRatio else initialRatio == None)
 
     choice PoolProposal_Accept : PoolContracts
+      with initialRatio : Decimal
       controller settings.dvo
       do
         assertMsg ePoolProposalAlreadyAccepted (not accepted)
         validateProposalFactory this
-        proposalCid <- create this with accepted = True
+        assertMsg "initial ratio must be positive" (initialRatio > 0.0)
+        proposalCid <- create this with accepted = True; initialRatio = Some initialRatio
         exercise factoryCid PoolFactory_CreatePool with proposalCid
 
     choice PoolProposal_Reject : ()
@@ -127,11 +142,6 @@ validateProposalFactory proposal = do
 
 validSettings : PoolSettings -> Bool
 validSettings settings =
-  settings.baseInstrumentId /= settings.quoteInstrumentId
-    && settings.lpTokenInstrumentId.admin == settings.dvo
-    && settings.baseAccount.owner == Some settings.dvo
-    && settings.quoteAccount.owner == Some settings.dvo
+  settings.poolId /= "" && settings.baseToken.instrument /= settings.quoteToken.instrument
     && validFee settings.feeBps
-    && settings.baseReserve > 0.0
-    && settings.quoteReserve > 0.0
-    && settings.lpTokenSupply > 0.0
+    && all (\token -> token.decimals >= 0 && token.decimals <= 10) [settings.baseToken, settings.quoteToken]

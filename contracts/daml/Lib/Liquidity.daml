@@ -1,0 +1,296 @@
+-- | Signed liquidity terms, proportional math and native CIP-0112 mint/burn settlement.
+module Lib.Liquidity where
+
+import DA.Assert (assertWithinDeadline)
+import DA.Date (date, Month(Jan))
+import DA.List (dedup)
+import DA.Numeric qualified as Numeric
+import DA.Text qualified as Text
+import DA.TextMap qualified as TextMap
+import DA.Time (time, subTime, convertRelTimeToMicroseconds)
+import Errors (eDepositBelowMinimumOutput)
+import Lib.Math
+import Lib.Swap (transferLeg, checkSwapAllocation, maxSwapInputHoldings)
+import Lib.Tokens
+import Splice.Api.Token.AllocationV2 qualified as A
+import Splice.Api.Token.HoldingV2 qualified as H
+import Splice.Api.Token.MetadataV1 (ExtraArgs, emptyMetadata)
+import Splice.TokenStandard.Utils (basicAccount, mintAccount, burnAccount, senderSide, receiverSide, toAnyContractId)
+
+data LiquidityRoute pool = LiquidityRoute with
+    poolCid : ContractId pool
+    dvo : Party
+    venueOperator : Party
+    baseToken : Token
+    quoteToken : Token
+    lpToken : Token
+    baseAccount : H.Account
+    quoteAccount : H.Account
+  deriving (Eq, Show)
+
+data DepositMode = InitializeOnly | Proportional
+  deriving (Eq, Show)
+
+data DepositTerms = DepositTerms with
+    requestId : Text
+    mode : DepositMode
+    maxBaseAmount : Decimal
+    maxQuoteAmount : Decimal
+    minLpOut : Decimal
+    minRatio : Decimal
+    maxRatio : Decimal
+    settlementDeadline : Time
+  deriving (Eq, Show)
+
+data WithdrawalTerms = WithdrawalTerms with
+    requestId : Text
+    lpAmount : Decimal
+    minBaseOut : Decimal
+    minQuoteOut : Decimal
+    settlementDeadline : Time
+  deriving (Eq, Show)
+
+data DepositRequest pool = DepositRequest with
+    poolCid : ContractId pool
+    trader : Party
+    terms : DepositTerms
+    baseAllocation : ContractId A.Allocation
+    quoteAllocation : ContractId A.Allocation
+    lpAllocation : ContractId A.Allocation
+  deriving (Eq, Show)
+
+data WithdrawalRequest pool = WithdrawalRequest with
+    poolCid : ContractId pool
+    trader : Party
+    terms : WithdrawalTerms
+    baseAllocation : ContractId A.Allocation
+    quoteAllocation : ContractId A.Allocation
+    lpAllocation : ContractId A.Allocation
+  deriving (Eq, Show)
+
+data LiquidityTokenArgs = LiquidityTokenArgs with
+    baseAllocationArgs : ExtraArgs
+    quoteAllocationArgs : ExtraArgs
+    lpAllocationArgs : ExtraArgs
+    baseSettlementArgs : ExtraArgs
+    quoteSettlementArgs : ExtraArgs
+    lpSettlementArgs : ExtraArgs
+  deriving (Eq, Show)
+
+data DepositBatchRequest pool = DepositBatchRequest with
+    request : DepositRequest pool
+    tokenArgs : LiquidityTokenArgs
+  deriving (Eq, Show)
+
+data WithdrawalBatchRequest pool = WithdrawalBatchRequest with
+    request : WithdrawalRequest pool
+    tokenArgs : LiquidityTokenArgs
+  deriving (Eq, Show)
+
+data DepositOutcome = DepositOutcome with
+    baseAmount : Decimal
+    quoteAmount : Decimal
+    baseRefund : Decimal
+    quoteRefund : Decimal
+    lpAmount : Decimal
+  deriving (Eq, Show)
+
+data WithdrawalOutcome = WithdrawalOutcome with
+    baseAmount : Decimal
+    quoteAmount : Decimal
+    lpAmount : Decimal
+  deriving (Eq, Show)
+
+data LiquidityOutcome = LiquidityDeposited DepositOutcome | LiquidityWithdrawn WithdrawalOutcome
+  deriving (Eq, Show)
+
+-- | Fixed units make the signed settlement binding independent of decimal formatting.
+amountText : Decimal -> Text
+amountText amount = Text.takeWhile (/= ".") (show (Numeric.shift @0 amount))
+
+deadlineText : Time -> Text
+deadlineText deadline = show (convertRelTimeToMicroseconds (deadline `subTime` time (date 1970 Jan 1) 0 0 0))
+
+depositId : DepositTerms -> Text
+depositId t = "deposit:" <> t.requestId <> ":" <> show t.mode <> ":"
+  <> Text.intercalate ":" (map amountText [t.maxBaseAmount, t.maxQuoteAmount, t.minLpOut, t.minRatio, t.maxRatio])
+  <> ":" <> deadlineText t.settlementDeadline
+
+withdrawalId : WithdrawalTerms -> Text
+withdrawalId t = "withdrawal:" <> t.requestId <> ":"
+  <> Text.intercalate ":" (map amountText [t.lpAmount, t.minBaseOut, t.minQuoteOut])
+  <> ":" <> deadlineText t.settlementDeadline
+
+liquiditySettlement : LiquidityRoute pool -> Text -> A.SettlementInfo
+liquiditySettlement route id = A.SettlementInfo with
+  executors = [route.dvo, route.venueOperator]; id
+  cid = Some (toAnyContractId route.poolCid); meta = emptyMetadata
+
+validateLiquidityTrader : LiquidityRoute pool -> Party -> Update ()
+validateLiquidityTrader route trader =
+  assertMsg "liquidity trader must differ from pool executors" (trader /= route.dvo && trader /= route.venueOperator)
+
+validateDepositTerms : LiquidityRoute pool -> DepositTerms -> Update ()
+validateDepositTerms route t = do
+  assertMsg "invalid deposit terms" (t.requestId /= "" && t.maxBaseAmount > 0.0 && t.maxQuoteAmount > 0.0
+    && t.minLpOut >= 0.0 && t.minRatio > 0.0 && t.maxRatio >= t.minRatio)
+  assertMsg "invalid deposit precision" (quantized route.baseToken t.maxBaseAmount
+    && quantized route.quoteToken t.maxQuoteAmount && quantized route.lpToken t.minLpOut)
+  assertWithinDeadline "liquidity settlement deadline" t.settlementDeadline
+
+validateWithdrawalTerms : LiquidityRoute pool -> WithdrawalTerms -> Update ()
+validateWithdrawalTerms route t = do
+  assertMsg "invalid withdrawal terms" (t.requestId /= "" && t.lpAmount > 0.0 && t.minBaseOut >= 0.0 && t.minQuoteOut >= 0.0)
+  assertMsg "invalid withdrawal precision" (quantized route.lpToken t.lpAmount
+    && quantized route.baseToken t.minBaseOut && quantized route.quoteToken t.minQuoteOut)
+  assertWithinDeadline "liquidity settlement deadline" t.settlementDeadline
+
+validateLiquidityInputs : [ContractId H.Holding] -> Update ()
+validateLiquidityInputs cids = assertMsg "invalid liquidity input holdings"
+  (not (null cids) && length cids <= maxSwapInputHoldings && length cids == length (dedup cids))
+
+requestDeposit : LiquidityRoute pool -> Party -> DepositTerms -> Time
+  -> [ContractId H.Holding] -> [ContractId H.Holding] -> ExtraArgs -> ExtraArgs -> ExtraArgs
+  -> Update (DepositRequest pool)
+requestDeposit route trader terms requestedAt baseInputs quoteInputs baseArgs quoteArgs lpArgs = do
+  validateLiquidityTrader route trader
+  validateDepositTerms route terms
+  validateLiquidityInputs baseInputs
+  validateLiquidityInputs quoteInputs
+  assertMsg "deposit request time must precede deadline" (requestedAt < terms.settlementDeadline)
+  let settlement = liquiditySettlement route (depositId terms)
+      account = basicAccount trader
+      deadline = terms.settlementDeadline
+  (baseAllocation, _) <- allocate route.baseToken settlement account requestedAt deadline
+    [] (iterationFunding route.baseToken terms.maxBaseAmount) emptyMetadata baseInputs baseArgs
+  (quoteAllocation, _) <- allocate route.quoteToken settlement account requestedAt deadline
+    [] (iterationFunding route.quoteToken terms.maxQuoteAmount) emptyMetadata quoteInputs quoteArgs
+  (lpAllocation, _) <- allocate route.lpToken settlement account requestedAt deadline
+    [] (iterationFunding route.lpToken 0.0) (minimumMetadata minLpOutKey terms.minLpOut) [] lpArgs
+  pure DepositRequest with poolCid = route.poolCid; trader; terms; baseAllocation; quoteAllocation; lpAllocation
+
+requestWithdrawal : LiquidityRoute pool -> Party -> WithdrawalTerms -> Time
+  -> [ContractId H.Holding] -> ExtraArgs -> ExtraArgs -> ExtraArgs -> Update (WithdrawalRequest pool)
+requestWithdrawal route trader terms requestedAt lpInputs baseArgs quoteArgs lpArgs = do
+  validateLiquidityTrader route trader
+  validateWithdrawalTerms route terms
+  validateLiquidityInputs lpInputs
+  assertMsg "withdrawal request time must precede deadline" (requestedAt < terms.settlementDeadline)
+  let settlement = liquiditySettlement route (withdrawalId terms)
+      account = basicAccount trader
+      deadline = terms.settlementDeadline
+      lpLeg = transferLeg "lp-burn" account burnAccount route.lpToken terms.lpAmount
+  (lpAllocation, _) <- allocate route.lpToken settlement account requestedAt deadline [senderSide lpLeg] None emptyMetadata lpInputs lpArgs
+  (baseAllocation, _) <- allocate route.baseToken settlement account requestedAt deadline
+    [] (iterationFunding route.baseToken 0.0) (minimumMetadata minBaseOutKey terms.minBaseOut) [] baseArgs
+  (quoteAllocation, _) <- allocate route.quoteToken settlement account requestedAt deadline
+    [] (iterationFunding route.quoteToken 0.0) (minimumMetadata minQuoteOutKey terms.minQuoteOut) [] quoteArgs
+  pure WithdrawalRequest with poolCid = route.poolCid; trader; terms; baseAllocation; quoteAllocation; lpAllocation
+
+-- | Quote exact shares first; round required deposits up so new shares are fully backed.
+depositAmounts : LiquidityRoute pool -> Decimal -> Decimal -> Decimal -> Decimal -> DepositTerms -> DepositOutcome
+depositAmounts route initialRatio baseReserve quoteReserve supply t =
+  let initial = supply == 0.0
+      proportionalShares = if initial then 0.0 else min
+        (liquidityRatio 10 Numeric.RoundingFloor t.maxBaseAmount supply baseReserve)
+        (liquidityRatio 10 Numeric.RoundingFloor t.maxQuoteAmount supply quoteReserve)
+      base = if initial then min t.maxBaseAmount
+          (liquidityRatio route.baseToken.decimals Numeric.RoundingFloor t.maxQuoteAmount 1.0 initialRatio)
+        else liquidityRatio route.baseToken.decimals Numeric.RoundingCeiling proportionalShares baseReserve supply
+      quote = if initial then liquidityRatio route.quoteToken.decimals Numeric.RoundingCeiling base initialRatio 1.0
+        else liquidityRatio route.quoteToken.decimals Numeric.RoundingCeiling proportionalShares quoteReserve supply
+      shares = if initial then initialLpSupply base quote - minimumLiquidity else proportionalShares
+  in DepositOutcome with
+       baseAmount = base; quoteAmount = quote
+       baseRefund = t.maxBaseAmount - base; quoteRefund = t.maxQuoteAmount - quote; lpAmount = shares
+
+withdrawalAmounts : LiquidityRoute pool -> Decimal -> Decimal -> Decimal -> WithdrawalTerms -> WithdrawalOutcome
+withdrawalAmounts route baseReserve quoteReserve supply t = WithdrawalOutcome with
+  baseAmount = liquidityRatio route.baseToken.decimals Numeric.RoundingFloor t.lpAmount baseReserve supply
+  quoteAmount = liquidityRatio route.quoteToken.decimals Numeric.RoundingFloor t.lpAmount quoteReserve supply
+  lpAmount = t.lpAmount
+
+validateDepositAmounts : Decimal -> Decimal -> Decimal -> DepositTerms -> DepositOutcome -> Update ()
+validateDepositAmounts initialRatio baseReserve quoteReserve terms result = do
+  assertMsg "deposit amounts exceed signed limits" (result.baseAmount > 0.0 && result.quoteAmount > 0.0
+    && result.baseRefund >= 0.0 && result.quoteRefund >= 0.0)
+  assertMsg eDepositBelowMinimumOutput (result.lpAmount > 0.0 && result.lpAmount >= terms.minLpOut)
+  let (ratioBase, ratioQuote) = if baseReserve == 0.0 then (1.0, initialRatio) else (baseReserve, quoteReserve)
+  assertMsg "deposit ratio outside signed bounds"
+    (Numeric.cast @20 ratioQuote >= Numeric.mul @20 ratioBase terms.minRatio
+      && Numeric.cast @20 ratioQuote <= Numeric.mul @20 ratioBase terms.maxRatio)
+
+-- | One token batch, with exactly two allocations that must finish in this transaction.
+settlePair : Token -> A.SettlementInfo -> [A.TransferLeg] -> ContractId A.Allocation -> [A.TransferLegSide]
+  -> ContractId A.Allocation -> [A.TransferLegSide] -> ExtraArgs -> Update ([ContractId H.Holding], [ContractId H.Holding])
+settlePair token settlement legs traderCid extraSides poolCid poolSides extraArgs = do
+  result <- exercise token.settlementFactory A.SettlementFactory_SettleBatch with
+    settlement; transferLegs = legs; actors = settlement.executors; extraArgs
+    allocations =
+      [ A.FinalizedAllocation with allocationCid = traderCid; extraTransferLegSides = extraSides; nextIterationFunding = None
+      , A.FinalizedAllocation with allocationCid = poolCid; extraTransferLegSides = poolSides; nextIterationFunding = None
+      ]
+  case result.allocationSettleResults of
+    [traderResult, poolResult] -> do
+      assertMsg "liquidity allocations did not finish" (traderResult.output == A.AllocationResult_Settled None
+        && poolResult.output == A.AllocationResult_Settled None)
+      pure (concatMap snd (TextMap.toList traderResult.authorizerHoldingCids),
+        concatMap snd (TextMap.toList poolResult.authorizerHoldingCids))
+    _ -> abort "unexpected liquidity settlement results"
+
+-- | Reserve the full inputs; settlement returns unused funding directly to its owner.
+settleDepositAsset : Token -> H.Account -> Party -> A.SettlementInfo -> Time -> Text
+  -> Decimal -> Decimal -> Decimal -> [ContractId H.Holding] -> ContractId A.Allocation
+  -> ExtraArgs -> ExtraArgs -> Update [ContractId H.Holding]
+settleDepositAsset token poolAccount trader settlement deadline label maximum refund reserve holdings traderAllocation allocationArgs settlementArgs = do
+  let account = basicAccount trader
+      input = transferLeg (label <> "-deposit") account poolAccount token (maximum - refund)
+  checkSwapAllocation token settlement account deadline [] (iterationFunding token maximum) emptyMetadata traderAllocation
+  now <- getTime
+  (poolAllocation, change) <- allocate token settlement poolAccount now deadline
+    [] (iterationFunding token reserve) emptyMetadata holdings allocationArgs
+  (_, received) <- settlePair token settlement [input] traderAllocation [senderSide input]
+    poolAllocation [receiverSide input] settlementArgs
+  pure (change <> received)
+
+settleMint : LiquidityRoute pool -> DepositRequest pool -> Decimal -> ExtraArgs -> ExtraArgs -> Update ()
+settleMint route request amount allocationArgs settlementArgs = do
+  let terms = request.terms
+      account = basicAccount request.trader
+      settlement = liquiditySettlement route (depositId terms)
+      leg = transferLeg "lp-mint" mintAccount account route.lpToken amount
+  checkSwapAllocation route.lpToken settlement account terms.settlementDeadline
+    [] (iterationFunding route.lpToken 0.0) (minimumMetadata minLpOutKey terms.minLpOut) request.lpAllocation
+  now <- getTime
+  (mintAllocation, _) <- allocate route.lpToken settlement mintAccount now terms.settlementDeadline
+    [senderSide leg] None emptyMetadata [] allocationArgs
+  (received, _) <- settlePair route.lpToken settlement [leg] request.lpAllocation [receiverSide leg] mintAllocation [] settlementArgs
+  total <- holdingTotal route.lpToken account received
+  assertMsg "LP mint delivery mismatch" (total == amount)
+
+settleWithdrawalAsset : Token -> H.Account -> Party -> A.SettlementInfo -> Time -> Text -> Text
+  -> Decimal -> Decimal -> Decimal -> [ContractId H.Holding] -> ContractId A.Allocation
+  -> ExtraArgs -> ExtraArgs -> Update [ContractId H.Holding]
+settleWithdrawalAsset token poolAccount trader settlement deadline label minimumKey minimum amount reserve holdings traderAllocation allocationArgs settlementArgs = do
+  let account = basicAccount trader
+      leg = transferLeg (label <> "-withdrawal") poolAccount account token amount
+  checkSwapAllocation token settlement account deadline [] (iterationFunding token 0.0)
+    (minimumMetadata minimumKey minimum) traderAllocation
+  now <- getTime
+  (poolAllocation, change) <- allocate token settlement poolAccount now deadline []
+    (iterationFunding token reserve) emptyMetadata holdings allocationArgs
+  (_, retained) <- settlePair token settlement [leg] traderAllocation [receiverSide leg]
+    poolAllocation [senderSide leg] settlementArgs
+  pure (change <> retained)
+
+settleBurn : LiquidityRoute pool -> WithdrawalRequest pool -> ExtraArgs -> ExtraArgs -> Update ()
+settleBurn route request allocationArgs settlementArgs = do
+  let terms = request.terms
+      settlement = liquiditySettlement route (withdrawalId terms)
+      account = basicAccount request.trader
+      leg = transferLeg "lp-burn" account burnAccount route.lpToken terms.lpAmount
+  checkSwapAllocation route.lpToken settlement account terms.settlementDeadline [senderSide leg] None emptyMetadata request.lpAllocation
+  now <- getTime
+  (burnAllocation, _) <- allocate route.lpToken settlement burnAccount now terms.settlementDeadline [receiverSide leg] None emptyMetadata [] allocationArgs
+  (received, retained) <- settlePair route.lpToken settlement [leg] request.lpAllocation [] burnAllocation [] settlementArgs
+  assertMsg "LP burn produced holdings" (null received && null retained)

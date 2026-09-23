@@ -2,20 +2,21 @@
 -- Original work: Copyright (c) 2026 Moonsong Labs.
 -- https://github.com/Moonsong-Labs/canton-vaults/tree/main/patterns/01-vault-access
 
--- | Gives a trader permission to request swaps in one pool.
--- Checks their KYC approval and locks their input tokens for later settlement.
+-- | Authorizes trader operations in one pool while access and KYC remain active.
 module PoolAccess where
 
 import Errors
 import KycAttestation
 import Pool
+import Lib.Liquidity
 import Lib.Swap
 import Lib.Tokens
-import DA.Assert (assertWithinDeadline)
-import DA.TextMap qualified as TextMap
+import DA.Assert (assertWithinDeadline, assertDeadlineExceeded)
+import DA.List (dedup)
+import Splice.Api.Token.AllocationV2 qualified as A
 import Splice.Api.Token.HoldingV2 qualified as H
-import Splice.Api.Token.MetadataV1 (ExtraArgs)
-import Splice.TokenStandard.Utils (basicAccount, senderSide, receiverSide)
+import Splice.Api.Token.MetadataV1 (ExtraArgs, emptyMetadata)
+import Splice.TokenStandard.Utils (basicAccount, toAnyContractId)
 
 template PoolAccess
   with
@@ -42,11 +43,80 @@ template PoolAccess
         let (inputToken, outputToken, _, _) = directionRoute route terms.direction
             settlement = swapSettlement route terms
         (inputAllocation, _) <- allocate inputToken settlement (basicAccount trader)
-          requestedAt terms.settlementDeadline [senderSide (inputLeg route trader terms)] None inputHoldingCids inputAllocationArgs
+          requestedAt terms.settlementDeadline [] (iterationFunding inputToken terms.amountIn)
+          (minimumMetadata minOutKey terms.minOut) inputHoldingCids inputAllocationArgs
         (outputAllocation, _) <- allocate outputToken settlement (basicAccount trader)
-          requestedAt terms.settlementDeadline (map receiverSide (minimumOutputLegs route trader terms))
-          (Some TextMap.empty) [] outputAllocationArgs
+          requestedAt terms.settlementDeadline [] (iterationFunding outputToken 0.0) emptyMetadata [] outputAllocationArgs
         pure SwapRequest with poolCid; trader; terms; inputAllocation; outputAllocation
+
+    nonconsuming choice PoolAccess_RequestLiquidityDeposit : DepositRequest Pool
+      with
+        terms : DepositTerms
+        requestedAt : Time
+        baseHoldingCids : [ContractId H.Holding]
+        quoteHoldingCids : [ContractId H.Holding]
+        baseAllocationArgs : ExtraArgs
+        quoteAllocationArgs : ExtraArgs
+        lpAllocationArgs : ExtraArgs
+      controller trader
+      do
+        pool <- validatePoolAccess this
+        requestDeposit (liquidityRoute pool poolCid) trader terms requestedAt baseHoldingCids quoteHoldingCids
+          baseAllocationArgs quoteAllocationArgs lpAllocationArgs
+
+    nonconsuming choice PoolAccess_RequestLiquidityWithdrawal : WithdrawalRequest Pool
+      with
+        terms : WithdrawalTerms
+        requestedAt : Time
+        lpHoldingCids : [ContractId H.Holding]
+        baseAllocationArgs : ExtraArgs
+        quoteAllocationArgs : ExtraArgs
+        lpAllocationArgs : ExtraArgs
+      controller trader
+      do
+        pool <- validatePoolAccess this
+        requestWithdrawal (liquidityRoute pool poolCid) trader terms requestedAt lpHoldingCids
+          baseAllocationArgs quoteAllocationArgs lpAllocationArgs
+
+    nonconsuming choice PoolAccess_RecoverAllocations : [A.AllocationResult]
+      with withdrawals : [AllocationWithdrawal]
+      controller trader
+      do
+        _ <- validatePoolAccess this
+        validateWithdrawalList withdrawals
+        forA withdrawals $ \withdrawal -> do
+          allocation <- view <$> fetch withdrawal.allocationCid
+          validateWithdrawal poolCid trader allocation
+          result <- exercise withdrawal.allocationCid A.Allocation_Withdraw with
+            actors = [trader]; extraArgs = withdrawal.extraArgs
+          requireWithdrawalComplete result
+          pure result
+
+validatePoolAccess : PoolAccess -> Update Pool
+validatePoolAccess access = do
+  validateAttestation access
+  pool <- fetch access.poolCid
+  assertMsg eAccessRequestMismatch (pool.venueOperator == access.venueOperator)
+  pure pool
+
+validateWithdrawalList : [AllocationWithdrawal] -> Update ()
+validateWithdrawalList withdrawals = do
+  let allocationCids = map (.allocationCid) withdrawals
+  assertMsg eInvalidWithdrawalSize (not (null allocationCids))
+  assertMsg eDuplicateWithdrawalAllocation (length allocationCids == length (dedup allocationCids))
+
+-- | The trader may recover only their expired allocations for this pool.
+validateWithdrawal : ContractId Pool -> Party -> A.AllocationView -> Update ()
+validateWithdrawal poolCid trader allocation = do
+  assertMsg eWithdrawalAccountMismatch (allocation.allocation.authorizer == basicAccount trader)
+  assertMsg eWithdrawalPoolMismatch (allocation.settlement.cid == Some (toAnyContractId poolCid))
+  case allocation.allocation.settlementDeadline of
+    Some deadline -> assertDeadlineExceeded allocationSettlementDeadlineLabel deadline
+    None -> abort eWithdrawalDeadlineRequired
+
+requireWithdrawalComplete : A.AllocationResult -> Update ()
+requireWithdrawalComplete result =
+  assertMsg eTokenWithdrawalIncomplete (result.output == A.AllocationResult_Withdrawn)
 
 -- | Check access, route, timing and token amounts before locking any input.
 validateSwapRequest : PoolAccess -> SwapRoute Pool -> SwapTerms -> Time -> [ContractId H.Holding] -> Update ()

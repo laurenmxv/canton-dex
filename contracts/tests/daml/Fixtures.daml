@@ -1,11 +1,16 @@
 module Fixtures where
 
 import Daml.Script
-import Splice.Api.Token.HoldingV2 (Account(..), InstrumentId(..))
+import Splice.Api.Token.HoldingV2 (InstrumentId(..))
 import KycAttestation
 import Pool
 import PoolAccess
 import PoolFactory
+import Lib.Tokens
+import DA.Time (days, hours)
+import OpenZeppelin.TokenCIP112V1.Registry (TokenRules(..))
+import Splice.Api.Token.AllocationInstructionV2 qualified as AI
+import Splice.Api.Token.AllocationV2 qualified as A
 
 data Parties = Parties with
     dvo : Party
@@ -22,29 +27,43 @@ allocateParties () = do
   quoteRegistrar <- allocateParty "QUOTE_REGISTRAR"
   pure Parties with ..
 
-settingsFor : Parties -> PoolSettings
-settingsFor parties = PoolSettings with
-  dvo = parties.dvo
-  baseInstrumentId = InstrumentId with admin = parties.baseRegistrar; id = "BASE"
-  quoteInstrumentId = InstrumentId with admin = parties.quoteRegistrar; id = "QUOTE"
-  baseAccount = Account with owner = Some parties.dvo; provider = None; id = "base"
-  quoteAccount = Account with owner = Some parties.dvo; provider = None; id = "quote"
-  lpTokenInstrumentId = InstrumentId with admin = parties.dvo; id = "LP"
-  feeBps = 30.0
-  baseReserve = 997.0
-  quoteReserve = 1000.0
-  lpTokenSupply = 1000.0
+settingsFor : Parties -> Script PoolSettings
+settingsFor parties = do
+  identity <- allocateParty "PoolIdentity"
+  let rules admin = TokenRules with admin; maxTTL = days 1; lockGrace = hours 1
+  baseRules <- submit parties.baseRegistrar $ createCmd (rules parties.baseRegistrar)
+  quoteRules <- submit parties.quoteRegistrar $ createCmd (rules parties.quoteRegistrar)
+  lpRules <- submit parties.dvo $ createCmd (rules parties.dvo)
+  let token admin id cid = Token with
+        instrument = InstrumentId with admin; id
+        allocationFactory = toInterfaceContractId @AI.AllocationFactory cid
+        settlementFactory = toInterfaceContractId @A.SettlementFactory cid
+        decimals = 6
+  pure PoolSettings with
+    dvo = parties.dvo
+    poolId = show identity
+    baseToken = token parties.baseRegistrar "BASE" baseRules
+    quoteToken = token parties.quoteRegistrar "QUOTE" quoteRules
+    lpAllocationFactory = toInterfaceContractId @AI.AllocationFactory lpRules
+    lpSettlementFactory = toInterfaceContractId @A.SettlementFactory lpRules
+    feeBps = 30.0
 
 poolFixture : Parties -> Script (ContractId PoolFactory, PoolContracts)
-poolFixture parties = poolFixtureWithSettings parties (settingsFor parties)
+poolFixture parties = do
+  settings <- settingsFor parties
+  poolFixtureWithSettings parties settings
 
 poolFixtureWithSettings : Parties -> PoolSettings -> Script (ContractId PoolFactory, PoolContracts)
-poolFixtureWithSettings parties settings = do
+poolFixtureWithSettings parties settings = poolFixtureAtRatio parties settings 1.0030090270
+
+poolFixtureAtRatio : Parties -> PoolSettings -> Decimal -> Script (ContractId PoolFactory, PoolContracts)
+poolFixtureAtRatio parties settings initialRatio = do
   factoryCid <- submit parties.dvo $ createCmd PoolFactory with
     dvo = parties.dvo; venueOperator = parties.venueOperator
   proposalCid <- submit parties.venueOperator $
     exerciseCmd factoryCid PoolFactory_ProposePool with settings
-  contracts <- submit parties.dvo $ exerciseCmd proposalCid PoolProposal_Accept
+  contracts <- submit (actAs parties.dvo <> readAs [parties.baseRegistrar, parties.quoteRegistrar]) $
+    exerciseCmd proposalCid PoolProposal_Accept with initialRatio
   pure (factoryCid, contracts)
 
 accessFixture : Party -> Party -> ContractId Pool

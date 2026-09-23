@@ -52,7 +52,7 @@ eDelegationAuthorityMismatch : Text
 eDelegationAuthorityMismatch = "Delegation pool authority mismatch"
 
 eAccessRequestMismatch : Text
-eAccessRequestMismatch = "Access does not match swap request"
+eAccessRequestMismatch = "Access does not match request"
 
 -- Pool state, funding and batches
 
@@ -64,12 +64,6 @@ eInvalidBatchSize = "Batch must contain between one and twenty requests"
 
 eDuplicateAllocation : Text
 eDuplicateAllocation = "Duplicate allocation"
-
-ePoolAlreadyFunded : Text
-ePoolAlreadyFunded = "Pool is already funded"
-
-eFundingInstrumentMismatch : Text
-eFundingInstrumentMismatch = "Funding instrument mismatch"
 
 eInvalidFee : Text
 eInvalidFee = "Fee must be between 0 and 10000 bps"
@@ -98,7 +92,7 @@ eQuoteReserveNotBacked = "Quote reserve is not backed"
 -- Withdrawals
 
 eInvalidWithdrawalSize : Text
-eInvalidWithdrawalSize = "Withdrawal accepts one or two allocations"
+eInvalidWithdrawalSize = "Invalid number of withdrawal allocations"
 
 eDuplicateWithdrawalAllocation : Text
 eDuplicateWithdrawalAllocation = "Duplicate withdrawal allocation"
@@ -155,6 +149,12 @@ eInvalidSignedAmountPrecision = "Invalid signed amount precision"
 eSwapBelowMinimumOutput : Text
 eSwapBelowMinimumOutput = "Swap below minimum output"
 
+eInitialLiquidityBatch : Text
+eInitialLiquidityBatch = "initial liquidity must settle individually"
+
+eDepositBelowMinimumOutput : Text
+eDepositBelowMinimumOutput = "deposit below minimum LP output"
+
 ePoolInputDeltaMismatch : Text
 ePoolInputDeltaMismatch = "Pool input delta mismatch"
 
@@ -186,3 +186,6 @@ settlementDeadlineLabel = "settlement deadline"
 
 allocationSettlementDeadlineLabel : Text
 allocationSettlementDeadlineLabel = "allocation settlement deadline"
+
+eWithdrawalBelowMinimumOutput : Text
+eWithdrawalBelowMinimumOutput = "withdrawal below signed minimum"

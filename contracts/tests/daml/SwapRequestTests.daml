@@ -12,14 +12,14 @@ import Errors
 import Test.Assertions
 import Fixtures (accessFixture, createdContracts, poolFixture)
 import FundedSwaps
-import Lib.Tokens (allocationSpec, emptyArgs)
+import Lib.Tokens (allocationSpec, emptyArgs, iterationFunding, minimumMetadata, minOutKey)
 import Pool
 import PoolAccess
 import VenueDelegation
 import Splice.Api.Token.AllocationInstructionV2 qualified as AI
 import Splice.Api.Token.AllocationV2 qualified as A
 import Splice.Api.Token.MetadataV1 (emptyMetadata)
-import Splice.TokenStandard.Utils (basicAccount, senderSide, receiverSide, toAnyContractId)
+import Splice.TokenStandard.Utils (basicAccount, senderSide, toAnyContractId)
 import Lib.Swap
 
 template OperatorMarker
@@ -102,13 +102,13 @@ requestRequiresTraderAndUsesOneExerciseRoot = script do
   request.poolCid === f.pool.poolCid
   availableBalance trader f.route.baseToken.instrument >>= (=== 0.0)
   setTime (addRelTime request.terms.settlementDeadline (seconds 1))
-  let withdrawArgs = Pool_WithdrawSwap with
-        trader; withdrawals = map withdrawal [request.inputAllocation, request.outputAllocation]
-  submitMustFail (actAs f.parties.venueOperator <> discloseMany disclosures) $ exerciseCmd f.pool.poolCid withdrawArgs
+  let withdrawArgs = PoolAccess_RecoverAllocations with
+        withdrawals = map withdrawal [request.inputAllocation, request.outputAllocation]
+  submitMustFail (actAs f.parties.venueOperator <> discloseMany disclosures) $ exerciseCmd accessCid withdrawArgs
   (results, withdrawTree) <- submitResultAndTree (actAs trader <> discloseMany disclosures) $
-    exerciseCmd f.pool.poolCid withdrawArgs
+    exerciseCmd accessCid withdrawArgs
   [ExercisedEvent withdrawRoot] <- pure withdrawTree.rootEvents
-  withdrawRoot.choice === "Pool_WithdrawSwap"
+  withdrawRoot.choice === "PoolAccess_RecoverAllocations"
   map (.output) results === [A.AllocationResult_Withdrawn, A.AllocationResult_Withdrawn]
   availableBalance trader f.route.baseToken.instrument >>= (=== 10.0)
   Some _ <- queryContractId trader accessCid
@@ -167,7 +167,7 @@ hostileCallbackNeedsOperator attackOnFetch = do
         settlement = swapSettlement f.route args.terms
         requestedAt = args.requestedAt; inputHoldingCids = args.inputHoldingCids
         allocation = allocationSpec token (basicAccount trader) args.terms.settlementDeadline
-          [senderSide (inputLeg f.route trader args.terms)] None
+          [senderSide (inputLeg f.route trader args.terms)] None emptyMetadata
         actors = [trader, operator]; extraArgs = emptyArgs
     let AI.AllocationInstructionResult_Completed allocationCid = result.output
     Some _ <- queryInterfaceContractId @A.Allocation trader allocationCid
@@ -175,11 +175,11 @@ hostileCallbackNeedsOperator attackOnFetch = do
   markers <- query @OperatorMarker operator
   length markers === 1
 
-withdrawalDropsPoolAuthorityBeforeTokenCallback : Script ()
-withdrawalDropsPoolAuthorityBeforeTokenCallback = script do
+withdrawalDropsAccessAuthorityBeforeTokenCallback : Script ()
+withdrawalDropsAccessAuthorityBeforeTokenCallback = script do
   f <- setup ()
   trader <- allocateParty "WithdrawalCallbackTrader"
-  let operator = f.parties.dvo
+  let operator = f.parties.venueOperator
   prepared <- prepare f trader "withdrawal-callback" BaseToQuote 10.0 0.0
   let request = prepared.request
   Some allocationView <- queryInterfaceContractId @A.Allocation trader request.inputAllocation
@@ -188,8 +188,8 @@ withdrawalDropsPoolAuthorityBeforeTokenCallback = script do
   disclosures <- rulesDisclosures f
   let allocation = toInterfaceContractId @A.Allocation hostile
   rejected <- trySubmit (actAs trader <> discloseMany disclosures) $
-    exerciseCmd f.pool.poolCid Pool_WithdrawSwap with
-      trader; withdrawals = [AllocationWithdrawal with allocationCid = allocation; extraArgs = emptyArgs]
+    exerciseCmd prepared.accessCid PoolAccess_RecoverAllocations with
+      withdrawals = [AllocationWithdrawal with allocationCid = allocation; extraArgs = emptyArgs]
   case rejected of
     Left AuthorizationError {} -> pure ()
     _ -> abort eExpectedWithdrawalAuthorizationFailure
@@ -222,8 +222,8 @@ repeatedRequestIdKeepsAllocationsSeparate = script do
           && receipt.outputAllocation == request.outputAllocation) receipts
     length matches === 1
 
-signedNativeLegsRejectAlteredTerms : Script ()
-signedNativeLegsRejectAlteredTerms = script do
+signedAllocationsRejectAlteredTerms : Script ()
+signedAllocationsRejectAlteredTerms = script do
   f <- setup ()
   trader <- allocateParty "SignedTermsTrader"
   prepared <- prepare f trader "signed-terms" BaseToQuote 1000.0 490.0
@@ -234,9 +234,9 @@ signedNativeLegsRejectAlteredTerms = script do
   input.settlement.cid === Some (toAnyContractId f.pool.poolCid)
   input.settlement === output.settlement
   input.allocation === allocationSpec f.route.baseToken (basicAccount trader) terms.settlementDeadline
-    [senderSide (inputLeg f.route trader terms)] None
+    [] (iterationFunding f.route.baseToken terms.amountIn) (minimumMetadata minOutKey terms.minOut)
   output.allocation === allocationSpec f.route.quoteToken (basicAccount trader) terms.settlementDeadline
-    (map receiverSide (minimumOutputLegs f.route trader terms)) (Some TextMap.empty)
+    [] (iterationFunding f.route.quoteToken 0.0) emptyMetadata
   disclosures <- settlementDisclosures f f.pool.stateCid
   before <- queryContractId f.parties.dvo f.pool.stateCid
   forA_
@@ -266,6 +266,26 @@ signedNativeLegsRejectAlteredTerms = script do
   result <- settle f f.pool.stateCid "signed-original" [prepared]
   result.amountsOut === [500.0]
   availableBalance trader f.route.quoteToken.instrument >>= (=== 500.0)
+
+swapRequiresSignedMinimumMetadata : Script ()
+swapRequiresSignedMinimumMetadata = script do
+  f <- setup ()
+  trader <- allocateParty "SwapMinimumMetadataTrader"
+  prepared <- prepare f trader "minimum-metadata" BaseToQuote 10.0 1.0
+  let request = prepared.request
+  disclosures <- settlementDisclosures f f.pool.stateCid
+  before <- queryContractId f.parties.dvo f.pool.stateCid
+  forA_ [emptyMetadata, minimumMetadata minOutKey 0.0] $ \meta -> do
+    input <- mint f.baseRulesCid f.parties.baseRegistrar (basicAccount trader) "BASE" 10.0
+    replacement <- allocationWithMetadata f trader f.route.baseToken request.inputAllocation meta [input]
+    submitFailsWith eAllocationTermsMismatch (actAs f.parties.venueOperator <> discloseMany disclosures) $
+      exerciseCmd f.delegationCid VenueDelegation_SettleBatch with
+        configCid = f.pool.configCid; stateCid = f.pool.stateCid; batchId = "invalid-minimum-metadata"
+        requests = [settlementRequest (prepared with request = request with inputAllocation = replacement)]
+    queryContractId f.parties.dvo f.pool.stateCid >>= (=== before)
+    assertPending prepared
+  result <- settle f f.pool.stateCid "valid-minimum-metadata" [prepared]
+  result.amountsOut === [9.900990]
 
 settlementUsesStablePoolAndOneStateSuccessor : Script ()
 settlementUsesStablePoolAndOneStateSuccessor = script do
@@ -298,8 +318,8 @@ settlementUsesStablePoolAndOneStateSuccessor = script do
   receipts <- query @SwapReceipt trader
   length receipts === 1
 
-revokedAccessPreventsSettlementButNotRecovery : Script ()
-revokedAccessPreventsSettlementButNotRecovery = script do
+revokedAccessPreventsSettlementAndDexRecovery : Script ()
+revokedAccessPreventsSettlementAndDexRecovery = script do
   f <- setup ()
   trader <- allocateParty "RevokedAccessTrader"
   prepared <- prepare f trader "revoked-access" BaseToQuote 10.0 0.0
@@ -311,10 +331,12 @@ revokedAccessPreventsSettlementButNotRecovery = script do
       requests = [settlementRequest prepared]
   assertPending prepared
   setTime (addRelTime prepared.request.terms.settlementDeadline (seconds 1))
-  results <- submit (actAs trader <> discloseMany disclosures) $
-    exerciseCmd f.pool.poolCid Pool_WithdrawSwap with
-      trader; withdrawals = map withdrawal [prepared.request.inputAllocation, prepared.request.outputAllocation]
-  map (.output) results === [A.AllocationResult_Withdrawn, A.AllocationResult_Withdrawn]
+  submitMustFail (actAs trader <> discloseMany disclosures) $
+    exerciseCmd prepared.accessCid PoolAccess_RecoverAllocations with
+      withdrawals = map withdrawal [prepared.request.inputAllocation, prepared.request.outputAllocation]
+  forA_ [prepared.request.inputAllocation, prepared.request.outputAllocation] $ \cid -> do
+    result <- submit trader $ exerciseCmd cid A.Allocation_Withdraw with actors = [trader]; extraArgs = emptyArgs
+    result.output === A.AllocationResult_Withdrawn
   availableBalance trader f.route.baseToken.instrument >>= (=== 10.0)
 
 settlementIdCommitsEverySignedTerm : Script ()
@@ -325,6 +347,9 @@ settlementIdCommitsEverySignedTerm = script do
   settlementId prepared.request.terms === "swap:request:BaseToQuote:100000000000:5000000000:1767226200000000"
   settlementId (prepared.request.terms with amountIn = 9999999999999999999999999999.9999999999; minOut = 1000000000.0)
     === "swap:request:BaseToQuote:99999999999999999999999999999999999999:10000000000000000000:1767226200000000"
+  forA_ [(0.0, "0"), (1.0, "1"), (0.5, "0.5")] $ \(amount, text) ->
+    (minimumMetadata minOutKey amount).values
+      === TextMap.singleton "dex.reference.openzeppelin.com/min-out-amount" text
 
 allocationPairCannotMixDifferentSignedTerms : Script ()
 allocationPairCannotMixDifferentSignedTerms = script do

@@ -10,7 +10,7 @@ import DA.Text qualified as Text
 import DA.TextMap qualified as TextMap
 import Splice.Api.Token.AllocationV2 qualified as A
 import Splice.Api.Token.HoldingV2 qualified as H
-import Splice.Api.Token.MetadataV1 (ExtraArgs, emptyMetadata)
+import Splice.Api.Token.MetadataV1 (ExtraArgs, Metadata, emptyMetadata)
 import Splice.TokenStandard.Utils (basicAccount, senderSide, receiverSide, toAnyContractId, nonIteratedAllocation)
 import Lib.Math
 import Lib.Tokens
@@ -105,20 +105,13 @@ inputLeg route trader terms =
   let (token, _, poolInput, _) = directionRoute route terms.direction
   in transferLeg "input" (basicAccount trader) poolInput token terms.amountIn
 
--- | Fix the minimum receipt; a zero minimum needs no initial receiver leg.
-minimumOutputLegs : SwapRoute pool -> Party -> SwapTerms -> [A.TransferLeg]
-minimumOutputLegs route trader terms =
-  let (_, token, _, poolOutput) = directionRoute route terms.direction
-  in if terms.minOut == 0.0 then []
-     else [transferLeg "minimum-output" poolOutput (basicAccount trader) token terms.minOut]
-
 -- | Construct a standard token transfer leg without DEX-specific metadata.
 transferLeg : Text -> H.Account -> H.Account -> Token -> Decimal -> A.TransferLeg
 transferLeg transferLegId sender receiver token amount = A.TransferLeg with
   transferLegId; sender; receiver; amount; instrumentId = token.instrument.id; meta = emptyMetadata
 
 -- | Price and settle one previously locked request, verifying the resulting reserve deltas.
--- The minimum receiver leg stays unchanged; any excess is an additional receiver leg.
+-- Signed funding and metadata bind the request; finalization supplies the complete transfer legs.
 settleRequest : SwapRoute pool -> Decimal -> Decimal -> Decimal
   -> [ContractId H.Holding] -> [ContractId H.Holding] -> BatchRequest pool -> Update SwapResult
 settleRequest route feeBps baseReserve quoteReserve baseHoldings quoteHoldings batchRequest = do
@@ -131,23 +124,20 @@ settleRequest route feeBps baseReserve quoteReserve baseHoldings quoteHoldings b
         QuoteToBase -> (quoteReserve, baseReserve, quoteHoldings, baseHoldings)
       amountOut = swapOutputAtScale outputToken.decimals feeBps reserveIn reserveOut terms.amountIn
       input = inputLeg route request.trader terms
-      minimumOutput = minimumOutputLegs route request.trader terms
+      output = transferLeg "output" poolOutput (basicAccount request.trader) outputToken amountOut
   validateSettlementRequest route request amountOut
   checkSwapAllocation inputToken settlement (basicAccount request.trader) terms.settlementDeadline
-    [senderSide input] None request.inputAllocation
+    [] (iterationFunding inputToken terms.amountIn) (minimumMetadata minOutKey terms.minOut) request.inputAllocation
   checkSwapAllocation outputToken settlement (basicAccount request.trader) terms.settlementDeadline
-    (map receiverSide minimumOutput) (Some TextMap.empty) request.outputAllocation
-  let bonus = if amountOut == terms.minOut then [] else
-        [transferLeg "bonus-output" poolOutput (basicAccount request.trader) outputToken (amountOut - terms.minOut)]
-      outputLegs = minimumOutput <> bonus
+    [] (iterationFunding outputToken 0.0) emptyMetadata request.outputAllocation
   requestedAt <- getTime
   -- Include existing reserves so the registry consolidates unused inputs.
   (poolInputAllocation, inputChange) <- allocate inputToken settlement poolInput requestedAt terms.settlementDeadline
-    [receiverSide input] None inputHoldings batchRequest.poolInputAllocationArgs
+    [receiverSide input] None emptyMetadata inputHoldings batchRequest.poolInputAllocationArgs
   (poolOutputAllocation, outputChange) <- allocate outputToken settlement poolOutput requestedAt terms.settlementDeadline
-    (map senderSide outputLegs) None outputHoldings batchRequest.poolOutputAllocationArgs
-  receivedInput <- settleSwapLeg inputToken settlement [input] request.inputAllocation [] poolInputAllocation batchRequest.inputSettlementArgs
-  receivedOutput <- settleSwapLeg outputToken settlement outputLegs request.outputAllocation (map receiverSide bonus) poolOutputAllocation batchRequest.outputSettlementArgs
+    [senderSide output] None emptyMetadata outputHoldings batchRequest.poolOutputAllocationArgs
+  receivedInput <- settleSwapLeg inputToken settlement [input] request.inputAllocation [senderSide input] poolInputAllocation batchRequest.inputSettlementArgs
+  receivedOutput <- settleSwapLeg outputToken settlement [output] request.outputAllocation [receiverSide output] poolOutputAllocation batchRequest.outputSettlementArgs
   let nextInput = inputChange <> receivedInput
       nextOutput = outputChange <> receivedOutput
   inputTotal <- holdingTotal inputToken poolInput nextInput
@@ -183,15 +173,15 @@ requireTraderDistinct : SwapRoute pool -> Party -> Update ()
 requireTraderDistinct route trader =
   assertMsg eTraderIsPoolExecutor (trader /= route.dvo && trader /= route.venueOperator)
 
--- | Require an uniterated trader allocation matching the expected settlement and terms.
--- Match the trader-approved legs and any permission to add receiver legs.
+-- | Require a fresh trader allocation matching the expected settlement and terms.
+-- Match the signed funding, minimum metadata and any fixed legs.
 checkSwapAllocation : Token -> A.SettlementInfo -> H.Account -> Time
-  -> [A.TransferLegSide] -> Optional (TextMap.TextMap Decimal) -> ContractId A.Allocation -> Update ()
-checkSwapAllocation token settlement account deadline sides reserve cid = do
+  -> [A.TransferLegSide] -> Optional (TextMap.TextMap Decimal) -> Metadata -> ContractId A.Allocation -> Update ()
+checkSwapAllocation token settlement account deadline sides reserve meta cid = do
   a <- view <$> fetch cid
   assertMsg eAllocationSettlementMismatch (a.settlement == settlement)
   assertMsg eAllocationTermsMismatch
-    (a.allocation == allocationSpec token account deadline sides reserve)
+    (a.allocation == allocationSpec token account deadline sides reserve meta)
   assertMsg eAllocationAlreadyIterated (a.numIterations == 0)
 
 -- | Settle one token's transfer legs and return the pool holdings produced by settlement.

@@ -5,58 +5,29 @@ import DA.Foldable (forA_)
 import Daml.Script
 import Errors
 import Test.Assertions
-import Fixtures
 import FundedSwaps
 import Pool
-import Splice.Api.Token.HoldingV2 qualified as H
-import Splice.Api.Token.AllocationV2 qualified as A
 import Lib.Swap
-import VenueDelegation
+import Splice.Api.Token.HoldingV2 qualified as H
 
 providerAccountsSupportFundedSwap : Script ()
 providerAccountsSupportFundedSwap = script do
   f <- setup ()
-  let poolAccount = H.Account with
-        owner = Some f.parties.dvo; provider = Some f.parties.venueOperator; id = ""
-      settings = (settingsFor f.parties) with baseAccount = poolAccount; quoteAccount = poolAccount
-  (_, pool) <- poolFixtureWithSettings f.parties settings
-  base <- mint f.baseRulesCid f.parties.baseRegistrar poolAccount "BASE" 997.0
-  quote <- mint f.quoteRulesCid f.parties.quoteRegistrar poolAccount "QUOTE" 1000.0
-  wrongBase <- mint f.baseRulesCid f.parties.baseRegistrar (poolAccount with provider = None) "BASE" 997.0
-  let funding = PoolFunding with
-        baseToken = f.route.baseToken; quoteToken = f.route.quoteToken
-        baseHoldingCids = [base]; quoteHoldingCids = [quote]
-  Some unfunded <- queryContractId f.parties.dvo pool.stateCid
-  disclosures <- rulesDisclosures f
-  -- The owner, instrument, id, and amount match; a different provider is a different account.
-  submitFailsWith eHoldingAccountMismatch (actAs f.parties.dvo <> discloseMany disclosures) $
-    exerciseCmd pool.poolCid Pool_Fund with
-      configCid = pool.configCid; stateCid = pool.stateCid
-      funding = funding with baseHoldingCids = [wrongBase]
-  queryContractId f.parties.dvo pool.stateCid >>= (=== Some unfunded)
-  stateCid <- submit (actAs f.parties.dvo <> discloseMany disclosures) $
-    exerciseCmd pool.poolCid Pool_Fund with
-      configCid = pool.configCid; stateCid = pool.stateCid; funding
-  delegationCid <- submit f.parties.dvo $ createCmd VenueDelegation with
-    dvo = f.parties.dvo; venueOperator = f.parties.venueOperator; poolCid = pool.poolCid
-  let candidate = f with
-        pool = (pool with stateCid)
-        route = (f.route with poolCid = pool.poolCid; baseAccount = poolAccount; quoteAccount = poolAccount)
-        delegationCid
-  initial <- assertBacking candidate stateCid
-  initial.baseReserve === 997.0
-  initial.quoteReserve === 1000.0
+  Some pool <- queryContractId f.parties.dvo f.pool.poolCid
+  pool.baseAccount.owner === Some f.parties.dvo
+  pool.baseAccount.provider === Some f.parties.venueOperator
   trader <- allocateParty "ProviderAccountTrader"
-  request <- prepare candidate trader "provider-account-swap" BaseToQuote 1000.0 500.0
-  result <- settle candidate stateCid "provider-account-batch" [request]
+  request <- prepare f trader "provider-account-swap" BaseToQuote 1000.0 500.0
+  result <- settle f f.pool.stateCid "provider-account-batch" [request]
   result.amountsOut === [500.0]
-  final <- assertBacking candidate result.stateCid
-  final.baseReserve === 1997.0
-  final.quoteReserve === 500.0
-  availableBalance trader f.route.baseToken.instrument >>= (=== 0.0)
-  availableBalance trader f.route.quoteToken.instrument >>= (=== 500.0)
-  let Some finalFunding = final.funding
-  forA_ (finalFunding.baseHoldingCids <> finalFunding.quoteHoldingCids) $ \cid -> do
-    Some holding <- queryInterfaceContractId @H.Holding f.parties.dvo cid
-    holding.account === poolAccount
-  queryInterfaceContractId @A.Allocation trader request.request.inputAllocation >>= (=== None)
+  state <- assertBacking f result.stateCid
+  forA_ state.baseHoldingCids $ \cid -> do
+    Some holding <- queryInterfaceContractId @H.Holding f.parties.venueOperator cid
+    holding.account === pool.baseAccount
+  wrongBase <- mint f.baseRulesCid f.parties.baseRegistrar (pool.baseAccount with provider = None) "BASE" state.baseReserve
+  wrongState <- submit f.parties.dvo $ createCmd (state with baseHoldingCids = [wrongBase])
+  nextRequest <- prepare f trader "wrong-provider" BaseToQuote 1.0 0.0
+  submitFailsWith eHoldingAccountMismatch (actAs [f.parties.dvo, f.parties.venueOperator]) $
+    exerciseCmd f.pool.poolCid Pool_Swap with
+      configCid = f.pool.configCid; stateCid = wrongState; batchId = "wrong-provider"
+      requests = [batchRequest nextRequest.request]

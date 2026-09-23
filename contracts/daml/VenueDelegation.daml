@@ -1,17 +1,28 @@
--- | Lets the operator settle swaps with permission from the pool authority (dvo).
--- Rechecks each trader's access and KYC before calling the pool.
+-- | Lets the operator settle swaps and liquidity with permission from dvo.
+-- Every settlement rechecks the trader's access and KYC.
 module VenueDelegation where
 
 import Errors
 import DA.Foldable (forA_)
 import Pool
 import PoolAccess
+import Lib.Liquidity
 import Lib.Swap
 
 -- | Access evidence accompanies each locked request on the operator's delegated path.
 data SettlementRequest = SettlementRequest with
     accessCid : ContractId PoolAccess
     request : BatchRequest Pool
+  deriving (Eq, Show)
+
+data DepositSettlementRequest = DepositSettlementRequest with
+    accessCid : ContractId PoolAccess
+    request : DepositBatchRequest Pool
+  deriving (Eq, Show)
+
+data WithdrawalSettlementRequest = WithdrawalSettlementRequest with
+    accessCid : ContractId PoolAccess
+    request : WithdrawalBatchRequest Pool
   deriving (Eq, Show)
 
 template VenueDelegation
@@ -25,7 +36,7 @@ template VenueDelegation
     ensure dvo /= venueOperator
 
     -- | Recheck access and KYC, then authorize the pool's atomic settlement choice.
-    nonconsuming choice VenueDelegation_SettleBatch : BatchResult
+    nonconsuming choice VenueDelegation_SettleBatch : SwapBatchResult
       with
         configCid : ContractId PoolConfig
         stateCid : ContractId PoolState
@@ -35,6 +46,30 @@ template VenueDelegation
       do
         validateDelegatedRequests this requests
         exercise poolCid Pool_Swap with configCid; stateCid; requests = map (.request) requests; batchId
+
+    nonconsuming choice VenueDelegation_AddLiquidity : AddLiquidityBatchResult
+      with
+        configCid : ContractId PoolConfig
+        stateCid : ContractId PoolState
+        requests : [DepositSettlementRequest]
+      controller venueOperator
+      do
+        validateLiquidityDelegation this
+        forA_ requests $ \item ->
+          validateRequestAccess this item.request.request.trader item.accessCid
+        exercise poolCid Pool_AddLiquidity with configCid; stateCid; requests = map (.request) requests
+
+    nonconsuming choice VenueDelegation_WithdrawLiquidity : WithdrawLiquidityBatchResult
+      with
+        configCid : ContractId PoolConfig
+        stateCid : ContractId PoolState
+        requests : [WithdrawalSettlementRequest]
+      controller venueOperator
+      do
+        validateLiquidityDelegation this
+        forA_ requests $ \item ->
+          validateRequestAccess this item.request.request.trader item.accessCid
+        exercise poolCid Pool_WithdrawLiquidity with configCid; stateCid; requests = map (.request) requests
 
     -- | Remove this operator grant without changing the pool or its allocations.
     choice VenueDelegation_Revoke : ()
@@ -47,10 +82,18 @@ validateDelegatedRequests delegation requests = do
   pool <- fetch delegation.poolCid
   assertMsg eDelegationAuthorityMismatch
     (pool.dvo == delegation.dvo && pool.venueOperator == delegation.venueOperator)
-  forA_ requests $ \item -> do
-    access <- fetch item.accessCid
-    let request = item.request.request
-    assertMsg eAccessRequestMismatch
-      (access.trader == request.trader && access.poolCid == delegation.poolCid
-        && access.venueOperator == delegation.venueOperator)
-    validateAttestation access
+  forA_ requests $ \item ->
+    validateRequestAccess delegation item.request.request.trader item.accessCid
+
+validateRequestAccess : VenueDelegation -> Party -> ContractId PoolAccess -> Update ()
+validateRequestAccess delegation trader accessCid = do
+  access <- fetch accessCid
+  assertMsg eAccessRequestMismatch
+    (access.trader == trader && access.poolCid == delegation.poolCid
+      && access.venueOperator == delegation.venueOperator)
+  validateAttestation access
+
+validateLiquidityDelegation : VenueDelegation -> Update ()
+validateLiquidityDelegation delegation = do
+  pool <- fetch delegation.poolCid
+  assertMsg eDelegationAuthorityMismatch (pool.dvo == delegation.dvo && pool.venueOperator == delegation.venueOperator)

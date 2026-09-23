@@ -5,19 +5,24 @@ import DA.Assert ((===))
 import DA.Date (date, Month(Jan))
 import DA.Foldable (forA_)
 import DA.Optional (isNone)
-import DA.Time (addRelTime, days, hours, minutes, seconds, time)
+import DA.Time (addRelTime, minutes, seconds, time)
 import Daml.Script
 import Errors
 import Test.Assertions
 import Fixtures
-import Lib.Tokens (Token(..), emptyArgs)
+import Lib.Tokens (Token, emptyArgs)
+import Lib.Liquidity
+import Lib.Math (liquidityRatio)
+import DA.Numeric qualified as Numeric
 import OpenZeppelin.TokenCIP112V1.Holding (TokenHolding(..))
 import OpenZeppelin.TokenCIP112V1.Registry (TokenRules(..), TokenRules_Mint(..))
 import Pool
 import PoolAccess
 import PoolFactory (PoolContracts(..))
+import PoolFactory qualified
 import Splice.Api.Token.AllocationInstructionV2 qualified as AI
 import Splice.Api.Token.AllocationV2 qualified as A
+import Splice.Api.Token.MetadataV1 (Metadata)
 import Splice.Api.Token.HoldingV2 qualified as H
 import Splice.TokenStandard.Utils (accountParties, basicAccount)
 import Lib.Swap
@@ -30,6 +35,7 @@ data FundedFixture = FundedFixture with
     delegationCid : ContractId VenueDelegation
     baseRulesCid : ContractId TokenRules
     quoteRulesCid : ContractId TokenRules
+    lpRulesCid : ContractId TokenRules
   deriving (Eq, Show)
 
 data PreparedRequest = PreparedRequest with
@@ -44,47 +50,129 @@ setupWithReserves : Decimal -> Decimal -> Script FundedFixture
 setupWithReserves baseReserve quoteReserve = do
   setTime (time (date 2026 Jan 1) 0 0 0)
   parties <- allocateParties ()
-  let settings = (settingsFor parties) with baseReserve; quoteReserve
-      rules admin = TokenRules with admin; maxTTL = days 1; lockGrace = hours 1
-  (_, originalPool) <- poolFixtureWithSettings parties settings
-  baseRulesCid <- submit parties.baseRegistrar $ createCmd (rules parties.baseRegistrar)
-  quoteRulesCid <- submit parties.quoteRegistrar $ createCmd (rules parties.quoteRegistrar)
-  Some baseDisclosure <- queryDisclosure @TokenRules parties.baseRegistrar baseRulesCid
-  Some quoteDisclosure <- queryDisclosure @TokenRules parties.quoteRegistrar quoteRulesCid
-  let token instrument rulesCid = Token with
-        instrument; decimals = 6
-        allocationFactory = toInterfaceContractId @AI.AllocationFactory rulesCid
-        settlementFactory = toInterfaceContractId @A.SettlementFactory rulesCid
-      baseToken = token settings.baseInstrumentId baseRulesCid
-      quoteToken = token settings.quoteInstrumentId quoteRulesCid
-      route = SwapRoute with
-        poolCid = originalPool.poolCid; dvo = parties.dvo; venueOperator = parties.venueOperator
-        baseToken; quoteToken; baseAccount = settings.baseAccount; quoteAccount = settings.quoteAccount
-  baseHolding <- mint baseRulesCid parties.baseRegistrar settings.baseAccount "BASE" settings.baseReserve
-  quoteHolding <- mint quoteRulesCid parties.quoteRegistrar settings.quoteAccount "QUOTE" settings.quoteReserve
-  stateCid <- submit (actAs parties.dvo <> discloseMany [baseDisclosure, quoteDisclosure]) $
-    exerciseCmd originalPool.poolCid Pool_Fund with
-      configCid = originalPool.configCid; stateCid = originalPool.stateCid
-      funding = PoolFunding with
-        baseToken; quoteToken; baseHoldingCids = [baseHolding]; quoteHoldingCids = [quoteHolding]
+  settings <- settingsFor parties
+  let ratio = liquidityRatio 10 Numeric.RoundingFloor quoteReserve 1.0 baseReserve
+  (_, pool) <- poolFixtureAtRatio parties settings ratio
+  f <- emptyFixture parties pool settings
+  seeder <- allocateParty "InitialLP"
+  (accessCid, request) <- prepareDeposit f seeder "initial-liquidity" InitializeOnly baseReserve quoteReserve
+  result <- settleDeposit f pool.stateCid accessCid request
+  pure f with pool = pool with stateCid = result.stateCid
+
+emptyFixture : Parties -> PoolContracts -> PoolFactory.PoolSettings -> Script FundedFixture
+emptyFixture parties pool settings = do
+  Some poolValue <- queryContractId parties.dvo pool.poolCid
+  let route = SwapRoute with
+        poolCid = pool.poolCid; dvo = parties.dvo; venueOperator = parties.venueOperator
+        baseToken = poolValue.baseToken; quoteToken = poolValue.quoteToken
+        baseAccount = poolValue.baseAccount; quoteAccount = poolValue.quoteAccount
   delegationCid <- submit parties.dvo $ createCmd VenueDelegation with
-    dvo = parties.dvo; venueOperator = parties.venueOperator; poolCid = originalPool.poolCid
-  pure FundedFixture with parties; pool = (originalPool with stateCid); route; delegationCid; baseRulesCid; quoteRulesCid
+    dvo = parties.dvo; venueOperator = parties.venueOperator; poolCid = pool.poolCid
+  pure FundedFixture with
+    parties; pool; route; delegationCid
+    baseRulesCid = fromInterfaceContractId settings.baseToken.allocationFactory
+    quoteRulesCid = fromInterfaceContractId settings.quoteToken.allocationFactory
+    lpRulesCid = fromInterfaceContractId settings.lpAllocationFactory
+
+liquidityArgs : LiquidityTokenArgs
+liquidityArgs = LiquidityTokenArgs with
+  baseAllocationArgs = emptyArgs; quoteAllocationArgs = emptyArgs; lpAllocationArgs = emptyArgs
+  baseSettlementArgs = emptyArgs; quoteSettlementArgs = emptyArgs; lpSettlementArgs = emptyArgs
+
+prepareDeposit : FundedFixture -> Party -> Text -> DepositMode -> Decimal -> Decimal
+  -> Script (ContractId PoolAccess, DepositRequest Pool)
+prepareDeposit f trader requestId mode maxBaseAmount maxQuoteAmount = do
+  (_, accessCid) <- accessFixture f.parties.venueOperator trader f.pool.poolCid
+  base <- mint f.baseRulesCid f.parties.baseRegistrar (basicAccount trader) "BASE" maxBaseAmount
+  quote <- mint f.quoteRulesCid f.parties.quoteRegistrar (basicAccount trader) "QUOTE" maxQuoteAmount
+  requestedAt <- getTime
+  let terms = DepositTerms with
+        requestId; mode; maxBaseAmount; maxQuoteAmount; minLpOut = 0.0
+        minRatio = 0.0000000001; maxRatio = 1000000.0
+        settlementDeadline = addRelTime requestedAt (minutes 10)
+  disclosures <- rulesDisclosures f
+  request <- submit (actAs trader <> discloseMany disclosures) $
+    exerciseCmd accessCid PoolAccess_RequestLiquidityDeposit with
+      terms; requestedAt; baseHoldingCids = [base]; quoteHoldingCids = [quote]
+      baseAllocationArgs = emptyArgs; quoteAllocationArgs = emptyArgs; lpAllocationArgs = emptyArgs
+  pure (accessCid, request)
+
+-- Create a native allocation that differs only in its signed application metadata.
+allocationWithMetadata : FundedFixture -> Party -> Token -> ContractId A.Allocation -> Metadata
+  -> [ContractId H.Holding] -> Script (ContractId A.Allocation)
+allocationWithMetadata f trader token originalCid meta inputs = do
+  Some original <- queryInterfaceContractId @A.Allocation trader originalCid
+  requestedAt <- getTime
+  disclosures <- rulesDisclosures f
+  result <- submit (actAs trader <> discloseMany disclosures) $
+    exerciseCmd token.allocationFactory AI.AllocationFactory_Allocate with
+      settlement = original.settlement; requestedAt; inputHoldingCids = inputs
+      allocation = original.allocation with meta
+      actors = [trader]; extraArgs = emptyArgs
+  let AI.AllocationInstructionResult_Completed cid = result.output
+  pure cid
+
+data LiquidityFixtureResult = LiquidityFixtureResult with
+    stateCid : ContractId PoolState
+    receiptCid : ContractId LiquidityReceipt
+    baseAmount : Decimal
+    quoteAmount : Decimal
+    lpAmount : Decimal
+  deriving (Eq, Show)
+
+settleDeposit : FundedFixture -> ContractId PoolState -> ContractId PoolAccess -> DepositRequest Pool -> Script LiquidityFixtureResult
+settleDeposit f stateCid accessCid request = do
+  batch <- settleDepositBatch f stateCid [depositItem accessCid request]
+  let [outcome] = batch.outcomes
+      [receiptCid] = batch.receiptCids
+  pure LiquidityFixtureResult with
+    stateCid = batch.stateCid; receiptCid
+    baseAmount = outcome.baseAmount; quoteAmount = outcome.quoteAmount; lpAmount = outcome.lpAmount
+
+depositItem : ContractId PoolAccess -> DepositRequest Pool -> DepositSettlementRequest
+depositItem accessCid request = DepositSettlementRequest with
+  accessCid; request = DepositBatchRequest with request; tokenArgs = liquidityArgs
+
+settleDepositBatch : FundedFixture -> ContractId PoolState -> [DepositSettlementRequest] -> Script AddLiquidityBatchResult
+settleDepositBatch f stateCid requests = do
+  disclosures <- settlementDisclosures f stateCid
+  submit (actAs f.parties.venueOperator <> discloseMany disclosures) $
+    exerciseCmd f.delegationCid VenueDelegation_AddLiquidity with
+      configCid = f.pool.configCid; stateCid; requests
+
+withdrawalItem : ContractId PoolAccess -> WithdrawalRequest Pool -> WithdrawalSettlementRequest
+withdrawalItem accessCid request = WithdrawalSettlementRequest with
+  accessCid; request = WithdrawalBatchRequest with request; tokenArgs = liquidityArgs
+
+settleWithdrawalBatch : FundedFixture -> ContractId PoolState -> [WithdrawalSettlementRequest] -> Script WithdrawLiquidityBatchResult
+settleWithdrawalBatch f stateCid requests = do
+  disclosures <- settlementDisclosures f stateCid
+  submit (actAs f.parties.venueOperator <> discloseMany disclosures) $
+    exerciseCmd f.delegationCid VenueDelegation_WithdrawLiquidity with
+      configCid = f.pool.configCid; stateCid; requests
+
+currentAccess : FundedFixture -> Party -> Script (ContractId PoolAccess)
+currentAccess f trader = do
+  accesses <- query @PoolAccess trader
+  case [cid | (cid, access) <- accesses, access.poolCid == f.pool.poolCid,
+        access.venueOperator == f.parties.venueOperator] of
+    cid :: _ -> pure cid
+    [] -> abort "test trader has no pool access"
 
 rulesDisclosures : FundedFixture -> Script [Disclosure]
 rulesDisclosures f = do
   Some base <- queryDisclosure @TokenRules f.parties.baseRegistrar f.baseRulesCid
   Some quote <- queryDisclosure @TokenRules f.parties.quoteRegistrar f.quoteRulesCid
   Some pool <- queryDisclosure @Pool f.parties.dvo f.pool.poolCid
-  pure [base, quote, pool]
+  Some lp <- queryDisclosure @TokenRules f.parties.dvo f.lpRulesCid
+  pure [base, quote, lp, pool]
 
 -- Bootstrap owns these blobs; settlement never receives DVO actAs or readAs rights.
 settlementDisclosures : FundedFixture -> ContractId PoolState -> Script [Disclosure]
 settlementDisclosures f stateCid = do
   rules <- rulesDisclosures f
   Some state <- queryContractId f.parties.dvo stateCid
-  let Some funding = state.funding
-  holdings <- forA (funding.baseHoldingCids <> funding.quoteHoldingCids) $ \cid -> do
+  holdings <- forA (state.baseHoldingCids <> state.quoteHoldingCids) $ \cid -> do
     Some disclosure <- queryDisclosure @TokenHolding f.parties.dvo (fromInterfaceContractId cid)
     pure disclosure
   pure (rules <> holdings)
@@ -113,7 +201,7 @@ prepare f trader requestId direction amountIn minOut = do
       inputAllocationArgs = emptyArgs; outputAllocationArgs = emptyArgs)
   pure PreparedRequest with request; accessCid
 
-settle : FundedFixture -> ContractId PoolState -> Text -> [PreparedRequest] -> Script BatchResult
+settle : FundedFixture -> ContractId PoolState -> Text -> [PreparedRequest] -> Script SwapBatchResult
 settle f stateCid batchId prepared = do
   disclosures <- settlementDisclosures f stateCid
   submit (actAs f.parties.venueOperator <> discloseMany disclosures) $
@@ -147,15 +235,14 @@ availableBalance owner instrument = do
 assertBacking : FundedFixture -> ContractId PoolState -> Script PoolState
 assertBacking f stateCid = do
   Some state <- queryContractId f.parties.dvo stateCid
-  let Some funding = state.funding
   let total cids = do
         views <- forA cids $ \cid -> do
           Some holding <- queryInterfaceContractId @H.Holding f.parties.dvo cid
           pure holding
         forA_ views $ \holding -> holding.lock === None
         pure (sum (map (.amount) views))
-  base <- total funding.baseHoldingCids
-  quote <- total funding.quoteHoldingCids
+  base <- total state.baseHoldingCids
+  quote <- total state.quoteHoldingCids
   base === state.baseReserve
   quote === state.quoteReserve
   pure state
@@ -243,15 +330,15 @@ duplicateAllocationLeavesBackingUnchanged = script do
 
 largeAmountsSettle : Script ()
 largeAmountsSettle = script do
-  f <- setupWithReserves 2991000.0 6000000.0
+  f <- setupWithReserves 2991000.0 5982000.0
   trader <- allocateParty "LargeSwapTrader"
-  request <- prepare f trader "large-swap" BaseToQuote 3000000.0 3000000.0
+  request <- prepare f trader "large-swap" BaseToQuote 3000000.0 2991000.0
   result <- settle f f.pool.stateCid "large-batch" [request]
-  result.amountsOut === [3000000.0]
+  result.amountsOut === [2991000.0]
   state <- assertBacking f result.stateCid
   state.baseReserve === 5991000.0
-  state.quoteReserve === 3000000.0
-  availableBalance trader f.route.quoteToken.instrument >>= (=== 3000000.0)
+  state.quoteReserve === 2991000.0
+  availableBalance trader f.route.quoteToken.instrument >>= (=== 2991000.0)
   availableBalance trader f.route.baseToken.instrument >>= (=== 0.0)
 
 batchReservesCanExceedOneMillion : Script ()
@@ -305,20 +392,18 @@ expiryReturnsFundsWithoutVenue = script do
   wrapped <- prepare f alice "wrapped-reclaim" BaseToQuote 10.0 0.0
   direct <- prepare f alice "direct-reclaim" QuoteToBase 11.0 0.0
   disclosures <- rulesDisclosures f
-  let withdrawWrapped = Pool_WithdrawSwap with
-        trader = alice
+  let withdrawWrapped = PoolAccess_RecoverAllocations with
         withdrawals = map withdrawal [wrapped.request.inputAllocation, wrapped.request.outputAllocation]
       aliceOptions = actAs alice <> discloseMany disclosures
-  submitMustFail aliceOptions $ exerciseCmd f.pool.poolCid withdrawWrapped
+  submitMustFail aliceOptions $ exerciseCmd wrapped.accessCid withdrawWrapped
   submitMustFail alice $ exerciseCmd direct.request.inputAllocation A.Allocation_Withdraw with
     actors = [alice]; extraArgs = emptyArgs
   submitMustFail (actAs stranger <> readAs alice <> discloseMany disclosures) $
-    exerciseCmd f.pool.poolCid withdrawWrapped
+    exerciseCmd wrapped.accessCid withdrawWrapped
   submit f.parties.dvo $ exerciseCmd f.delegationCid VenueDelegation_Revoke
-  submit f.parties.venueOperator $ archiveCmd wrapped.accessCid
   submit f.parties.venueOperator $ archiveCmd direct.accessCid
   setTime (addRelTime wrapped.request.terms.settlementDeadline (seconds 1))
-  results <- submit aliceOptions $ exerciseCmd f.pool.poolCid withdrawWrapped
+  results <- submit aliceOptions $ exerciseCmd wrapped.accessCid withdrawWrapped
   length results === 2
   forA_ [direct.request.inputAllocation, direct.request.outputAllocation] $ \cid -> do
     result <- submit alice $ exerciseCmd cid A.Allocation_Withdraw with
@@ -344,42 +429,31 @@ expiredRequestCannotSettle = script do
   assertPending request
   query @SwapReceipt trader >>= (=== [])
   _ <- submit (actAs trader <> discloseMany disclosures) $
-    exerciseCmd f.pool.poolCid Pool_WithdrawSwap with
-      trader; withdrawals = map withdrawal [request.request.inputAllocation, request.request.outputAllocation]
+    exerciseCmd request.accessCid PoolAccess_RecoverAllocations with
+      withdrawals = map withdrawal [request.request.inputAllocation, request.request.outputAllocation]
   availableBalance trader f.route.baseToken.instrument >>= (=== 1000.0)
 
 unfundedPoolsCannotSettleRequests : Script ()
 unfundedPoolsCannotSettleRequests = script do
   f <- setup ()
-  (_, pool) <- poolFixture f.parties
-  delegationCid <- submit f.parties.dvo $ createCmd VenueDelegation with
-    dvo = f.parties.dvo; venueOperator = f.parties.venueOperator; poolCid = pool.poolCid
-  let candidate = f with pool; delegationCid; route = (f.route with poolCid = pool.poolCid)
+  settings <- settingsFor f.parties
+  (_, pool) <- poolFixtureWithSettings f.parties settings
+  candidate <- emptyFixture f.parties pool settings
   trader <- allocateParty "UnfundedPoolTrader"
   request <- prepare candidate trader "await-funding" BaseToQuote 1000.0 500.0
   Some before <- queryContractId f.parties.dvo pool.stateCid
-  before.funding === None
+  before.baseReserve === 0.0
   disclosures <- rulesDisclosures candidate
   submitFailsWith ePoolNotFunded (actAs f.parties.venueOperator <> discloseMany disclosures) $
-    exerciseCmd delegationCid VenueDelegation_SettleBatch with
+    exerciseCmd candidate.delegationCid VenueDelegation_SettleBatch with
       configCid = pool.configCid; stateCid = pool.stateCid
       requests = [settlementRequest request]; batchId = "unfunded"
   queryContractId f.parties.dvo pool.stateCid >>= (=== Some before)
   assertPending request
-  query @SwapReceipt trader >>= (=== [])
-  availableBalance trader f.route.baseToken.instrument >>= (=== 0.0)
-  availableBalance trader f.route.quoteToken.instrument >>= (=== 0.0)
-
-  -- The same signed request succeeds once actual token holdings back the pool.
-  baseHolding <- mint f.baseRulesCid f.parties.baseRegistrar f.route.baseAccount "BASE" 997.0
-  quoteHolding <- mint f.quoteRulesCid f.parties.quoteRegistrar f.route.quoteAccount "QUOTE" 1000.0
-  stateCid <- submit (actAs f.parties.dvo <> discloseMany disclosures) $
-    exerciseCmd pool.poolCid Pool_Fund with
-      configCid = pool.configCid; stateCid = pool.stateCid
-      funding = PoolFunding with
-        baseToken = f.route.baseToken; quoteToken = f.route.quoteToken
-        baseHoldingCids = [baseHolding]; quoteHoldingCids = [quoteHolding]
-  result <- settle candidate stateCid "funded" [request]
+  seeder <- allocateParty "DeferredInitialLP"
+  (accessCid, deposit) <- prepareDeposit candidate seeder "fund-later" InitializeOnly 997.0 1000.0
+  funded <- settleDeposit candidate pool.stateCid accessCid deposit
+  result <- settle candidate funded.stateCid "funded" [request]
   result.amountsOut === [500.0]
   _ <- assertBacking candidate result.stateCid
-  availableBalance trader f.route.quoteToken.instrument >>= (=== 500.0)
+  availableBalance trader candidate.route.quoteToken.instrument >>= (=== 500.0)

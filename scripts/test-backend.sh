@@ -3,8 +3,8 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 scenario="${1:-all}"
 case "$scenario" in
-  schema|environment|iam|onboarding|pools|swaps|restart|all) ;;
-  *) printf 'Usage: %s schema|environment|iam|onboarding|pools|swaps|restart|all\n' "$0" >&2; exit 2 ;;
+  schema|environment|iam|onboarding|pools|swaps|liquidity|restart|all) ;;
+  *) printf 'Usage: %s schema|environment|iam|onboarding|pools|swaps|liquidity|restart|all\n' "$0" >&2; exit 2 ;;
 esac
 
 make --no-print-directory prepare-localnet

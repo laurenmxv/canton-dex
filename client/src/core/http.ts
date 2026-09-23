@@ -18,6 +18,11 @@ export interface HttpRequest {
    * else a null body stays a protocol error.
    */
   nullable?: boolean;
+  /**
+   * True where the route answers `204 No Content` on purpose, as a deferral
+   * does. Success then resolves with nothing, and no body is read as a record.
+   */
+  empty?: boolean;
 }
 
 /** The transport each module is handed. `index.ts` does not re-export it. */
@@ -191,6 +196,7 @@ export function createSend(config: DexClientConfig): Send {
       });
     }
 
+    if (request.empty) return undefined as T;
     if (body === null && request.nullable) return null as T;
     if (typeof body !== 'object' || body === null) {
       throw new DexClientError('response', 'The venue returned a body that is not JSON');

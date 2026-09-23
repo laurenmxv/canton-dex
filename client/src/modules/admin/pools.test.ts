@@ -28,13 +28,7 @@ const PROPOSED: CreatePoolProposal = {
   name: 'USDC / EURC',
   baseInstrumentId: POOL_TERMS.baseInstrumentId,
   quoteInstrumentId: POOL_TERMS.quoteInstrumentId,
-  baseAccountId: 'pool-usdc-eurc-base',
-  quoteAccountId: 'pool-usdc-eurc-quote',
-  lpTokenId: 'LP-USDC-EURC',
   feeBps: '30',
-  baseReserve: '1000000',
-  quoteReserve: '920000',
-  lpTokenSupply: '959166.305',
 };
 
 describe('the pool proposal queue', () => {
@@ -81,9 +75,11 @@ describe('the pool proposal queue', () => {
     expect(calls[0]?.method).toBe('POST');
     expect(calls[0]?.url).toBe(`${BASE}/v1/admin/pool-proposals`);
     expect(JSON.parse(calls[0]!.body!)).toEqual(PROPOSED);
-    // Amounts stay strings on the wire: a Decimal does not fit a double.
-    expect(JSON.parse(calls[0]!.body!).baseReserve).toBe('1000000');
-    expect(calls[0]!.body).not.toMatch(/"(dvo|factoryId|proposedBy|actAs)"/);
+    // The fee stays a string on the wire, and the dvo configures what the pool holds.
+    expect(JSON.parse(calls[0]!.body!).feeBps).toBe('30');
+    expect(calls[0]!.body).not.toMatch(
+      /"(dvo|factoryId|proposedBy|actAs|baseReserve|lpTokenSupply|lpTokenId|initialRatio)"/,
+    );
     expect(created).toEqual(PENDING_PROPOSAL);
   });
 
@@ -119,6 +115,7 @@ describe('the pools an operator sees', () => {
     expect(calls[0]?.url).toBe(`${BASE}/v1/admin/pools`);
     expect(pools[0]?.configId).toBe('00config0001');
     expect(pools[0]?.stateId).toBe('00state0001');
+    expect(pools[0]?.settings.baseAccount.provider).toBe('venue-operator::1220beef');
   });
 
   it('reads one pool from the route any caller may use', async () => {

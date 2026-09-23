@@ -16,31 +16,37 @@ export interface InstrumentId {
   id: string;
 }
 
-/** An account the pool holds an instrument in. The venue assigns the owner. */
+/** An account the pool holds an instrument in: the dvo owns it, the venue operator provides it. */
 export interface PoolAccount {
   owner: string;
-  provider: null;
+  provider: string;
   id: string;
 }
 
-/**
- * What a pool is made of.
- *
- * Every amount is a decimal string, as the ledger stores it. None of them is
- * parsed into a JavaScript number anywhere in this client: a `Decimal` carries
- * 28 integer and 10 fractional digits, which a double cannot hold.
- */
-export interface PoolTerms {
+/** A pair and a whole-bps fee. The dvo configures the rest on acceptance. */
+export interface PoolProposalTerms {
   dvo: string;
   baseInstrumentId: InstrumentId;
   quoteInstrumentId: InstrumentId;
+  feeBps: string;
+}
+
+/**
+ * What a pool is made of, as the ledger confirmed it.
+ *
+ * Every amount is a decimal string, as the ledger stores it. None of them is
+ * parsed into a JavaScript number anywhere in this client: a `Decimal` carries
+ * 28 integer and 10 fractional digits, which a double cannot hold. A pool
+ * starts empty; `initialRatio` is the quote per base its first deposit uses.
+ */
+export interface PoolTerms extends PoolProposalTerms {
   baseAccount: PoolAccount;
   quoteAccount: PoolAccount;
   lpTokenInstrumentId: InstrumentId;
-  feeBps: string;
   baseReserve: string;
   quoteReserve: string;
   lpTokenSupply: string;
+  initialRatio: string;
 }
 
 /**
@@ -51,13 +57,7 @@ export interface CreatePoolProposal {
   name: string;
   baseInstrumentId: InstrumentId;
   quoteInstrumentId: InstrumentId;
-  baseAccountId: string;
-  quoteAccountId: string;
-  lpTokenId: string;
   feeBps: string;
-  baseReserve: string;
-  quoteReserve: string;
-  lpTokenSupply: string;
 }
 
 /**
@@ -80,7 +80,7 @@ export type PoolProposalStatus =
 export interface PoolProposal {
   proposalId: string;
   name: string;
-  settings: PoolTerms;
+  settings: PoolProposalTerms;
   status: PoolProposalStatus;
   createdAt: string;
   updatedAt: string;

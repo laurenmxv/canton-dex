@@ -318,6 +318,27 @@ describe('an answer that claims success', () => {
     const { send } = sendWith(() => jsonResponse(200, [COMPLETED_ONBOARDING]));
     await expect(send({ method: 'GET', path: '/x' })).resolves.toEqual([COMPLETED_ONBOARDING]);
   });
+
+  it('resolves with nothing where the route answers no content on purpose', async () => {
+    const { send } = sendWith(() => new Response(null, { status: 204 }));
+
+    await expect(send({ method: 'PUT', path: '/x', body: {}, empty: true })).resolves.toBeUndefined();
+  });
+
+  it('still refuses no content from a route that owes a record', async () => {
+    const { send } = sendWith(() => new Response(null, { status: 204 }));
+
+    await expect(send({ method: 'GET', path: '/x' })).rejects.toMatchObject({ kind: 'response' });
+  });
+
+  it('keeps a refusal an error on a route that answers no content', async () => {
+    const { send } = sendWith(() => jsonResponse(409, { status: 409, code: 'BATCH_IN_FLIGHT' }));
+
+    await expect(send({ method: 'PUT', path: '/x', body: {}, empty: true })).rejects.toMatchObject({
+      kind: 'http',
+      status: 409,
+    });
+  });
 });
 
 describe('when the request never lands', () => {

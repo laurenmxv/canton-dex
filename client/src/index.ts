@@ -2,6 +2,7 @@ export { createDexClient } from './client.js';
 export type { DexClient } from './client.js';
 
 export type { AdminApi, SettlementsApi } from './modules/admin/index.js';
+export type { LpApi } from './modules/lp/index.js';
 export type { OnboardingApi } from './modules/onboarding/index.js';
 export type { PoolsApi } from './modules/pools/index.js';
 export type { SwapsApi } from './modules/swaps/index.js';
@@ -11,6 +12,7 @@ export { DexClientError } from './errors.js';
 export type { DexClientErrorKind, ProblemDetails } from './errors.js';
 
 export type { DexClientConfig, RequestOptions } from './types/common.js';
+export type { Activity, ActivityQuery, RequestType, TaggedRequest } from './types/activity.js';
 export type {
   CreatePoolProposal,
   InstrumentId,
@@ -19,22 +21,59 @@ export type {
   PoolDetail,
   PoolProposal,
   PoolProposalStatus,
+  PoolProposalTerms,
   PoolSummary,
   PoolTerms,
   RegisteredInstrument,
 } from './types/pool.js';
+export type {
+  DepositMode,
+  DepositPreparation,
+  DepositQuote,
+  DepositQuoteInput,
+  DepositRequest,
+  DepositResult,
+  DepositTerms,
+  LiquidityAction,
+  LiquidityActivity,
+  LiquidityActivityQuery,
+  LiquidityKind,
+  LiquidityPreparation,
+  LiquidityRequest,
+  LiquidityStatus,
+  LpPosition,
+  LpPositions,
+  PrepareDepositInput,
+  PrepareWithdrawalInput,
+  RecoveryEffect,
+  RecoveryKind,
+  WithdrawalPreparation,
+  WithdrawalQuote,
+  WithdrawalQuoteInput,
+  WithdrawalRequest,
+  WithdrawalResult,
+  WithdrawalTerms,
+} from './types/liquidity.js';
 export type { Profile, Role } from './types/profile.js';
 export type {
   PoolHealth,
   PoolReserves,
   PoolSnapshot,
+  ProjectedPoolState,
   RunSettlementInput,
   Settlement,
   SettlementFill,
+  SettlementHistory,
+  SettlementHistoryQuery,
   SettlementMonitoring,
+  SettlementOutputCheck,
   SettlementPolicy,
+  SettlementPreview,
+  SettlementPreviewStep,
   SettlementQueueFilter,
   SettlementRequest,
+  SettlementRequestRef,
+  SettlementSelection,
   SettlementStatus,
   SettlementTrigger,
   UpdateSettlementPolicy,

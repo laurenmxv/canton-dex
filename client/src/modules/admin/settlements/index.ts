@@ -1,15 +1,21 @@
 import type { Send } from '../../../core/http.js';
-import { getSettlement, listSettlements } from './history.js';
+import { getSettlement, listSettlements, settlementHistory } from './history.js';
 import { getSettlementMonitoring } from './monitoring.js';
 import { getSettlementPolicy, updateSettlementPolicy } from './policy.js';
-import { listSettlementRequests } from './queue.js';
+import { previewSettlement } from './preview.js';
+import { listSettlementRequests, setSettlementRequestDeferred } from './queue.js';
 import { runSettlement } from './run.js';
 import type { SettlementsApi } from './types.js';
 
 export function createSettlementsApi(send: Send): SettlementsApi {
   return {
     requests: (poolId, status, options) => listSettlementRequests(send, poolId, status, options),
+    setDeferred: (poolId, request, deferred, options) =>
+      setSettlementRequestDeferred(send, poolId, request, deferred, options),
+    preview: (poolId, type, retryOf, options) =>
+      previewSettlement(send, poolId, type, retryOf, options),
     list: (poolId, options) => listSettlements(send, poolId, options),
+    history: (poolId, query, options) => settlementHistory(send, poolId, query, options),
     get: (settlementId, options) => getSettlement(send, settlementId, options),
     run: (poolId, input, options) => runSettlement(send, poolId, input, options),
     policy: (poolId, options) => getSettlementPolicy(send, poolId, options),

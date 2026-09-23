@@ -136,7 +136,7 @@ export interface SwapPreparation {
 /**
  * One request and everything the venue knows about it.
  *
- * `arrivalSequence` is the pool's own FIFO position, assigned when the request
+ * `arrivalSequence` is the position in the pool's swap queue, assigned when the request
  * was accepted. `amountOut` is null until a batch settles it, and is then the
  * amount actually paid, which can exceed `minOut`.
  */

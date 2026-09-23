@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createDexClient } from '../../client.js';
 import { DexClientError } from '../../errors.js';
 import {
+  QUEUED_DEPOSIT,
   QUEUED_SWAP,
   SWAP_PREPARATION,
   SWAP_QUOTE,
@@ -206,6 +207,28 @@ describe('the trader’s own history', () => {
       status: 'SETTLED',
       limit: '25',
       cursor: QUEUED_SWAP.swapId,
+    });
+  });
+
+  it('reads every kind of request from the same route, tagged, with its filters', async () => {
+    const page = {
+      items: [
+        { type: 'swap', request: QUEUED_SWAP },
+        { type: 'deposit', request: QUEUED_DEPOSIT },
+      ],
+      nextCursor: `deposit:${QUEUED_DEPOSIT.requestId}`,
+    };
+    const { client, calls } = clientWith(page);
+
+    expect(await client.activity()).toEqual(page);
+    await client.activity({ status: 'EXPIRED', limit: 10, cursor: page.nextCursor });
+
+    expect(calls[0]?.url).toBe(`${BASE}/v1/activity?type=all`);
+    expect(Object.fromEntries(new URL(calls[1]!.url).searchParams)).toEqual({
+      type: 'all',
+      status: 'EXPIRED',
+      limit: '10',
+      cursor: page.nextCursor,
     });
   });
 

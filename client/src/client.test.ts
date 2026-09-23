@@ -12,12 +12,31 @@ describe('the client surface', () => {
     });
 
     expect(Object.keys(client).sort()).toEqual([
+      'activity',
       'admin',
+      'lp',
       'me',
       'onboarding',
       'pools',
       'swaps',
       'tokens',
+    ]);
+    expect(Object.keys(client.lp).sort()).toEqual([
+      'deposits',
+      'getDeposit',
+      'getWithdrawal',
+      'positions',
+      'prepareDeposit',
+      'prepareDepositCancellation',
+      'prepareWithdrawal',
+      'prepareWithdrawalCancellation',
+      'quoteDeposit',
+      'quoteWithdrawal',
+      'submitDeposit',
+      'submitDepositCancellation',
+      'submitWithdrawal',
+      'submitWithdrawalCancellation',
+      'withdrawals',
     ]);
     expect(Object.keys(client.onboarding).sort()).toEqual([
       'confirmParty',
@@ -55,11 +74,14 @@ describe('the client surface', () => {
     ]);
     expect(Object.keys(client.admin.settlements).sort()).toEqual([
       'get',
+      'history',
       'list',
       'monitoring',
       'policy',
+      'preview',
       'requests',
       'run',
+      'setDeferred',
       'updatePolicy',
     ]);
   });
@@ -70,7 +92,7 @@ describe('the client surface', () => {
       getAccessToken: () => 'token',
     }) as unknown as Record<string, unknown>;
 
-    for (const absent of ['instruments', 'proposals', 'notifications', 'quotes', 'lp']) {
+    for (const absent of ['instruments', 'proposals', 'notifications', 'quotes', 'liquidity']) {
       expect(client[absent]).toBeUndefined();
     }
     const onboarding = client['onboarding'] as Record<string, unknown>;

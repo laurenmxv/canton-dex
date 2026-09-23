@@ -139,32 +139,45 @@ Example:
 
 ### Settlement
 
-- **Run settlements.** Can settle ready swap requests in batches,
-  following arrival order per pool.
+- **Run settlements.** Can settle swaps, proportional deposits and withdrawals in batches; initial
+  funding settles individually,
+  following arrival order within each pool's swap, deposit or withdrawal queue.
   **(Required role: `venue_operator`)**
 
-  - **Frontend:** Shows swap requests, settlement controls, and results.
+  - **Frontend:** Shows separate swap, deposit and withdrawal queues, settlement controls, and results.
   - **Client:** Sends settlement requests to the backend and fetches results.
-  - **Backend:** Checks readiness and per-pool arrival order, submits through the
-    authorized participant, and records results. Can run automatically.
-  - **DAML:** Atomically settles swaps through `dvo` delegation and updates
-    reserves, enforcing minimum outputs and deadlines.
+  - **Backend:** Selects an eligible queue in turn, preserves its arrival order,
+    and submits one settlement per pool at a time. A blocked family does not
+    stop the others. Records results and can run automatically.
+  - **DAML:** Atomically settles through `dvo` delegation, updating reserves and
+    LP supply while enforcing signed limits and deadlines.
+
+- **Review a batch before dispatch.** Can inspect projected reserves, payouts and signed limits,
+  identify the first blocking request, and defer it while the remaining requests proceed.
+  Can return deferred requests to their queue and retry rejected or cancelled attempts from current state.
+  Deferral preserves locked funds and deadlines. **(Required role: `venue_operator`)**
 
 ### Provide Liquidity
 
 - **Request to provide liquidity.** Can choose a pool, enter both token amounts,
-  and review expected LP tokens. Can approve deposit and receipt allocations
-  and the settlement deadline, then send signed allocation transactions to the
+  and review a quote with proportional deposit amounts, expected LP tokens and
+  minimum LP output. Can approve the base and quote deposit allocations, LP receipt
+  allocation and settlement deadline, then send signed allocation transactions to the
   backend to register the deposit request. **(Required role: `venue_user`)**
 
-  - **Frontend:** Collects the pool and amounts, shows expected LP tokens, and
-    requests allocation and deadline approval before wallet signing.
-  - **Client:** Requests estimates, obtains wallet signatures for deposit and
-    LP-token receipt allocations, and sends signed transactions to the backend.
-  - **Backend:** Estimates shares, prepares allocations, submits signed transactions,
+  - **Frontend:** Collects the pool, amount limits and slippage tolerance, shows
+    quoted deposit amounts and expected and minimum LP tokens, and requests approval before wallet signing.
+  - **Client:** Requests quotes, obtains wallet signatures for the deposit and
+    LP receipt allocations, and sends signed transactions to the backend.
+  - **Backend:** Quotes deposits within available balances and amount limits using
+    the DVO's initial ratio for an empty pool or the current reserve ratio otherwise;
+    prepares allocations, submits signed transactions,
     and stores deposit requests in the internal database for later settlement.
-  - **DAML:** Creates allocations at the token registries to lock deposits and
-    authorize receipt of LP tokens.
+  - **DAML:** Creates two allocations at the token registries to lock the base
+    and quote deposits, plus an unfunded LP receipt allocation. `Pool_AddLiquidity`
+    recalculates against current state, checks signed limits and settles the deposits
+    and LP mint through CIP-0112 atomically. Initial mint leaves a permanent
+    `0.0000001 LP` minimum in supply without a redeemable holding.
 
 - **Watch the position.** Can view the LP-token balance, pool share, and current
   redemption value for each pool. **(Required role: `venue_user`)**
@@ -187,7 +200,15 @@ Example:
     withdrawal allocations, and sends signed allocation transactions to the backend.
   - **Backend:** Estimates payouts, prepares allocations, submits signed transactions,
     and stores withdrawal requests in the internal database for later settlement.
-  - **DAML:** Locks LP tokens in allocations for later withdrawal settlement.
+  - **DAML:** `PoolAccess_RequestLiquidityWithdrawal` locks LP and authorizes receipt of both
+    assets. Settlement burns the LP and pays both assets atomically; both
+    requesting and settling a withdrawal require current KYC and pool access.
+
+- **Recover expired liquidity allocations.** Can sign recovery of the remaining
+  allocations after the settlement deadline, including when some were already
+  withdrawn directly through CIP-0112. Current KYC and pool access are required.
+  The UI distinguishes returned funds from released receipt permissions, and
+  confirms recovery only from ledger evidence. **(Required role: `venue_user`)**
 
 ### Activity and History
 

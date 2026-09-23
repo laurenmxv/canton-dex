@@ -23,7 +23,9 @@ Settles the batch against the current `PoolConfig` and `PoolState`.
 | Choice | Controller | Action |
 | --- | --- | --- |
 | **`Pool_Swap`** (nonconsuming) | `dvo` and `venueOperator`. | Prices each swap in order, checks `minOut` and the deadline, allocates the pool's legs, and settles both tokens through CIP-0112. |
-| **`Pool_WithdrawSwap`** (nonconsuming) | `trader`. | Calls `Allocation_Withdraw` to recover unsettled allocations after `settlementDeadline`. |
+| **`PoolAccess_RecoverAllocations`** (nonconsuming) | `trader`. | Checks current access and KYC; calls `Allocation_Withdraw` to recover unsettled allocations after `settlementDeadline`. |
+
+`minOut` is signed in the input allocation metadata. The input reserves the swap amount; the output authorizes receipt. Both start without transfer legs, which settlement supplies in full after checking the minimum.
 
 The transfers, one `SwapReceipt` per swap, and one replacement `PoolState` for the batch commit atomically.
 

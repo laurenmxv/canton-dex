@@ -2,7 +2,7 @@
 
 **Daml contracts · Java backend · TypeScript client · React app**
 
-[Quickstart](#quickstart) · [Onboarding](#onboarding-and-creating-users) · [Pool creation](#pool-creation) · [Swaps](#swaps) · [Development](#development)
+[Quickstart](#quickstart) · [Onboarding](#onboarding-and-creating-users) · [Pool creation](#pool-creation) · [Swaps](#swaps) · [Liquidity](#liquidity) · [Development](#development)
 
 ---
 
@@ -44,13 +44,13 @@ Use separate browser profiles: trader with Flask; operator signed in with `opera
 
 A pool lets traders exchange two tokens. Skip this section to try the funded BTC/USDC and ETH/USDC test pools.
 
-1. **Operator:** Open **Pools** → **New pool**, choose the **Base instrument** and **Quote instrument** from the registered tokens, and fill in fee, reserves, and LP supply. Each choice carries its own admin.
+1. **Operator:** Open **Pools** → **New pool**, choose the **Base instrument** and **Quote instrument** from the registered tokens, and enter a name and fee in whole basis points. Each choice carries its own admin.
 2. Click **Review** → **Submit proposal**, then wait for pending approval.
 3. Open the proposal's **Details** and copy its **Proposal ID**.
-4. From the repository root, run `./scripts/decide-pool.sh accept PROPOSAL_UUID`, replacing `PROPOSAL_UUID` with the copied ID (approves the proposal as `dvo`).
+4. From the repository root, run `./scripts/decide-pool.sh accept PROPOSAL_UUID INITIAL_RATIO`, replacing the ID and ratio (quote units per base unit). This accepts as `dvo` and grants settlement delegation.
 5. Return to **Pools** and wait for **Created**.
 
-New pools need separate funding and authorization for the operator to settle swaps; these steps only create the pool.
+New pools start with zero reserves and LP supply. The first liquidity deposit funds them at the accepted ratio.
 
 ## Swaps
 
@@ -61,6 +61,16 @@ After onboarding, exchange local test tokens: the trader signs a request and the
 3. Review the quote, click **Request swap**, confirm in MetaMask, and wait for **Queued for settlement** under **Your requests**.
 4. **Operator:** Open **Settlement**, choose the same pool, and click **Run batch**.
 5. **Trader:** Check the final status and tokens received under **Your requests**.
+
+## Liquidity
+
+1. **Trader:** Open **Liquidity**, select a pool, enter maximum amounts of both tokens, and click **Get a quote**.
+2. Review the accepted amounts, refunds and minimum LP, then sign the request in MetaMask.
+3. **Operator:** Open **Settlement** for that pool and run settlement. Swaps, deposits and withdrawals have separate queues.
+4. **Trader:** Check the confirmed amounts and LP balance. Select a position to quote and sign a withdrawal.
+5. After an unsettled request expires, use **Recover funds** to release its remaining allocations.
+
+Withdrawals and recovery require current pool access and KYC. The initial `0.0000001 LP` stays permanently in the supply without a redeemable holding.
 
 ## Development
 

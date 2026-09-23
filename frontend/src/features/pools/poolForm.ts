@@ -1,33 +1,23 @@
 import type { FieldErrors, Resolver } from 'react-hook-form';
 import { BPS_SCALE } from '../../lib/api/types';
 import type { CreatePoolProposal, InstrumentId, RegisteredInstrument } from '../../lib/api/types';
-import { isLedgerDecimal } from '../../lib/decimal';
 
 /**
  * What the operator fills in, before it becomes a proposal.
  *
  * `base` and `quote` are keys into the venue's registered instruments, not text
- * the operator writes. Every amount stays a string all the way to the wire. A
- * `Decimal` carries 28 integer and 10 fractional digits, which a JavaScript
- * number cannot hold, so nothing here parses one to validate or to send it.
+ * the operator writes. The dvo configures everything the pool holds.
  */
 export interface ProposalDraft {
   name: string;
   base: string;
   quote: string;
   feeBps: string;
-  baseReserve: string;
-  quoteReserve: string;
-  lpTokenSupply: string;
-  baseAccountId: string;
-  quoteAccountId: string;
-  lpTokenId: string;
 }
 
 export type DraftField = keyof ProposalDraft;
 
-/** The venue's own bounds on the text a proposal carries. */
-const MAX_IDENTIFIER = 128;
+/** The venue's own bound on a pool's name. */
 const MAX_NAME = 120;
 /**
  * A control character, as the venue's own `Character.isISOControl` reads one:
@@ -81,52 +71,17 @@ export function instrumentChoices(
 }
 
 export function emptyDraft(): ProposalDraft {
-  return {
-    name: '',
-    base: '',
-    quote: '',
-    feeBps: '30',
-    baseReserve: '',
-    quoteReserve: '',
-    lpTokenSupply: '',
-    baseAccountId: '',
-    quoteAccountId: '',
-    lpTokenId: '',
-  };
+  return { name: '', base: '', quote: '', feeBps: '30' };
 }
 
-function slug(value: string): string {
-  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-}
-
-/**
- * What the identifiers become while the operator has not written their own.
- *
- * They are suggestions, not defaults the form hides: the fields carry them and
- * stay editable. They follow the instrument identifiers the ledger settles on,
- * not the symbols two administrators may share.
- */
-export function suggestedIds(
+/** The name filled in from the instrument ids until the operator writes their own. */
+export function suggestedName(
   draft: ProposalDraft,
   catalog: readonly RegisteredInstrument[],
-): Pick<ProposalDraft, 'name' | 'baseAccountId' | 'quoteAccountId' | 'lpTokenId'> {
-  const base = registeredInstrument(catalog, draft.base)?.id ?? '';
-  const quote = registeredInstrument(catalog, draft.quote)?.id ?? '';
-  const pair = base && quote ? `${slug(base)}-${slug(quote)}` : '';
-  return {
-    name: base && quote ? `${base} / ${quote}` : '',
-    baseAccountId: pair ? `${pair}-base` : '',
-    quoteAccountId: pair ? `${pair}-quote` : '',
-    lpTokenId: base && quote ? `LP-${base.toUpperCase()}-${quote.toUpperCase()}` : '',
-  };
-}
-
-function amountError(raw: string, what: string): string | undefined {
-  const value = raw.trim();
-  if (value === '') return `${what} is required`;
-  if (!isLedgerDecimal(value)) return `${what} must be a decimal with up to 10 fractional digits`;
-  if (!/[1-9]/.test(value)) return `${what} must be greater than zero`;
-  return undefined;
+): string {
+  const base = registeredInstrument(catalog, draft.base)?.id;
+  const quote = registeredInstrument(catalog, draft.quote)?.id;
+  return base && quote ? `${base} / ${quote}` : '';
 }
 
 function textError(raw: string, what: string, max: number): string | undefined {
@@ -148,14 +103,13 @@ function instrumentError(
   return undefined;
 }
 
+/** Whole basis points below a whole fee, as the pool contract's `validFee` requires. */
+const WHOLE_BPS = /^(?:0|[1-9]\d{0,3})$/;
+
 function feeError(raw: string): string | undefined {
   const value = raw.trim();
   if (value === '') return 'Fee is required';
-  if (!isLedgerDecimal(value)) return 'Fee must be a decimal with up to 10 fractional digits';
-  // The integer part is at most five digits here, so this comparison is exact.
-  const whole = Number(value.split('.')[0]);
-  // Basis points are exclusive of the scale, which is a whole fee.
-  if (whole >= BPS_SCALE) return `Fee must be below ${BPS_SCALE} bps`;
+  if (!WHOLE_BPS.test(value)) return `Fee must be whole basis points, from 0 to ${BPS_SCALE - 1}`;
   return undefined;
 }
 
@@ -173,12 +127,6 @@ export function draftErrors(
   set('base', instrumentError(draft.base, catalog, 'Base instrument'));
   set('quote', instrumentError(draft.quote, catalog, 'Quote instrument'));
   set('feeBps', feeError(draft.feeBps));
-  set('baseReserve', amountError(draft.baseReserve, 'Base reserve'));
-  set('quoteReserve', amountError(draft.quoteReserve, 'Quote reserve'));
-  set('lpTokenSupply', amountError(draft.lpTokenSupply, 'LP supply'));
-  set('baseAccountId', textError(draft.baseAccountId, 'Base account', MAX_IDENTIFIER));
-  set('quoteAccountId', textError(draft.quoteAccountId, 'Quote account', MAX_IDENTIFIER));
-  set('lpTokenId', textError(draft.lpTokenId, 'LP token', MAX_IDENTIFIER));
 
   // A key carries the administrator and the identifier together, so two equal
   // keys are the same instrument on both sides of the pair, and the same id
@@ -239,12 +187,6 @@ export function toProposal({ draft, base, quote }: ProposedPool): CreatePoolProp
     name: draft.name.trim(),
     baseInstrumentId: { admin: base.admin, id: base.id },
     quoteInstrumentId: { admin: quote.admin, id: quote.id },
-    baseAccountId: draft.baseAccountId.trim(),
-    quoteAccountId: draft.quoteAccountId.trim(),
-    lpTokenId: draft.lpTokenId.trim(),
     feeBps: draft.feeBps.trim(),
-    baseReserve: draft.baseReserve.trim(),
-    quoteReserve: draft.quoteReserve.trim(),
-    lpTokenSupply: draft.lpTokenSupply.trim(),
   };
 }

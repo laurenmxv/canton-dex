@@ -1,15 +1,24 @@
 import { useId } from 'react';
 import type { PoolReserves, Settlement } from '../../lib/api/types';
-import { compareDecimals, formatDecimal, formatExact, parseDecimal } from '../../lib/decimal';
+import { compareDecimals, formatExact, formatUnrounded, parseDecimal } from '../../lib/decimal';
 import { formatAge, formatDateTime, shortContract } from '../../lib/labels';
 import { Mono } from '../../ui/Mono';
 import { StatusBadge } from '../../ui/Badge';
-import { axisAmount, curveInWindow, plotWindow, type PlotWindow } from './curvePlot';
-import { curveGeometry, reserveDelta, type CurvePoint } from './reserves';
+import {
+  curveInWindow,
+  place,
+  plotWindow,
+  polyline,
+  realSpan,
+  tick,
+  type Frame,
+  type PlotWindow,
+} from './curvePlot';
+import { reserveText } from './preview';
+import { reserveDelta, reserveGeometry, type CurvePoint } from './reserves';
 
-const WIDTH = 264;
-const HEIGHT = 168;
-const INSET = 11;
+const FRAME: Frame = { width: 264, height: 168, inset: 11 };
+const { width: WIDTH, height: HEIGHT, inset: INSET } = FRAME;
 
 /** Grid lines drawn inside the frame, on each axis. */
 const GRID_LINES = 3;
@@ -20,34 +29,10 @@ const ARROW_MINIMUM = 14;
 /** How far the connector stops short of each marker, so neither end sits under one. */
 const ARROW_CLEARANCE = 6.5;
 
-interface Placed {
-  x: number;
-  y: number;
-}
-
-/** One view coordinate, in the drawn frame. */
-function place(point: CurvePoint, window: PlotWindow): Placed {
-  const spanX = window.maxX - window.minX || 1;
-  const spanY = window.maxY - window.minY || 1;
-  return {
-    x: INSET + ((point.x - window.minX) / spanX) * (WIDTH - 2 * INSET),
-    y: HEIGHT - INSET - ((point.y - window.minY) / spanY) * (HEIGHT - 2 * INSET),
-  };
-}
-
-function polyline(points: CurvePoint[], window: PlotWindow): string {
-  return points
-    .map((point) => {
-      const at = place(point, window);
-      return `${at.x.toFixed(1)},${at.y.toFixed(1)}`;
-    })
-    .join(' ');
-}
-
 /** The same arc, closed onto the floor of the frame, so it can carry a fill. */
 function area(points: CurvePoint[], window: PlotWindow): string {
   if (points.length === 0) return '';
-  const drawn = points.map((point) => place(point, window));
+  const drawn = points.map((point) => place(point, window, FRAME));
   const first = drawn[0]!;
   const last = drawn.at(-1)!;
   const floor = HEIGHT - INSET;
@@ -57,8 +42,8 @@ function area(points: CurvePoint[], window: PlotWindow): string {
 
 /** The connector between the two markers, trimmed clear of both. Null when they touch. */
 function connector(
-  from: Placed,
-  to: Placed,
+  from: CurvePoint,
+  to: CurvePoint,
 ): { x1: number; y1: number; x2: number; y2: number } | null {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
@@ -72,35 +57,6 @@ function connector(
     x2: to.x - unitX * ARROW_CLEARANCE,
     y2: to.y - unitY * ARROW_CLEARANCE,
   };
-}
-
-/** Digits a tick is written to. Past this the window is below what a double resolves. */
-const TICK_DIGITS_MAX = 10;
-
-/**
- * An axis tick, written to whatever precision the window needs.
- *
- * The precision follows the span rather than the magnitude: this frame is
- * zoomed onto a move that can be a ten-thousandth of a reserve, and two ticks
- * rounded to the same figure would say the axis does not change. The exact
- * reserves are printed in the key below, so a tick only has to place the eye.
- */
-function tick(coordinate: number, scale: string, span: number): string {
-  const amount = axisAmount(coordinate, scale);
-  if (amount === null || !parseDecimal(amount)) return '—';
-  const digits =
-    span > 0 ? Math.min(TICK_DIGITS_MAX, Math.max(0, Math.ceil(-Math.log10(span)) + 1)) : 2;
-  // Both ends of an axis are written to the same precision, so the pair reads
-  // as one scale rather than as two unrelated figures.
-  return formatDecimal(amount, { minFractionDigits: digits, maxFractionDigits: digits });
-}
-
-/** How wide the window is in real reserves, which is what sets the tick precision. */
-function realSpan(window: PlotWindow, scale: string, axis: 'x' | 'y'): number {
-  const low = axisAmount(axis === 'x' ? window.minX : window.minY, scale);
-  const high = axisAmount(axis === 'x' ? window.maxX : window.maxY, scale);
-  if (low === null || high === null) return 0;
-  return Math.abs(Number(high) - Number(low));
 }
 
 /** Whether the invariant rose, fell or held, from the two figures the venue reported. */
@@ -121,19 +77,18 @@ function signed(value: string): string {
 /**
  * What one confirmed batch did to a pool's reserves.
  *
- * Everything drawn is the batch's own two observations. The chart is history:
- * it is the last batch the ledger confirmed, which is not necessarily where
- * the pool stands now, and it says which of the two it is by comparing the
- * after state with the observation the venue just took.
+ * Everything drawn is the batch's own two observations. The chart is history,
+ * which is not necessarily where the pool stands now, and it says which of the
+ * two it is by comparing the after state with the observation the venue just
+ * took.
  *
  * Both axes are reserves. Each is scaled by its own larger observation, so the
  * two axes are not to one scale and nothing here is a price. The window is
  * zoomed onto the move, because a batch shifts a deep pool by a fraction of a
  * percent and an origin-anchored frame leaves that as one dot.
  *
- * Each observation sits on its own constant-product curve. A pool keeps its
- * fee, so x·y=k is larger after the batch than before, and no single curve
- * passes through both points.
+ * Each observation sits on its own constant-product curve, because a batch
+ * moves x·y=k: retained fees and deposits raise it, and withdrawals lower it.
  */
 export function ReserveChart({
   settlement,
@@ -158,14 +113,15 @@ export function ReserveChart({
   const uid = useId().replace(/:/g, '');
   const gradientId = `${uid}-fill`;
   const arrowId = `${uid}-arrow`;
-  const geometry = curveGeometry(before, after);
+  const geometry = reserveGeometry([before, after]);
   if (!geometry) return null;
 
-  const window = plotWindow(geometry);
-  const beforeCurve = curveInWindow(geometry.beforePoint, window);
-  const afterCurve = curveInWindow(geometry.afterPoint, window);
-  const beforeAt = place(geometry.beforePoint, window);
-  const afterAt = place(geometry.afterPoint, window);
+  const [beforePoint, afterPoint] = geometry.points as [CurvePoint, CurvePoint];
+  const window = plotWindow(geometry.points);
+  const beforeCurve = curveInWindow(beforePoint, window);
+  const afterCurve = curveInWindow(afterPoint, window);
+  const beforeAt = place(beforePoint, window, FRAME);
+  const afterAt = place(afterPoint, window, FRAME);
   const arrow = connector(beforeAt, afterAt);
   const delta = reserveDelta(before, after);
   const invariant = invariantMove(before.invariant, after.invariant);
@@ -181,17 +137,17 @@ export function ReserveChart({
     };
   });
 
-  const afterText = `${formatExact(after.baseReserve)} ${baseLabel} · ${formatExact(after.quoteReserve)} ${quoteLabel}`;
-  const beforeText = `${formatExact(before.baseReserve)} ${baseLabel} · ${formatExact(before.quoteReserve)} ${quoteLabel}`;
+  const afterText = reserveText(after, baseLabel, quoteLabel);
+  const beforeText = reserveText(before, baseLabel, quoteLabel);
 
   return (
     <figure className="m-0 flex flex-col gap-2.5 rounded-md border bg-[color-mix(in_oklab,var(--muted)_40%,var(--card))] px-4 pt-3.5 pb-4">
       <figcaption className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <span className="text-sm font-semibold">Reserves across the last confirmed batch</span>
+          <span className="text-sm font-semibold">Reserves across this batch</span>
           <p className="text-muted-foreground text-xs">
             <Mono>{shortContract(settlement.settlementId)}</Mono> ·{' '}
-            {settlement.swapIds.length} request{settlement.swapIds.length === 1 ? '' : 's'} ·
+            {settlement.requests.length} request{settlement.requests.length === 1 ? '' : 's'} ·
             confirmed {formatAge(settlement.updatedAt, now)} ago
           </p>
         </div>
@@ -210,7 +166,7 @@ export function ReserveChart({
               viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
               className="block h-auto w-full min-w-0 flex-1 [&_circle]:[vector-effect:non-scaling-stroke] [&_line]:[vector-effect:non-scaling-stroke] [&_polyline]:[vector-effect:non-scaling-stroke]"
               role="img"
-              aria-label={`Constant product curves for the last confirmed batch. Before it, ${beforeText}. After it, ${afterText}.`}
+              aria-label={`Constant product curves for this confirmed batch. Before it, ${beforeText}. After it, ${afterText}.`}
             >
               <defs>
                 <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
@@ -241,7 +197,7 @@ export function ReserveChart({
               <path d={area(afterCurve, window)} fill={`url(#${gradientId})`} />
 
               <polyline
-                points={polyline(beforeCurve, window)}
+                points={polyline(beforeCurve, window, FRAME)}
                 fill="none"
                 stroke="var(--muted-foreground)"
                 strokeWidth="1.25"
@@ -250,7 +206,7 @@ export function ReserveChart({
                 opacity="0.7"
               />
               <polyline
-                points={polyline(afterCurve, window)}
+                points={polyline(afterCurve, window, FRAME)}
                 fill="none"
                 stroke="var(--primary)"
                 strokeWidth="1.75"
@@ -331,8 +287,7 @@ export function ReserveChart({
           <div className="flex min-w-0 flex-col gap-0.5">
             <dt>Invariant x·y=k</dt>
             <dd className="tabular-nums">
-              {formatDecimal(before.invariant, { maxFractionDigits: 2 })} →{' '}
-              {formatDecimal(after.invariant, { maxFractionDigits: 2 })}
+              {formatUnrounded(before.invariant)} → {formatUnrounded(after.invariant)}
               {invariant === null ? '' : ` · ${invariant}`}
             </dd>
           </div>

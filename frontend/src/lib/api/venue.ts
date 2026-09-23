@@ -64,6 +64,7 @@ async function translate<T>(work: Promise<T>): Promise<T> {
 export function venueClient(api: DexClient): DexClient {
   return {
     me: (options) => translate(api.me(options)),
+    activity: (query, options) => translate(api.activity(query, options)),
     onboarding: {
       mine: (options) => translate(api.onboarding.mine(options)),
       submitApplication: (input, options) =>
@@ -89,6 +90,28 @@ export function venueClient(api: DexClient): DexClient {
         translate(api.swaps.submitCancellation(swapId, input, options)),
       activity: (query, options) => translate(api.swaps.activity(query, options)),
     },
+    lp: {
+      quoteDeposit: (input, options) => translate(api.lp.quoteDeposit(input, options)),
+      prepareDeposit: (input, options) => translate(api.lp.prepareDeposit(input, options)),
+      submitDeposit: (input, options) => translate(api.lp.submitDeposit(input, options)),
+      getDeposit: (depositId, options) => translate(api.lp.getDeposit(depositId, options)),
+      quoteWithdrawal: (input, options) => translate(api.lp.quoteWithdrawal(input, options)),
+      prepareWithdrawal: (input, options) => translate(api.lp.prepareWithdrawal(input, options)),
+      submitWithdrawal: (input, options) => translate(api.lp.submitWithdrawal(input, options)),
+      getWithdrawal: (withdrawalId, options) =>
+        translate(api.lp.getWithdrawal(withdrawalId, options)),
+      positions: (options) => translate(api.lp.positions(options)),
+      deposits: (query, options) => translate(api.lp.deposits(query, options)),
+      withdrawals: (query, options) => translate(api.lp.withdrawals(query, options)),
+      prepareDepositCancellation: (depositId, options) =>
+        translate(api.lp.prepareDepositCancellation(depositId, options)),
+      submitDepositCancellation: (depositId, input, options) =>
+        translate(api.lp.submitDepositCancellation(depositId, input, options)),
+      prepareWithdrawalCancellation: (withdrawalId, options) =>
+        translate(api.lp.prepareWithdrawalCancellation(withdrawalId, options)),
+      submitWithdrawalCancellation: (withdrawalId, input, options) =>
+        translate(api.lp.submitWithdrawalCancellation(withdrawalId, input, options)),
+    },
     tokens: {
       balances: (options) => translate(api.tokens.balances(options)),
       faucetStatus: (options) => translate(api.tokens.faucetStatus(options)),
@@ -111,7 +134,13 @@ export function venueClient(api: DexClient): DexClient {
       settlements: {
         requests: (poolId, status, options) =>
           translate(api.admin.settlements.requests(poolId, status, options)),
+        setDeferred: (poolId, request, deferred, options) =>
+          translate(api.admin.settlements.setDeferred(poolId, request, deferred, options)),
+        preview: (poolId, type, retryOf, options) =>
+          translate(api.admin.settlements.preview(poolId, type, retryOf, options)),
         list: (poolId, options) => translate(api.admin.settlements.list(poolId, options)),
+        history: (poolId, query, options) =>
+          translate(api.admin.settlements.history(poolId, query, options)),
         get: (settlementId, options) =>
           translate(api.admin.settlements.get(settlementId, options)),
         run: (poolId, input, options) =>

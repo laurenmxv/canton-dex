@@ -88,10 +88,7 @@ export function OperatorOnboardingList({ onOpen }: { onOpen: (onboardingId: stri
 
   return (
     <div className="flex flex-col gap-6 fade-in">
-      <PageHeader
-        title="Onboarding requests"
-        description="Review each application, then grant the pool access the ledger will carry."
-      />
+      <PageHeader title="Onboarding requests" />
 
       <Card>
         <CardHeader

@@ -9,10 +9,7 @@ import { StatusBadge } from '../../ui/Badge';
 import { Card, CardHeader } from '../../ui/Card';
 import { AsyncSection, EmptyState } from '../../ui/States';
 
-/**
- * Swap requests, which only the demo has. The venue serves no swap route, so
- * this card is never rendered against real data.
- */
+/** The demo's own swap requests. Real mode shows the venue's holdings in its place. */
 export function SwapRequestsCard({ demo }: { demo: DemoApi }) {
   const swapRequestsTitle = useId();
   const requests = useAsync(() => demo.swaps.listRequests(), [demo]);

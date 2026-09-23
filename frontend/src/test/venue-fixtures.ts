@@ -1,15 +1,26 @@
 import { accessStep, ATTESTATION_STEP } from '../lib/api/ledger-steps';
+import { DomainError } from '../lib/api/types';
 import type {
+  DepositPreparation,
+  DepositQuote,
+  DepositRequest,
+  LpPosition,
   Onboarding,
   PoolDetail,
   Profile,
+  ProjectedPoolState,
   Settlement,
   SettlementMonitoring,
   SettlementPolicy,
+  SettlementPreview,
+  SettlementPreviewStep,
   Swap,
   SwapPreparationRecord,
   SwapQuoteRecord,
   TokenBalances,
+  WithdrawalPreparation,
+  WithdrawalQuote,
+  WithdrawalRequest,
 } from '../lib/api/types';
 
 /**
@@ -44,13 +55,14 @@ export const POOL: PoolDetail = {
     dvo: 'dvo::1220dvo',
     baseInstrumentId: BTC,
     quoteInstrumentId: USDC,
-    baseAccount: { owner: 'dvo::1220dvo', provider: null, id: 'btc-usdc-base' },
-    quoteAccount: { owner: 'dvo::1220dvo', provider: null, id: 'btc-usdc-quote' },
+    baseAccount: { owner: 'dvo::1220dvo', provider: 'venue-operator::1220beef', id: 'btc-usdc-base' },
+    quoteAccount: { owner: 'dvo::1220dvo', provider: 'venue-operator::1220beef', id: 'btc-usdc-quote' },
     lpTokenInstrumentId: { admin: 'dvo::1220dvo', id: 'LP-BTC-USDC' },
-    feeBps: '30.0000000000',
+    feeBps: '30',
     baseReserve: '5.0000000000',
     quoteReserve: '300000.0000000000',
     lpTokenSupply: '1224.7448713916',
+    initialRatio: '60000.0000000000',
   },
   configId: '00config0001',
   stateId: '00state0001',
@@ -114,6 +126,20 @@ export function onboarded(overrides: Partial<Onboarding> = {}): Onboarding {
     ...overrides,
   };
 }
+
+/** A trader whose attestation stands but whose pool access the ledger no longer confirms. */
+export function withoutAccess(): Onboarding {
+  return onboarded({
+    ledgerSteps: onboarded().ledgerSteps.filter((step) => step.key === ATTESTATION_STEP),
+  });
+}
+
+/** What the venue answers once the trader's KYC or pool access is not current. */
+export const ACCESS_REFUSED = new DomainError(
+  'Current KYC and access to this pool are required',
+  'CONFLICT',
+  'POOL_ACCESS_REQUIRED',
+);
 
 export const BALANCES: TokenBalances = {
   balances: [
@@ -207,6 +233,188 @@ export function swap(overrides: Partial<Swap> = {}): Swap {
   };
 }
 
+export const LP = { admin: 'dvo::1220dvo', id: 'LP-BTC-USDC' };
+
+/** The same pool before anyone deposits, at the ratio its dvo configured. */
+export const EMPTY_POOL: PoolDetail = {
+  ...POOL,
+  settings: {
+    ...POOL.settings,
+    baseReserve: '0.0000000000',
+    quoteReserve: '0.0000000000',
+    lpTokenSupply: '0.0000000000',
+  },
+};
+
+/** The first deposit: the whole offer at the configured ratio, less the locked minimum. */
+export const DEPOSIT_QUOTE: DepositQuote = {
+  quoteId: 'quote-deposit-0001',
+  poolId: POOL_ID,
+  poolName: POOL.name,
+  trader: TRADER_PARTY,
+  baseInstrument: BTC,
+  quoteInstrument: USDC,
+  lpInstrument: LP,
+  mode: 'INITIAL',
+  maxBaseAmount: '0.05',
+  maxQuoteAmount: '3000',
+  expectedBaseAmount: '0.05',
+  expectedQuoteAmount: '3000',
+  expectedBaseRefund: '0',
+  expectedQuoteRefund: '0',
+  expectedLpOut: '12.2474486745',
+  minLpOut: '12.1862114311',
+  minRatio: '59700',
+  maxRatio: '60300',
+  initialMinimumLp: '0.0000001',
+  slippageBps: 50,
+  stateId: '00state0001',
+  quoteExpiresAt: '2099-01-01T00:00:30Z',
+  settlementDeadline: '2099-01-01T00:10:00Z',
+};
+
+export const DEPOSIT_PREPARATION: DepositPreparation = {
+  preparationId: 'prep-deposit-0001',
+  requestId: 'deposit-0001',
+  action: 'SUBMIT',
+  terms: {
+    poolId: POOL_ID,
+    poolName: POOL.name,
+    trader: TRADER_PARTY,
+    baseInstrument: BTC,
+    quoteInstrument: USDC,
+    lpInstrument: LP,
+    mode: DEPOSIT_QUOTE.mode,
+    maxBaseAmount: DEPOSIT_QUOTE.maxBaseAmount,
+    maxQuoteAmount: DEPOSIT_QUOTE.maxQuoteAmount,
+    expectedBaseAmount: DEPOSIT_QUOTE.expectedBaseAmount,
+    expectedQuoteAmount: DEPOSIT_QUOTE.expectedQuoteAmount,
+    expectedBaseRefund: DEPOSIT_QUOTE.expectedBaseRefund,
+    expectedQuoteRefund: DEPOSIT_QUOTE.expectedQuoteRefund,
+    expectedLpOut: DEPOSIT_QUOTE.expectedLpOut,
+    minLpOut: DEPOSIT_QUOTE.minLpOut,
+    minRatio: DEPOSIT_QUOTE.minRatio,
+    maxRatio: DEPOSIT_QUOTE.maxRatio,
+    initialMinimumLp: DEPOSIT_QUOTE.initialMinimumLp,
+    settlementDeadline: DEPOSIT_QUOTE.settlementDeadline,
+  },
+  preparedTransactionHash: PREPARED_HASH,
+  hashEncoding: 'base64',
+  hashingSchemeVersion: 3,
+  partyId: TRADER_PARTY,
+  publicKeyFingerprint: FINGERPRINT,
+  expiresAt: '2099-01-01T00:00:45Z',
+  recoveryEffects: [],
+};
+
+export function deposit(overrides: Partial<DepositRequest> = {}): DepositRequest {
+  return {
+    requestId: 'deposit-0001',
+    quoteId: DEPOSIT_QUOTE.quoteId,
+    kind: 'DEPOSIT',
+    terms: DEPOSIT_PREPARATION.terms,
+    result: null,
+    status: 'READY',
+    arrivalSequence: 2,
+    createdAt: '2026-09-19T12:00:10Z',
+    submittedAt: '2026-09-19T12:00:12Z',
+    updatedAt: '2026-09-19T12:00:15Z',
+    settlementId: null,
+    allocationCids: ['00alloc0011', '00alloc0012', '00alloc0013'],
+    updateId: '1220update30',
+    errorCode: null,
+    error: null,
+    canRecover: false,
+    ...overrides,
+  };
+}
+
+export const WITHDRAWAL_QUOTE: WithdrawalQuote = {
+  quoteId: 'quote-withdraw-0001',
+  poolId: POOL_ID,
+  poolName: POOL.name,
+  trader: TRADER_PARTY,
+  baseInstrument: BTC,
+  quoteInstrument: USDC,
+  lpInstrument: LP,
+  lpAmount: '100',
+  expectedBaseOut: '0.4082482905',
+  expectedQuoteOut: '24494.8974278318',
+  minBaseOut: '0.4062070490',
+  minQuoteOut: '24372.4229406926',
+  slippageBps: 50,
+  stateId: '00state0001',
+  quoteExpiresAt: '2099-01-01T00:00:30Z',
+  settlementDeadline: '2099-01-01T00:10:00Z',
+};
+
+export const WITHDRAWAL_PREPARATION: WithdrawalPreparation = {
+  preparationId: 'prep-withdraw-0001',
+  requestId: 'withdraw-0001',
+  action: 'SUBMIT',
+  terms: {
+    poolId: POOL_ID,
+    poolName: POOL.name,
+    trader: TRADER_PARTY,
+    baseInstrument: BTC,
+    quoteInstrument: USDC,
+    lpInstrument: LP,
+    lpAmount: WITHDRAWAL_QUOTE.lpAmount,
+    expectedBaseOut: WITHDRAWAL_QUOTE.expectedBaseOut,
+    expectedQuoteOut: WITHDRAWAL_QUOTE.expectedQuoteOut,
+    minBaseOut: WITHDRAWAL_QUOTE.minBaseOut,
+    minQuoteOut: WITHDRAWAL_QUOTE.minQuoteOut,
+    settlementDeadline: WITHDRAWAL_QUOTE.settlementDeadline,
+  },
+  preparedTransactionHash: PREPARED_HASH,
+  hashEncoding: 'base64',
+  hashingSchemeVersion: 3,
+  partyId: TRADER_PARTY,
+  publicKeyFingerprint: FINGERPRINT,
+  expiresAt: '2099-01-01T00:00:45Z',
+  recoveryEffects: [],
+};
+
+export function withdrawal(overrides: Partial<WithdrawalRequest> = {}): WithdrawalRequest {
+  return {
+    requestId: 'withdraw-0001',
+    quoteId: WITHDRAWAL_QUOTE.quoteId,
+    kind: 'WITHDRAW',
+    terms: WITHDRAWAL_PREPARATION.terms,
+    result: null,
+    status: 'READY',
+    arrivalSequence: 3,
+    createdAt: '2026-09-19T12:00:10Z',
+    submittedAt: '2026-09-19T12:00:12Z',
+    updatedAt: '2026-09-19T12:00:15Z',
+    settlementId: null,
+    allocationCids: ['00alloc0021', '00alloc0022', '00alloc0023'],
+    updateId: '1220update31',
+    errorCode: null,
+    error: null,
+    canRecover: false,
+    ...overrides,
+  };
+}
+
+export function position(overrides: Partial<LpPosition> = {}): LpPosition {
+  return {
+    poolId: POOL_ID,
+    poolName: POOL.name,
+    baseInstrument: BTC,
+    quoteInstrument: USDC,
+    lpInstrument: LP,
+    availableLp: '1124.7448713915',
+    allocatedLp: '0',
+    totalLp: '1124.7448713915',
+    lpTokenSupply: '1224.7448713916',
+    share: '0.9183503419',
+    baseValue: '4.5917517095',
+    quoteValue: '275505.1025721682',
+    ...overrides,
+  };
+}
+
 export const POLICY: SettlementPolicy = {
   poolId: POOL_ID,
   automaticEnabled: false,
@@ -222,7 +430,7 @@ export function monitoring(overrides: Partial<SettlementMonitoring> = {}): Settl
     policy: POLICY,
     readyCount: 2,
     pendingCount: 2,
-    blockedSwapId: null,
+    blockedRequest: null,
     blockedReason: null,
     oldestSubmittedAt: '2026-09-19T11:58:00Z',
     nearestDeadline: '2099-01-01T00:10:00Z',
@@ -237,6 +445,8 @@ export function monitoring(overrides: Partial<SettlementMonitoring> = {}): Settl
         spotPrice: '60000',
         invariant: '1500000',
       },
+      lpTokenSupply: '1224.7448713916',
+      initialRatio: '60000',
       feeBps: '30',
       health: 'READY',
       reason: null,
@@ -253,8 +463,10 @@ export function settlement(overrides: Partial<Settlement> = {}): Settlement {
     poolId: POOL_ID,
     trigger: 'MANUAL',
     status: 'CONFIRMED',
-    swapIds: ['swap-0001'],
-    fills: [{ swapId: 'swap-0001', amountOut: '2941.176470', outputInstrument: USDC }],
+    requests: [{ type: 'swap', requestId: 'swap-0001' }],
+    fills: [
+      { type: 'swap', requestId: 'swap-0001', amountOut: '2941.176470', outputInstrument: USDC },
+    ],
     before: {
       stateId: '00state0001',
       baseReserve: '5',
@@ -275,6 +487,56 @@ export function settlement(overrides: Partial<Settlement> = {}): Settlement {
     updateId: '1220update21',
     errorCode: null,
     error: null,
+    retryOf: null,
+    ...overrides,
+  };
+}
+
+/** A pool state as a preview projects it. The venue computes every figure here. */
+export function projected(baseReserve: string, quoteReserve: string): ProjectedPoolState {
+  return {
+    baseReserve,
+    quoteReserve,
+    lpTokenSupply: '1224.7448713916',
+    spotPrice: null,
+    invariant: '0',
+  };
+}
+
+/** A swap the preview projects to settle comfortably above its signed minimum. */
+export function previewStep(overrides: Partial<SettlementPreviewStep> = {}): SettlementPreviewStep {
+  return {
+    request: { type: 'swap', requestId: 'swap-0001' },
+    status: 'VALID',
+    fill: { type: 'swap', requestId: 'swap-0001', amountOut: '2950.123456', outputInstrument: USDC },
+    before: projected('5', '300000'),
+    after: projected('5.05', '297049.876544'),
+    outputs: [{ instrument: USDC, amount: '2950.123456', minimum: '2926.470588', headroomBps: '80.1' }],
+    errorCode: null,
+    error: null,
+    ...overrides,
+  };
+}
+
+/**
+ * The next batch of one queue. Its selection is the membership of its steps,
+ * at the pool and policy versions monitoring reports, unless overridden.
+ */
+export function preview(overrides: Partial<SettlementPreview> = {}): SettlementPreview {
+  const steps = overrides.steps ?? [previewStep()];
+  const observed = monitoring().pool;
+  return {
+    selection: {
+      type: steps[0]?.request.type ?? 'swap',
+      retryOf: null,
+      stateVersion: observed.version,
+      policyVersion: POLICY.version,
+      requests: steps.map((step) => step.request),
+    },
+    pool: observed,
+    steps,
+    activeSettlementId: null,
+    executable: steps.length > 0 && steps.every((step) => step.status === 'VALID'),
     ...overrides,
   };
 }

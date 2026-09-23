@@ -15,15 +15,18 @@ function unused(name: string) {
  */
 export function testClient(parts: {
   me?: DexClient['me'];
+  activity?: DexClient['activity'];
   onboarding?: Partial<DexClient['onboarding']>;
   pools?: Partial<DexClient['pools']>;
   swaps?: Partial<DexClient['swaps']>;
+  lp?: Partial<DexClient['lp']>;
   tokens?: Partial<DexClient['tokens']>;
   admin?: Partial<Omit<DexClient['admin'], 'settlements'>>;
   settlements?: Partial<DexClient['admin']['settlements']>;
 }): DexClient {
   return {
     me: parts.me ?? unused('me'),
+    activity: parts.activity ?? unused('activity'),
     onboarding: {
       mine: unused('onboarding.mine'),
       submitApplication: unused('onboarding.submitApplication'),
@@ -47,6 +50,24 @@ export function testClient(parts: {
       activity: unused('swaps.activity'),
       ...parts.swaps,
     },
+    lp: {
+      quoteDeposit: unused('lp.quoteDeposit'),
+      prepareDeposit: unused('lp.prepareDeposit'),
+      submitDeposit: unused('lp.submitDeposit'),
+      getDeposit: unused('lp.getDeposit'),
+      quoteWithdrawal: unused('lp.quoteWithdrawal'),
+      prepareWithdrawal: unused('lp.prepareWithdrawal'),
+      submitWithdrawal: unused('lp.submitWithdrawal'),
+      getWithdrawal: unused('lp.getWithdrawal'),
+      positions: unused('lp.positions'),
+      deposits: unused('lp.deposits'),
+      withdrawals: unused('lp.withdrawals'),
+      prepareDepositCancellation: unused('lp.prepareDepositCancellation'),
+      submitDepositCancellation: unused('lp.submitDepositCancellation'),
+      prepareWithdrawalCancellation: unused('lp.prepareWithdrawalCancellation'),
+      submitWithdrawalCancellation: unused('lp.submitWithdrawalCancellation'),
+      ...parts.lp,
+    },
     tokens: {
       balances: unused('tokens.balances'),
       faucetStatus: unused('tokens.faucetStatus'),
@@ -66,7 +87,10 @@ export function testClient(parts: {
       ...parts.admin,
       settlements: {
         requests: unused('admin.settlements.requests'),
+        setDeferred: unused('admin.settlements.setDeferred'),
+        preview: unused('admin.settlements.preview'),
         list: unused('admin.settlements.list'),
+        history: unused('admin.settlements.history'),
         get: unused('admin.settlements.get'),
         run: unused('admin.settlements.run'),
         policy: unused('admin.settlements.policy'),

@@ -5,6 +5,7 @@ import {
   decimalText,
   formatDecimal,
   formatExact,
+  formatUnrounded,
   fractionDigits,
   isLedgerDecimal,
   multiplyDecimals,
@@ -150,6 +151,12 @@ describe('showing an amount to its last digit', () => {
   it('narrows to the instrument’s own precision when it is known', () => {
     expect(formatExact('2941.1764705882', 6)).toBe('2,941.176471');
     expect(formatExact('2941.1764705882')).toBe('2,941.1764705882');
+  });
+
+  it('keeps every digit of a product of two reserves, where ten places read as nothing', () => {
+    // 0.00000003 × 0.0000004467, the invariant a real withdrawal left behind.
+    expect(formatUnrounded('0.000000000000013401')).toBe('0.000000000000013401');
+    expect(formatExact('0.000000000000013401')).toBe('0.00');
   });
 });
 

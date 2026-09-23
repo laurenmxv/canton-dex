@@ -3,6 +3,9 @@ import { DomainError, type Onboarding } from '../lib/api/types';
 import * as demo from './store';
 import type { DemoState } from './store';
 
+const VENUE_SETTLEMENT_QUEUE = 'a venue settlement queue';
+const VENUE_SETTLEMENTS = 'venue settlements';
+
 export interface FixtureBackendOptions {
   /** Simulated round trip. Set to 0 in tests. */
   latencyMs?: number;
@@ -67,6 +70,7 @@ export function createFixtureBackend(options: FixtureBackendOptions = {}): DexBa
     return {
       client: {
         me: () => settle(() => demo.profileOf(state, accountId)),
+        activity: absent('the venue request history'),
 
         onboarding: {
           mine: () =>
@@ -90,7 +94,7 @@ export function createFixtureBackend(options: FixtureBackendOptions = {}): DexBa
         },
 
         // The demo signs nothing and settles nothing, so it serves none of the
-        // venue's swap, balance or settlement routes. Its own simulated swap
+        // venue's swap, liquidity, balance or settlement routes. Its own simulated swap
         // flow lives under `demo.swaps`, where a screen can see what it is.
         swaps: {
           quote: absent('venue quotes'),
@@ -100,6 +104,24 @@ export function createFixtureBackend(options: FixtureBackendOptions = {}): DexBa
           prepareCancellation: absent('venue withdrawal preparations'),
           submitCancellation: absent('signed withdrawals'),
           activity: absent('the venue swap history'),
+        },
+
+        lp: {
+          quoteDeposit: absent('venue deposit quotes'),
+          prepareDeposit: absent('venue deposit preparations'),
+          submitDeposit: absent('signed deposits'),
+          getDeposit: absent('a venue deposit record'),
+          quoteWithdrawal: absent('venue withdrawal quotes'),
+          prepareWithdrawal: absent('venue withdrawal preparations'),
+          submitWithdrawal: absent('signed withdrawals'),
+          getWithdrawal: absent('a venue withdrawal record'),
+          positions: absent('LP positions'),
+          deposits: absent('the venue deposit history'),
+          withdrawals: absent('the venue withdrawal history'),
+          prepareDepositCancellation: absent('venue recovery preparations'),
+          submitDepositCancellation: absent('signed recoveries'),
+          prepareWithdrawalCancellation: absent('venue recovery preparations'),
+          submitWithdrawalCancellation: absent('signed recoveries'),
         },
 
         tokens: {
@@ -120,8 +142,11 @@ export function createFixtureBackend(options: FixtureBackendOptions = {}): DexBa
           withdrawPoolProposal: absent('venue pool proposals'),
           listPools: absent('the venue pool records'),
           settlements: {
-            requests: absent('a venue settlement queue'),
-            list: absent('venue settlements'),
+            requests: absent(VENUE_SETTLEMENT_QUEUE),
+            setDeferred: absent(VENUE_SETTLEMENT_QUEUE),
+            preview: absent('venue batch previews'),
+            list: absent(VENUE_SETTLEMENTS),
+            history: absent(VENUE_SETTLEMENTS),
             get: absent('a venue settlement'),
             run: absent('venue batches'),
             policy: absent('a pool settlement policy'),

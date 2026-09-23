@@ -1,4 +1,5 @@
-import { useCallback, useState } from 'react';
+import { useCallback } from 'react';
+import { useKeyIndex } from '../../app/runtime';
 import { useLive } from '../../app/useAsync';
 import type { PartyPreparation } from '../../lib/api/types';
 import { WalletError, type CantonWallet, type SigningContext } from '../../wallet/types';
@@ -13,7 +14,7 @@ import { WalletError, type CantonWallet, type SigningContext } from '../../walle
  */
 const REQUIRED_HASHING_SCHEME_VERSION = 3;
 
-/** The part of a venue preparation a wallet needs. Swaps and the faucet share it. */
+/** The part of every venue preparation a wallet needs. */
 interface PreparedSigning {
   preparedTransactionHash: string;
   hashEncoding: string;
@@ -48,9 +49,6 @@ export function walletMessage(error: Error): string {
 }
 
 export interface WalletSigner {
-  /** Which Canton identity the wallet derives. The party was registered at one of them. */
-  keyIndex: number;
-  setKeyIndex: (keyIndex: number) => void;
   /**
    * Opens one wallet prompt and answers with the signature, base64.
    *
@@ -74,7 +72,7 @@ export function useWalletSigner(
   wallet: CantonWallet | null,
   party: PartyPreparation | null | undefined,
 ): WalletSigner {
-  const [keyIndex, setKeyIndex] = useState(0);
+  const [keyIndex] = useKeyIndex();
   const live = useLive();
 
   const sign = useCallback(
@@ -141,5 +139,5 @@ export function useWalletSigner(
     [wallet, party, keyIndex, live],
   );
 
-  return { keyIndex, setKeyIndex, sign };
+  return { sign };
 }

@@ -70,90 +70,54 @@ export interface CurvePoint {
   y: number;
 }
 
-export interface CurveGeometry {
-  /** The constant-product curve through each observation, in view units. */
-  beforeCurve: CurvePoint[];
-  afterCurve: CurvePoint[];
-  beforePoint: CurvePoint;
-  afterPoint: CurvePoint;
-  /** The largest coordinate either axis has to show, so both points fit. */
-  viewMax: number;
+/** Two reserves, as an observation records them or a preview projects them. */
+export interface ReservePair {
+  baseReserve: string;
+  quoteReserve: string;
+}
+
+export interface ReserveGeometry {
+  /** Each state, in view units, in the order it was given. */
+  points: CurvePoint[];
   /**
-   * What each axis was divided by: the larger of the two observed reserves on
+   * What each axis was divided by: the largest reserve any state holds on
    * that axis.
    *
    * The axes are scaled independently, because a pair can hold five of one
    * instrument against three hundred thousand of the other and one shared
    * scale would flatten the smaller side onto its axis. A coordinate times
-   * this scale is the reserve it stands for, which is how the chart labels
-   * its ticks. Nothing here compares the two axes to each other.
+   * this scale is the reserve it stands for, which is how a chart labels its
+   * ticks. Nothing here compares the two axes to each other.
    */
   baseScale: string;
   quoteScale: string;
 }
 
-/**
- * How far past the two observed points the curves are drawn.
- *
- * The range comes from the points themselves: a fixed window would leave a
- * large reserve move drawn off its own curve.
- */
-const MARGIN = 0.4;
-const STEPS = 32;
-
-function curve(product: number, from: number, to: number): CurvePoint[] {
-  const points: CurvePoint[] = [];
-  for (let step = 0; step <= STEPS; step += 1) {
-    const x = from + ((to - from) * step) / STEPS;
-    points.push({ x, y: product / x });
-  }
-  return points;
+function largest(values: readonly Decimal[]): Decimal {
+  return values.reduce((best, value) => (compareDecimals(value, best) > 0 ? value : best));
 }
 
 /**
- * The two curves and the two points a batch moved between, in view units.
+ * Each state as a point in view units.
  *
- * Every coordinate is a bounded ratio of one reserve to the larger observed
- * one, so nothing here is an amount and nothing here is money. The two curves
- * are drawn separately on purpose: retained fees raise the invariant, so the
- * point after a batch does not lie on the curve before it.
+ * Every coordinate is a bounded ratio of one reserve to the largest one on its
+ * axis, so nothing here is an amount and nothing here is money. An empty pool
+ * sits at the origin. Null when a reserve cannot be read, or when an axis
+ * holds nothing in any state, since that axis then has no scale to draw at.
  */
-export function curveGeometry(
-  before: PoolReserves,
-  after: PoolReserves,
-): CurveGeometry | null {
-  const values = [
-    parseDecimal(before.baseReserve),
-    parseDecimal(before.quoteReserve),
-    parseDecimal(after.baseReserve),
-    parseDecimal(after.quoteReserve),
-  ];
-  if (values.some((value) => value === null)) return null;
-  const [beforeBase, beforeQuote, afterBase, afterQuote] = values as Decimal[];
+export function reserveGeometry(states: readonly ReservePair[]): ReserveGeometry | null {
+  const bases = states.map((state) => parseDecimal(state.baseReserve));
+  const quotes = states.map((state) => parseDecimal(state.quoteReserve));
+  if (states.length === 0 || [...bases, ...quotes].some((value) => value === null)) return null;
+  const largestBase = largest(bases as Decimal[]);
+  const largestQuote = largest(quotes as Decimal[]);
 
-  const largestBase = compareDecimals(beforeBase!, afterBase!) >= 0 ? beforeBase! : afterBase!;
-  const largestQuote = compareDecimals(beforeQuote!, afterQuote!) >= 0 ? beforeQuote! : afterQuote!;
-  const scaled = [
-    decimalRatio(beforeBase!, largestBase),
-    decimalRatio(beforeQuote!, largestQuote),
-    decimalRatio(afterBase!, largestBase),
-    decimalRatio(afterQuote!, largestQuote),
-  ];
-  if (scaled.some((value) => value === null || value <= 0)) return null;
-  const [bx, by, ax, ay] = scaled as number[];
-
-  // Both ratios are positive, so a fraction of the smaller one starts the
-  // range below both markers however far apart they are.
-  const from = Math.min(bx!, ax!) * (1 - MARGIN);
-  const to = Math.max(bx!, ax!) * (1 + MARGIN);
-
-  return {
-    beforeCurve: curve(bx! * by!, from, to),
-    afterCurve: curve(ax! * ay!, from, to),
-    beforePoint: { x: bx!, y: by! },
-    afterPoint: { x: ax!, y: ay! },
-    viewMax: Math.max(to, by!, ay!) * 1.05,
-    baseScale: decimalText(largestBase),
-    quoteScale: decimalText(largestQuote),
-  };
+  const points: CurvePoint[] = [];
+  for (let index = 0; index < states.length; index += 1) {
+    const x = decimalRatio(bases[index]!, largestBase);
+    const y = decimalRatio(quotes[index]!, largestQuote);
+    if (x === null || y === null || x < 0 || y < 0) return null;
+    points.push({ x, y });
+  }
+  return { points, baseScale: decimalText(largestBase), quoteScale: decimalText(largestQuote) };
 }

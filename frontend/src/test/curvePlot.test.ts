@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { PoolReserves } from '../lib/api/types';
-import { axisAmount, curveInWindow, plotWindow } from '../features/settlement/curvePlot';
-import { curveGeometry, type CurveGeometry } from '../features/settlement/reserves';
+import {
+  axisAmount,
+  curveInWindow,
+  plotWindow,
+  realSpan,
+  tick,
+} from '../features/settlement/curvePlot';
+import { reserveGeometry, type ReserveGeometry } from '../features/settlement/reserves';
 
 function reserves(base: string, quote: string): PoolReserves {
   return {
@@ -13,11 +19,8 @@ function reserves(base: string, quote: string): PoolReserves {
   };
 }
 
-function geometryOf(
-  before: [string, string],
-  after: [string, string],
-): CurveGeometry {
-  const geometry = curveGeometry(reserves(...before), reserves(...after));
+function geometryOf(...states: [string, string][]): ReserveGeometry {
+  const geometry = reserveGeometry(states.map((state) => reserves(...state)));
   if (!geometry) throw new Error('these reserves have a geometry');
   return geometry;
 }
@@ -34,15 +37,14 @@ function holds(window: ReturnType<typeof plotWindow>, point: { x: number; y: num
 describe('the window a reserve move is drawn in', () => {
   it('holds both observations of a move too small to set a scale of its own', () => {
     const geometry = geometryOf(['5', '300000'], ['5.05', '297038.525897']);
-    const window = plotWindow(geometry);
+    const [before, after] = geometry.points as [{ x: number; y: number }, { x: number; y: number }];
+    const window = plotWindow(geometry.points);
 
-    expect(holds(window, geometry.beforePoint)).toBe(true);
-    expect(holds(window, geometry.afterPoint)).toBe(true);
+    expect(holds(window, before)).toBe(true);
+    expect(holds(window, after)).toBe(true);
     // The window does not collapse onto the move: the two markers have to be
     // separable, not touching.
-    expect(window.maxX - window.minX).toBeGreaterThan(
-      Math.abs(geometry.afterPoint.x - geometry.beforePoint.x),
-    );
+    expect(window.maxX - window.minX).toBeGreaterThan(Math.abs(after.x - before.x));
   });
 
   it('shows a batch that moved a deep pool by a fraction of a percent', () => {
@@ -50,83 +52,124 @@ describe('the window a reserve move is drawn in', () => {
     // 300,000 USDC moving by 0.00016616 and 10. A window sized from the pool
     // rather than from the move would put both markers on one pixel.
     const geometry = geometryOf(['5', '300000'], ['4.99983384', '300010']);
-    const window = plotWindow(geometry);
-    const moved = Math.abs(geometry.afterPoint.x - geometry.beforePoint.x);
+    const [before, after] = geometry.points as [{ x: number; y: number }, { x: number; y: number }];
+    const window = plotWindow(geometry.points);
+    const moved = Math.abs(after.x - before.x);
 
-    expect(holds(window, geometry.beforePoint)).toBe(true);
-    expect(holds(window, geometry.afterPoint)).toBe(true);
+    expect(holds(window, before)).toBe(true);
+    expect(holds(window, after)).toBe(true);
     // The move is a fifth of the frame or more, so the two markers are apart.
     expect(moved / (window.maxX - window.minX)).toBeGreaterThan(0.15);
   });
 
-  it('holds both observations of a move that quarters one reserve', () => {
-    const geometry = geometryOf(['100', '100'], ['25', '400']);
-    const window = plotWindow(geometry);
+  it('holds every step of a path, and gives a narrower margin a larger share of the frame', () => {
+    const geometry = geometryOf(
+      ['5', '300000'],
+      ['5.05', '297049.876544'],
+      ['5.1', '294147.5'],
+      ['5.13', '292430.2'],
+    );
+    const wide = plotWindow(geometry.points);
+    const tight = plotWindow(geometry.points, 0.8);
 
-    expect(holds(window, geometry.beforePoint)).toBe(true);
-    expect(holds(window, geometry.afterPoint)).toBe(true);
+    for (const point of geometry.points) {
+      expect(holds(wide, point)).toBe(true);
+      expect(holds(tight, point)).toBe(true);
+    }
+    expect(tight.maxX - tight.minX).toBeLessThan(wide.maxX - wide.minX);
   });
 
-  it('opens a window around a pool no batch has moved', () => {
-    const geometry = geometryOf(['5', '300000'], ['5', '300000']);
-    const window = plotWindow(geometry);
+  it('holds both observations of a move that quarters one reserve', () => {
+    const geometry = geometryOf(['100', '100'], ['25', '400']);
+    const window = plotWindow(geometry.points);
 
-    expect(window.maxX).toBeGreaterThan(window.minX);
-    expect(window.maxY).toBeGreaterThan(window.minY);
-    expect(holds(window, geometry.afterPoint)).toBe(true);
+    for (const point of geometry.points) expect(holds(window, point)).toBe(true);
+  });
+
+  it('opens a window around a pool no batch has moved, and around a lone observation', () => {
+    for (const geometry of [geometryOf(['5', '300000'], ['5', '300000']), geometryOf(['5', '300000'])]) {
+      const window = plotWindow(geometry.points);
+
+      expect(window.maxX).toBeGreaterThan(window.minX);
+      expect(window.maxY).toBeGreaterThan(window.minY);
+      expect(holds(window, geometry.points[0]!)).toBe(true);
+    }
+  });
+
+  it('starts a first deposit into an empty pool at the corner of the frame', () => {
+    const geometry = geometryOf(['0', '0'], ['5', '300000']);
+    const window = plotWindow(geometry.points, 0.8);
+
+    expect([window.minX, window.minY]).toEqual([0, 0]);
+    for (const point of geometry.points) expect(holds(window, point)).toBe(true);
   });
 
   it('never opens onto a negative reserve, however large the move', () => {
-    const window = plotWindow(geometryOf(['1000000', '1'], ['1', '1000000']));
+    const window = plotWindow(geometryOf(['1000000', '1'], ['1', '1000000']).points);
 
     expect(window.minX).toBeGreaterThanOrEqual(0);
     expect(window.minY).toBeGreaterThanOrEqual(0);
+  });
+
+  it('holds a marker orders of magnitude below the other one', () => {
+    const geometry = geometryOf(['1000000', '0.0000000001'], ['0.0000000001', '1000000']);
+    const window = plotWindow(geometry.points);
+
+    for (const point of geometry.points) expect(holds(window, point)).toBe(true);
   });
 
   it('holds a pair whose two reserves are orders of magnitude apart', () => {
     // A satoshi-scale base against a six-figure quote: each axis is scaled by
     // its own reserve, so both points still land inside one window.
     const geometry = geometryOf(['0.00000001', '250000'], ['0.00000002', '125000']);
-    const window = plotWindow(geometry);
+    const window = plotWindow(geometry.points);
 
-    expect(holds(window, geometry.beforePoint)).toBe(true);
-    expect(holds(window, geometry.afterPoint)).toBe(true);
+    for (const point of geometry.points) expect(holds(window, point)).toBe(true);
+  });
+
+  it('writes the two ends of a zoomed axis far enough apart to read as different', () => {
+    const geometry = geometryOf(['5', '300000'], ['5.00000001', '299999.4']);
+    const window = plotWindow(geometry.points);
+    const span = realSpan(window, geometry.baseScale, 'x');
+
+    expect(tick(window.minX, geometry.baseScale, span)).not.toBe(tick(window.maxX, geometry.baseScale, span));
   });
 });
 
 describe('the curve drawn inside that window', () => {
   it('samples the invariant of the observation it was given, and no other', () => {
     const geometry = geometryOf(['5', '300000'], ['5.05', '297038.525897']);
-    const window = plotWindow(geometry);
-    const product = geometry.afterPoint.x * geometry.afterPoint.y;
+    const window = plotWindow(geometry.points);
+    const after = geometry.points[1]!;
+    const product = after.x * after.y;
 
-    for (const point of curveInWindow(geometry.afterPoint, window)) {
+    for (const point of curveInWindow(after, window)) {
       expect(point.x * point.y).toBeCloseTo(product, 12);
     }
   });
 
-  it('draws the two curves apart, because retained fees raise the invariant', () => {
+  it('draws each observation on its own curve once a batch moved the invariant', () => {
     const geometry = geometryOf(['5', '300000'], ['5.05', '297038.525897']);
-    const window = plotWindow(geometry);
-    const before = curveInWindow(geometry.beforePoint, window);
-    const after = curveInWindow(geometry.afterPoint, window);
+    const window = plotWindow(geometry.points);
+    const before = curveInWindow(geometry.points[0]!, window);
+    const after = curveInWindow(geometry.points[1]!, window);
 
     expect(before[0]!.x * before[0]!.y).not.toBeCloseTo(after[0]!.x * after[0]!.y, 20);
   });
 
   it('clips to the window rather than running off the frame', () => {
     const geometry = geometryOf(['100', '100'], ['25', '400']);
-    const window = plotWindow(geometry);
+    const window = plotWindow(geometry.points);
 
-    for (const point of curveInWindow(geometry.afterPoint, window)) {
+    for (const point of curveInWindow(geometry.points[1]!, window)) {
       expect(holds(window, point)).toBe(true);
     }
   });
 
   it('keeps the clipped arc in one piece, so no chord crosses the gap', () => {
     const geometry = geometryOf(['100', '100'], ['25', '400']);
-    const window = plotWindow(geometry);
-    const points = curveInWindow(geometry.afterPoint, window);
+    const window = plotWindow(geometry.points);
+    const points = curveInWindow(geometry.points[1]!, window);
 
     // y=k/x falls as x rises, so a correctly clipped arc is monotonic. A
     // polyline over a split range would break that.
@@ -140,7 +183,7 @@ describe('the curve drawn inside that window', () => {
     const geometry = geometryOf(['5', '300000'], ['5.05', '297038.525897']);
     const elsewhere = { minX: 40, maxX: 50, minY: 40, maxY: 50 };
 
-    expect(curveInWindow(geometry.afterPoint, elsewhere)).toEqual([]);
+    expect(curveInWindow(geometry.points[1]!, elsewhere)).toEqual([]);
   });
 
   it('draws nothing for an observation with no invariant to draw', () => {

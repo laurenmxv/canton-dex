@@ -1,22 +1,15 @@
-import {
-  Banner,
-  Button,
-  CardContent,
-} from '@openzeppelin/ui-components';
+import { Banner, Button } from '@openzeppelin/ui-components';
 import { useEffect, useRef, useState } from 'react';
 import { useDexClient, useWallet } from '../../app/runtime';
 import { useAsync, useChange } from '../../app/useAsync';
 import type { SwapActivity as SwapActivityPage } from '../../lib/api/types';
-import { isKeyIndex } from '../../wallet/types';
-import { Mono } from '../../ui/Mono';
-import { Card, CardHeader, DataList } from '../../ui/Card';
-import { Disclosure } from '../../ui/Disclosure';
-import { TextControl } from '../../ui/Field';
+import { Card } from '../../ui/Card';
 import { EmptyState, ErrorState, Loading, RefreshFailure } from '../../ui/States';
 import { PageHeader } from '../../ui/PageHeader';
 import { confirmedPoolIds } from '../onboarding/progress';
 import { TestTokens } from '../tokens/TestTokens';
 import { useWalletSigner } from '../wallet/signing';
+import { SigningKey } from '../wallet/SigningKey';
 import { hasOutstanding, SwapActivity } from './SwapActivity';
 import { SwapTicket } from './SwapTicket';
 import { eligiblePools } from './terms';
@@ -101,7 +94,8 @@ export function SwapDesk({
 
   const party = onboarding.data?.party ?? null;
   const signer = useWalletSigner(wallet, party);
-  const open = eligiblePools(catalogue.data ?? [], confirmedPoolIds(onboarding.data));
+  const openPoolIds = confirmedPoolIds(onboarding.data);
+  const open = eligiblePools(catalogue.data ?? [], openPoolIds);
   // A catalogue that no longer holds the chosen pool must not leave the
   // selection pointing at nothing.
   const selected = open.find((pool) => pool.poolId === poolId) ?? open[0];
@@ -120,11 +114,8 @@ export function SwapDesk({
   }
 
   return (
-    <div className="flex flex-col gap-6 fade-in max-w-3xl">
-      <PageHeader
-        title="Swap"
-        description="The venue prices it, your wallet signs it, and the pool settles it in a batch."
-      />
+    <div className="flex flex-col gap-6 fade-in max-w-5xl">
+      <PageHeader title="Swap" />
 
       {wallet === null ? (
         <Banner variant="warning" size="compact" dismissible={false}>No wallet configured</Banner>
@@ -134,50 +125,50 @@ export function SwapDesk({
         <RefreshFailure error={catalogue.error} onRetry={catalogue.reload} />
       ) : null}
 
-      {balances.error && balances.data !== undefined ? (
-        <RefreshFailure error={balances.error} onRetry={balances.reload} />
-      ) : null}
-
-      <TestTokens balances={balances} signer={signer} />
-
-      {selected ? (
-        <SwapTicket
-          pools={open}
-          pool={pool}
-          poolId={selected.poolId}
-          onPoolId={setPoolId}
-          balances={balances}
-          signer={signer}
-          unresolvedSwapId={recovering}
-          onDispatched={(swapId) => {
-            // The request is now the venue's to report on. It is the newest
-            // one, so the history goes back to its first page to find it.
-            setRecovering(swapId);
-            setTrail([]);
-            activity.reload();
-          }}
-          onSubmitted={() => {
-            activity.reload();
-            balances.reload();
-          }}
-        />
-      ) : (
-        <Card>
-          <EmptyState
-            title="No pools are open to you"
-            action={
-              <Button variant="secondary" size="sm" onClick={onGoToOnboarding}>
-                Go to onboarding
-              </Button>
-            }
+      {/* The ticket leads; the balances it spends from sit beside it on a wide screen. */}
+      <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
+        {selected ? (
+          <SwapTicket
+            key={selected.poolId}
+            pools={open}
+            pool={pool}
+            poolId={selected.poolId}
+            onPoolId={setPoolId}
+            balances={balances}
+            signer={signer}
+            unresolvedSwapId={recovering}
+            onDispatched={(swapId) => {
+              // The request is now the venue's to report on. It is the newest
+              // one, so the history goes back to its first page to find it.
+              setRecovering(swapId);
+              setTrail([]);
+              activity.reload();
+            }}
+            onSubmitted={() => {
+              activity.reload();
+              balances.reload();
+            }}
           />
-        </Card>
-      )}
+        ) : (
+          <Card>
+            <EmptyState
+              title="No pools are open to you"
+              action={
+                <Button variant="secondary" size="sm" onClick={onGoToOnboarding}>
+                  Go to onboarding
+                </Button>
+              }
+            />
+          </Card>
+        )}
+        <TestTokens balances={balances} signer={signer} />
+      </div>
 
       <SwapActivity
         activity={activity}
         balances={balances.data?.balances ?? []}
         signer={signer}
+        openPoolIds={openPoolIds}
         recovering={recovering}
         olderCursor={activity.data?.nextCursor ?? undefined}
         canShowNewer={trail.length > 0}
@@ -189,48 +180,7 @@ export function SwapDesk({
         }}
       />
 
-      {wallet ? (
-        <Card>
-          <CardHeader title="Signing key" />
-          <CardContent className="p-5 flex flex-col gap-2">
-            <Disclosure summary="Key details">
-              <TextControl
-                label="Canton key index"
-                type="number"
-                min={0}
-                max={1000}
-                value={String(signer.keyIndex)}
-                onChange={(event) => {
-                  const next = Number(event.target.value);
-                  if (isKeyIndex(next)) signer.setKeyIndex(next);
-                }}
-              />
-              <DataList
-                items={[
-                  {
-                    label: 'Registered party',
-                    value: <Mono>{party?.partyId ?? 'Not registered'}</Mono>,
-                  },
-                  {
-                    label: 'Registered key',
-                    value: (
-                      <Mono>{party?.publicKeyFingerprint ?? 'Not registered'}</Mono>
-                    ),
-                  },
-                  {
-                    label: 'Snap',
-                    value: (
-                      <Mono>
-                        {wallet.target.snapId}@{wallet.target.version}
-                      </Mono>
-                    ),
-                  },
-                ]}
-              />
-            </Disclosure>
-          </CardContent>
-        </Card>
-      ) : null}
+      {wallet ? <SigningKey wallet={wallet} party={party} /> : null}
     </div>
   );
 }

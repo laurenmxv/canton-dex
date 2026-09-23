@@ -54,7 +54,7 @@ export function CardHeader({
   titleId?: string;
 }) {
   return (
-    <OzCardHeader className="flex-row items-center justify-between gap-4 border-b px-5 py-4">
+    <OzCardHeader className="flex-row flex-wrap items-center justify-between gap-4 border-b px-5 py-4">
       <div>
         <h2
           {...(titleId ? { id: titleId } : {})}

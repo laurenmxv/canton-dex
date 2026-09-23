@@ -1,5 +1,10 @@
 import { accessStepPoolId, ATTESTATION_STEP } from '../../lib/api/ledger-steps';
-import type { LedgerStep, Onboarding, OnboardingStatus } from '../../lib/api/types';
+import {
+  venueErrorCode,
+  type LedgerStep,
+  type Onboarding,
+  type OnboardingStatus,
+} from '../../lib/api/types';
 
 /**
  * Statuses that change without the reader doing anything: the venue is working,
@@ -39,11 +44,8 @@ export function isReconciling(onboarding: Onboarding | null | undefined): boolea
 }
 
 /**
- * The pools the trader may actually trade.
- *
- * Only a confirmed access contract counts. A pool being in the venue's
- * catalogue, or named in a review, says nothing about whether the ledger has
- * granted anything yet.
+ * Pools granted during onboarding. These historical steps do not report
+ * later revocations; the venue rechecks current access before each operation.
  */
 export function confirmedPoolIds(onboarding: Onboarding | null | undefined): string[] {
   if (!onboarding) return [];
@@ -51,6 +53,11 @@ export function confirmedPoolIds(onboarding: Onboarding | null | undefined): str
     .filter((step) => step.status === 'CONFIRMED')
     .map((step) => accessStepPoolId(step.key))
     .filter((poolId): poolId is string => poolId !== null);
+}
+
+/** True when the venue refused an action because the trader's KYC or pool access is not current. */
+export function lacksPoolAccess(error: unknown): boolean {
+  return venueErrorCode(error) === 'POOL_ACCESS_REQUIRED';
 }
 
 /** The attestation step once the ledger has confirmed it, and null before. */

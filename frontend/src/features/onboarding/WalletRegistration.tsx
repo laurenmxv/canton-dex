@@ -1,6 +1,6 @@
 import { Banner, LoadingButton as Button } from '@openzeppelin/ui-components';
 import { useState } from 'react';
-import { useDexClient } from '../../app/runtime';
+import { useDexClient, useKeyIndex } from '../../app/runtime';
 import { useAction, useLive } from '../../app/useAsync';
 import { venueErrorCode, type Onboarding } from '../../lib/api/types';
 import { partyStatusLabels, partyStatusTones, shortParty } from '../../lib/labels';
@@ -9,7 +9,13 @@ import { StatusBadge } from '../../ui/Badge';
 import { DataList } from '../../ui/Card';
 import { Disclosure } from '../../ui/Disclosure';
 import { TextControl } from '../../ui/Field';
-import { isKeyIndex, WalletError, type CantonWallet, type WalletKey } from '../../wallet/types';
+import {
+  isKeyIndex,
+  MAX_KEY_INDEX,
+  WalletError,
+  type CantonWallet,
+  type WalletKey,
+} from '../../wallet/types';
 import { walletMessage } from '../wallet/signing';
 
 /**
@@ -31,7 +37,7 @@ export function WalletRegistration({
   const client = useDexClient();
   const live = useLive();
   const snap = wallet.target;
-  const [keyIndex, setKeyIndex] = useState(0);
+  const [keyIndex, setKeyIndex] = useKeyIndex();
   const [identity, setIdentity] = useState<WalletKey | null>(null);
 
   const party = onboarding.party;
@@ -160,7 +166,7 @@ export function WalletRegistration({
           label="Canton key index"
           type="number"
           min={0}
-          max={1000}
+          max={MAX_KEY_INDEX}
           value={String(keyIndex)}
           disabled={busy}
           onChange={(event) => {

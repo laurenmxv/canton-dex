@@ -10,5 +10,3 @@ import type { DexClient as VenueClient } from '@canton-dex/client';
  * token and, in the demo, from the actor the composition point bound.
  */
 export type DexClient = VenueClient;
-
-export type { AdminApi, OnboardingApi, PoolsApi } from '@canton-dex/client';

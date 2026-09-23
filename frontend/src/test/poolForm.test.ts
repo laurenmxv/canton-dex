@@ -6,7 +6,7 @@ import {
   instrumentChoices,
   instrumentKey,
   proposedPool,
-  suggestedIds,
+  suggestedName,
   toProposal,
   type ProposalDraft,
 } from '../features/pools/poolForm';
@@ -37,13 +37,7 @@ function draft(overrides: Partial<ProposalDraft> = {}): ProposalDraft {
     ...emptyDraft(),
     base: instrumentKey(USDC),
     quote: instrumentKey(EURC),
-    baseReserve: '1000000',
-    quoteReserve: '920000',
-    lpTokenSupply: '959166.305',
     name: 'USDC / EURC',
-    baseAccountId: 'usdc-eurc-base',
-    quoteAccountId: 'usdc-eurc-quote',
-    lpTokenId: 'LP-USDC-EURC',
     ...overrides,
   };
 }
@@ -58,70 +52,34 @@ describe('what a proposal may carry', () => {
   });
 
   it('starts on nothing chosen, and nothing invented', () => {
-    const fresh = emptyDraft();
-    expect(fresh.base).toBe('');
-    expect(fresh.quote).toBe('');
-    expect(fresh.baseReserve).toBe('');
-    expect(fresh.lpTokenSupply).toBe('');
+    expect(emptyDraft()).toEqual({ name: '', base: '', quote: '', feeBps: '30' });
   });
 
-  it.each([
-    ['blank', ''],
-    ['a word', 'lots'],
-    ['a negative amount', '-1'],
-    ['zero', '0'],
-    ['zero with decimals', '0.0000000000'],
-    ['eleven fractional digits', '1.00000000001'],
-    ['twenty-nine integer digits', '1'.repeat(29)],
-    ['an exponent', '1e6'],
-    ['a thousands separator', '1,000'],
-  ])('refuses %s as a reserve', (_name, value) => {
-    expect(draftErrors(draft({ baseReserve: value }), CATALOG).baseReserve).toBeDefined();
+  it('takes a name as long as the venue does, and no longer', () => {
+    expect(draftErrors(draft({ name: 'a'.repeat(120) }), CATALOG).name).toBeUndefined();
+    expect(draftErrors(draft({ name: 'a'.repeat(121) }), CATALOG).name).toBeDefined();
   });
 
-  it('accepts the largest amount a Decimal holds', () => {
-    const large = `${'9'.repeat(28)}.${'9'.repeat(10)}`;
-    expect(draftErrors(draft({ baseReserve: large }), CATALOG).baseReserve).toBeUndefined();
-  });
-
-  it('refuses a left-padded amount, which the venue reads as malformed', () => {
-    expect(draftErrors(draft({ baseReserve: '01' }), CATALOG).baseReserve).toBeDefined();
-    expect(draftErrors(draft({ baseReserve: '00.5' }), CATALOG).baseReserve).toBeDefined();
-    expect(draftErrors(draft({ feeBps: '030' }), CATALOG).feeBps).toBeDefined();
-    // A single leading zero before the point is the number zero, not padding.
-    expect(draftErrors(draft({ feeBps: '0.5' }), CATALOG).feeBps).toBeUndefined();
-  });
-
-  it('takes identifiers as long as the venue does, and no longer', () => {
-    const id = (length: number) => 'a'.repeat(length);
-
-    expect(draftErrors(draft({ lpTokenId: id(128) }), CATALOG).lpTokenId).toBeUndefined();
-    expect(draftErrors(draft({ lpTokenId: id(129) }), CATALOG).lpTokenId).toBeDefined();
-    expect(draftErrors(draft({ baseAccountId: id(129) }), CATALOG).baseAccountId).toBeDefined();
-    expect(draftErrors(draft({ name: id(120) }), CATALOG).name).toBeUndefined();
-    expect(draftErrors(draft({ name: id(121) }), CATALOG).name).toBeDefined();
-  });
-
-  it('refuses a control character in any text the venue stores', () => {
+  it('refuses a control character in the name the venue stores', () => {
     expect(draftErrors(draft({ name: 'USDC \u0007 EURC' }), CATALOG).name).toBeDefined();
-    expect(draftErrors(draft({ lpTokenId: 'LP\nX' }), CATALOG).lpTokenId).toBeDefined();
     // The C1 range the venue also refuses, which is not printable either.
-    expect(draftErrors(draft({ lpTokenId: 'LP\u0085X' }), CATALOG).lpTokenId).toBeDefined();
-    expect(draftErrors(draft({ baseAccountId: 'base\u009fid' }), CATALOG).baseAccountId).toBeDefined();
+    expect(draftErrors(draft({ name: 'USDC\u0085EURC' }), CATALOG).name).toBeDefined();
     expect(draftErrors(draft({ name: 'USDC \u00a0 EURC' }), CATALOG).name).toBeUndefined();
   });
 
   it.each([
     ['10000', 'a whole fee'],
-    ['10000.0000000001', 'more than a whole fee'],
     ['99999', 'far more'],
+    ['0.5', 'a fraction'],
+    ['30.0', 'written with a fraction'],
+    ['030', 'left-padded'],
     ['', 'nothing'],
     ['-5', 'a negative fee'],
   ])('refuses %s as a fee, which is %s', (value) => {
     expect(draftErrors(draft({ feeBps: value }), CATALOG).feeBps).toBeDefined();
   });
 
-  it.each(['0', '0.5', '30', '9999.9999999999'])('accepts %s bps', (value) => {
+  it.each(['0', '30', '9999'])('accepts %s bps', (value) => {
     expect(draftErrors(draft({ feeBps: value }), CATALOG).feeBps).toBeUndefined();
   });
 
@@ -144,37 +102,17 @@ describe('what a proposal may carry', () => {
 
   it('names every field the venue requires', () => {
     const errors = draftErrors(emptyDraft(), CATALOG);
-    expect(Object.keys(errors).sort()).toEqual([
-      'base',
-      'baseAccountId',
-      'baseReserve',
-      'lpTokenId',
-      'lpTokenSupply',
-      'name',
-      'quote',
-      'quoteAccountId',
-      'quoteReserve',
-    ]);
+    expect(Object.keys(errors).sort()).toEqual(['base', 'name', 'quote']);
   });
 });
 
 describe('what the pair suggests', () => {
-  it('fills the name and the identifiers from the instruments', () => {
-    expect(suggestedIds(draft({ name: '', baseAccountId: '', lpTokenId: '' }), CATALOG)).toEqual({
-      name: 'USDC / EURC',
-      baseAccountId: 'usdc-eurc-base',
-      quoteAccountId: 'usdc-eurc-quote',
-      lpTokenId: 'LP-USDC-EURC',
-    });
+  it('names the pool after the instruments’ own identifiers', () => {
+    expect(suggestedName(draft({ name: '' }), CATALOG)).toBe('USDC / EURC');
   });
 
   it('suggests nothing until both instruments are there', () => {
-    expect(suggestedIds(draft({ quote: '' }), CATALOG)).toEqual({
-      name: '',
-      baseAccountId: '',
-      quoteAccountId: '',
-      lpTokenId: '',
-    });
+    expect(suggestedName(draft({ quote: '' }), CATALOG)).toBe('');
   });
 });
 
@@ -186,29 +124,20 @@ function proposed(from: ProposalDraft) {
 }
 
 describe('what goes on the wire', () => {
-  it('carries each instrument whole, and keeps each amount a string', () => {
-    const body = toProposal(proposed(draft({ baseReserve: ' 1000000 ' })));
+  it('carries each instrument whole, and keeps the fee a trimmed string', () => {
+    const body = toProposal(proposed(draft({ feeBps: ' 30 ' })));
 
     expect(body.baseInstrumentId).toEqual({ admin: 'issuer::1220', id: 'USDC' });
     expect(body.quoteInstrumentId).toEqual({ admin: 'issuer-eurc::1220', id: 'EURC' });
-    expect(body.baseReserve).toBe('1000000');
-    for (const amount of [body.feeBps, body.baseReserve, body.quoteReserve, body.lpTokenSupply]) {
-      expect(typeof amount).toBe('string');
-    }
+    expect(body.feeBps).toBe('30');
   });
 
-  it('carries nothing the venue assigns for itself', () => {
+  it('carries nothing the venue or the dvo assigns', () => {
     expect(Object.keys(toProposal(proposed(draft()))).sort()).toEqual([
-      'baseAccountId',
       'baseInstrumentId',
-      'baseReserve',
       'feeBps',
-      'lpTokenId',
-      'lpTokenSupply',
       'name',
-      'quoteAccountId',
       'quoteInstrumentId',
-      'quoteReserve',
     ]);
   });
 });

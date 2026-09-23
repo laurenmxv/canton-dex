@@ -28,10 +28,11 @@ function recording<T extends object>(target: T, prefix: string, calls: Calls): T
 
 function instrument(client: DexClient, calls: Calls): DexClient {
   return {
-    ...recording({ me: client.me }, '', calls),
+    ...recording({ me: client.me, activity: client.activity }, '', calls),
     onboarding: recording(client.onboarding, 'onboarding.', calls),
     pools: recording(client.pools, 'pools.', calls),
     swaps: recording(client.swaps, 'swaps.', calls),
+    lp: recording(client.lp, 'lp.', calls),
     tokens: recording(client.tokens, 'tokens.', calls),
     admin: {
       ...recording(client.admin, 'admin.', calls),
@@ -51,9 +52,11 @@ function instrumentDemo(demo: DemoApi, calls: Calls): DemoApi {
 function names(client: DexClient, demo: DemoApi, controls: DemoControls): string[] {
   return [
     'me',
+    'activity',
     ...Object.keys(client.onboarding).map((key) => `onboarding.${key}`),
     ...Object.keys(client.pools).map((key) => `pools.${key}`),
     ...Object.keys(client.swaps).map((key) => `swaps.${key}`),
+    ...Object.keys(client.lp).map((key) => `lp.${key}`),
     ...Object.keys(client.tokens).map((key) => `tokens.${key}`),
     // `settlements` is the nested surface below, not an operation of its own.
     ...Object.keys(client.admin)
@@ -148,13 +151,7 @@ async function walkEveryFlow(calls: Calls) {
         name: 'CC / EURC',
         baseInstrumentId: { admin: 'issuer::1220', id: 'CC' },
         quoteInstrumentId: { admin: 'issuer::1220', id: 'EURC' },
-        baseAccountId: 'base',
-        quoteAccountId: 'quote',
-        lpTokenId: 'LP-CC-EURC',
         feeBps: '20',
-        baseReserve: '100000',
-        quoteReserve: '95000',
-        lpTokenSupply: '97467',
       }),
     () => operator.admin.getPoolProposal('prop-0001'),
     () => operator.admin.withdrawPoolProposal('prop-0001'),
@@ -180,12 +177,57 @@ async function walkEveryFlow(calls: Calls) {
     () => alice.swaps.prepareCancellation('swap-0001'),
     () => alice.swaps.submitCancellation('swap-0001', { preparationId: 'p', signature: 'c2ln' }),
     () => alice.swaps.activity(),
+    () => alice.activity(),
+    // Nor does it hold LP, so none of the liquidity routes either.
+    () =>
+      alice.lp.quoteDeposit({
+        poolId: 'pool-usdc-eurc',
+        maxBaseAmount: '1',
+        maxQuoteAmount: '1',
+        slippageBps: 50,
+      }),
+    () =>
+      alice.lp.prepareDeposit({
+        quoteId: 'quote-0001',
+        minLpOut: '1',
+        minRatio: '1',
+        maxRatio: '1',
+        settlementDeadline: '2026-09-19T12:10:00Z',
+      }),
+    () => alice.lp.submitDeposit({ preparationId: 'p', signature: 'c2ln' }),
+    () => alice.lp.getDeposit('deposit-0001'),
+    () => alice.lp.quoteWithdrawal({ poolId: 'pool-usdc-eurc', lpAmount: '1', slippageBps: 50 }),
+    () =>
+      alice.lp.prepareWithdrawal({
+        quoteId: 'quote-0001',
+        minBaseOut: '1',
+        minQuoteOut: '1',
+        settlementDeadline: '2026-09-19T12:10:00Z',
+      }),
+    () => alice.lp.submitWithdrawal({ preparationId: 'p', signature: 'c2ln' }),
+    () => alice.lp.getWithdrawal('withdraw-0001'),
+    () => alice.lp.positions(),
+    () => alice.lp.deposits(),
+    () => alice.lp.withdrawals(),
+    () => alice.lp.prepareDepositCancellation('deposit-0001'),
+    () => alice.lp.submitDepositCancellation('deposit-0001', { preparationId: 'p', signature: 'c2ln' }),
+    () => alice.lp.prepareWithdrawalCancellation('withdraw-0001'),
+    () =>
+      alice.lp.submitWithdrawalCancellation('withdraw-0001', { preparationId: 'p', signature: 'c2ln' }),
     () => alice.tokens.balances(),
     () => alice.tokens.faucetStatus(),
     () => alice.tokens.prepareFaucetClaim(),
     () => alice.tokens.submitFaucetClaim({ preparationId: 'p', signature: 'c2ln' }),
     () => operator.admin.settlements.requests('pool-usdc-eurc'),
+    () =>
+      operator.admin.settlements.setDeferred(
+        'pool-usdc-eurc',
+        { type: 'swap', requestId: 'swap-0001' },
+        true,
+      ),
+    () => operator.admin.settlements.preview('pool-usdc-eurc', 'swap'),
     () => operator.admin.settlements.list('pool-usdc-eurc'),
+    () => operator.admin.settlements.history('pool-usdc-eurc', { type: 'deposit' }),
     () => operator.admin.settlements.get('settle-0001'),
     () =>
       operator.admin.settlements.run('pool-usdc-eurc', {

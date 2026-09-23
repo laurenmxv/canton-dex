@@ -4,6 +4,7 @@ import type {
   DocumentCategory,
   Instrument,
   LedgerStepStatus,
+  LiquidityStatus,
   OnboardingStatus,
   PartyMode,
   PartyStatus,
@@ -14,6 +15,8 @@ import type {
   PoolSummary,
   ProposalStatus,
   Role,
+  Settlement,
+  SettlementRequestRef,
   SettlementStatus,
   SwapDirection,
   SwapRequest,
@@ -53,6 +56,13 @@ export const onboardingStatusTones: Record<OnboardingStatus, Tone> = {
   LEDGER_SUBMITTING: 'progress',
   LEDGER_UNRESOLVED: 'warning',
   COMPLETED: 'success',
+};
+
+export const ledgerStepLabels: Record<LedgerStepStatus, string> = {
+  PENDING: 'Pending',
+  SUBMITTING: 'Submitting',
+  CONFIRMED: 'Confirmed',
+  UNRESOLVED: 'Confirming',
 };
 
 export const ledgerStepTones: Record<LedgerStepStatus, Tone> = {
@@ -135,6 +145,49 @@ export const swapStatusTones: Record<SwapStatus, Tone> = {
   FAILED: 'danger',
 };
 
+/** An elapsed deadline is not a recovery: funds stay allocated until one is confirmed. */
+export const liquidityStatusLabels: Record<LiquidityStatus, string> = {
+  PREPARED: 'Awaiting your signature',
+  SUBMITTING: 'Submitting',
+  UNRESOLVED: 'Confirming',
+  READY: 'Queued for settlement',
+  BLOCKED: 'Blocked in the queue',
+  SETTLING: 'Settling',
+  SETTLED: 'Settled',
+  EXPIRED: 'Deadline elapsed',
+  RECOVERING: 'Recovering funds',
+  RECOVERY_UNRESOLVED: 'Confirming recovery',
+  RECOVERED: 'Funds recovered',
+  FAILED: 'Failed',
+};
+
+export const liquidityStatusTones: Record<LiquidityStatus, Tone> = {
+  PREPARED: 'neutral',
+  SUBMITTING: 'progress',
+  UNRESOLVED: 'warning',
+  READY: 'progress',
+  BLOCKED: 'warning',
+  SETTLING: 'progress',
+  SETTLED: 'success',
+  EXPIRED: 'warning',
+  RECOVERING: 'progress',
+  RECOVERY_UNRESOLVED: 'warning',
+  RECOVERED: 'neutral',
+  FAILED: 'danger',
+};
+
+export const requestTypeLabels: Record<SettlementRequestRef['type'], string> = {
+  swap: 'Swap',
+  deposit: 'Deposit',
+  withdraw: 'Withdrawal',
+};
+
+/** A batch holds requests from one queue, so one kind names its size. */
+export function batchSizeLabel({ requests }: Settlement): string {
+  const kind = requests[0] ? requestTypeLabels[requests[0].type].toLowerCase() : 'request';
+  return `${requests.length} ${kind}${requests.length === 1 ? '' : 's'}`;
+}
+
 export const settlementStatusLabels: Record<SettlementStatus, string> = {
   PREPARING: 'Preparing',
   SUBMITTING: 'Submitting',
@@ -143,6 +196,9 @@ export const settlementStatusLabels: Record<SettlementStatus, string> = {
   REJECTED: 'Rejected',
   CANCELLED: 'Cancelled',
 };
+
+/** How a batch names the rejected or cancelled attempt it follows. */
+export const RETRY_OF = 'Retry of';
 
 export const settlementStatusTones: Record<SettlementStatus, Tone> = {
   PREPARING: 'neutral',
@@ -156,14 +212,14 @@ export const settlementStatusTones: Record<SettlementStatus, Tone> = {
 /** What the venue observed about a pool, not a score this app invented. */
 export const poolHealthLabels: Record<PoolHealth, string> = {
   READY: 'Ready to settle',
-  UNFUNDED: 'No token backing',
+  EMPTY: 'Awaiting initial liquidity',
   BACKING_MISMATCH: 'Holdings do not match reserves',
   DELEGATION_MISSING: 'Settlement authority missing',
 };
 
 export const poolHealthTones: Record<PoolHealth, Tone> = {
   READY: 'success',
-  UNFUNDED: 'warning',
+  EMPTY: 'neutral',
   BACKING_MISMATCH: 'danger',
   DELEGATION_MISSING: 'danger',
 };

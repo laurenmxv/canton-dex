@@ -1,14 +1,47 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { StrictMode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { App } from '../App';
 import { KeycloakRuntime } from '../app/runtime';
+import { createKeycloakAuth } from '../auth/keycloak';
 import type { AuthAdapter, AuthState } from '../auth/types';
 import type { DexClient } from '../lib/api/port';
 import type { CantonWallet } from '../wallet/types';
 import { testClient } from './clients';
 import { testWallet } from './wallets';
 import type { Profile } from '../lib/api/types';
+
+/**
+ * keycloak-js, under the tests that run the real adapter. What a test's `init`
+ * leaves on the instance is what the provider found.
+ */
+const provider = vi.hoisted(() => ({
+  init: vi.fn<(keycloak: FakeKeycloak) => Promise<boolean>>(),
+}));
+
+interface FakeKeycloak {
+  authenticated: boolean;
+  tokenParsed: object | undefined;
+  clearToken(): void;
+}
+
+vi.mock('keycloak-js', () => ({
+  default: class {
+    authenticated = false;
+    tokenParsed: object | undefined;
+    onAuthLogout?: () => void;
+    init() {
+      return provider.init(this);
+    }
+    /** As keycloak-js does when a token can no longer be refreshed. */
+    clearToken() {
+      this.authenticated = false;
+      this.tokenParsed = undefined;
+      this.onAuthLogout?.();
+    }
+  },
+}));
 
 const DAVID: Profile = {
   accountId: 'b2e4f6a8-0000-4000-8000-000000000002',
@@ -142,7 +175,7 @@ describe('real sign-in', () => {
 
     const nav = await screen.findByRole('navigation', { name: 'Sections' });
     const sections = Array.from(nav.querySelectorAll('button')).map((button) => button.textContent);
-    expect(sections).toEqual(['Dashboard', 'Swap', 'Onboarding']);
+    expect(sections).toEqual(['Dashboard', 'Swap', 'Liquidity', 'Onboarding']);
   });
 
   it('shows an operator the sections the venue serves, and no trader screen', async () => {
@@ -255,6 +288,80 @@ describe('real sign-in', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Sign out' }));
     expect(auth.logout).toHaveBeenCalledOnce();
+  });
+});
+
+describe('the Keycloak adapter, when the runtime mounts again', () => {
+  const CONFIG = { url: 'http://localhost:18082', realm: 'Dex', clientId: 'dex-web' };
+
+  /** An init that finds a session, as check-sso does for a caller already signed in. */
+  async function findsDavid(keycloak: FakeKeycloak) {
+    keycloak.authenticated = true;
+    keycloak.tokenParsed = { sub: 'david', preferred_username: 'david' };
+    return true;
+  }
+
+  /** The runtime as main.tsx mounts it. HMR unmounts it and mounts it again. */
+  function mount(auth: AuthAdapter) {
+    return render(
+      <StrictMode>
+        <KeycloakRuntime auth={auth} client={stubClient()} wallet={IDLE_WALLET}>
+          <App />
+        </KeycloakRuntime>
+      </StrictMode>,
+    );
+  }
+
+  it.each([
+    ['a session', findsDavid, 'David Whitfield'],
+    ['no session', async () => false, 'Sign in to continue'],
+    ['a failed start', () => Promise.reject(new Error('Network down')), 'Cannot reach the identity provider'],
+  ])('tells it of %s, without asking the provider twice', async (_, init, shown) => {
+    provider.init.mockImplementation(init);
+    const auth = createKeycloakAuth(CONFIG);
+
+    const first = mount(auth);
+    expect(await screen.findByText(shown)).toBeInTheDocument();
+    first.unmount();
+
+    mount(auth);
+    expect(await screen.findByText(shown)).toBeInTheDocument();
+    expect(provider.init).toHaveBeenCalledOnce();
+  });
+
+  it('answers the runtime mounted while the first start still runs', async () => {
+    let finish: (() => void) | undefined;
+    provider.init.mockImplementation(
+      (keycloak) => new Promise((resolve) => (finish = () => resolve(findsDavid(keycloak)))),
+    );
+    const auth = createKeycloakAuth(CONFIG);
+
+    mount(auth).unmount();
+    mount(auth);
+    expect(screen.getByText('Starting…')).toBeInTheDocument();
+
+    await act(async () => finish!());
+    expect(await screen.findByText('David Whitfield')).toBeInTheDocument();
+    expect(provider.init).toHaveBeenCalledOnce();
+  });
+
+  it('does not bring back a session the provider has since ended', async () => {
+    let keycloak: FakeKeycloak | undefined;
+    provider.init.mockImplementation((instance) => {
+      keycloak = instance;
+      return findsDavid(instance);
+    });
+    const auth = createKeycloakAuth(CONFIG);
+
+    const first = mount(auth);
+    expect(await screen.findByText('David Whitfield')).toBeInTheDocument();
+    await act(async () => keycloak!.clearToken());
+    expect(await screen.findByText('Sign in to continue')).toBeInTheDocument();
+    first.unmount();
+
+    mount(auth);
+    expect(await screen.findByText('Sign in to continue')).toBeInTheDocument();
+    expect(screen.queryByText('David Whitfield')).not.toBeInTheDocument();
   });
 });
 

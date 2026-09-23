@@ -5,9 +5,9 @@ import {
   LoadingButton as Button,
 } from '@openzeppelin/ui-components';
 import { NUMERIC } from '../../ui/table';
-import { useId, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import { useDexClient } from '../../app/runtime';
-import { useAction, type AsyncResult } from '../../app/useAsync';
+import { useAction, useLive, type AsyncResult } from '../../app/useAsync';
 import type { Swap, SwapActivity as SwapActivityPage, TokenBalance } from '../../lib/api/types';
 import { formatExact } from '../../lib/decimal';
 import {
@@ -16,12 +16,13 @@ import {
   swapStatusLabels,
   swapStatusTones,
 } from '../../lib/labels';
-import { Mono } from '../../ui/Mono';
+import { Mono, References } from '../../ui/Mono';
 import { StatusBadge } from '../../ui/Badge';
 import { Card, CardHeader, DataList } from '../../ui/Card';
-import { Disclosure } from '../../ui/Disclosure';
+import { DetailDialog } from '../../ui/DetailDialog';
 import { AsyncSection, EmptyState } from '../../ui/States';
 import { walletMessage, type WalletSigner } from '../wallet/signing';
+import { lacksPoolAccess } from '../onboarding/progress';
 import { balanceOf, instrumentLabel } from './terms';
 
 /** Statuses nothing will move on its own. Everything else is still in flight. */
@@ -32,14 +33,6 @@ export function hasOutstanding(page: SwapActivityPage): boolean {
   return page.items.some((swap) => !SETTLED_FOR_GOOD.has(swap.status));
 }
 
-/**
- * Every request this trader ever signed, newest first.
- *
- * It is read from the venue rather than from anything the browser kept, so a
- * reload, a new tab or another machine all show the same history. A settled
- * request reports what was actually paid, which can exceed the minimum signed
- * for; nothing here derives it.
- */
 /** The instrument's own precision, where the venue reported a balance for it. */
 function decimalsOf(
   balances: readonly TokenBalance[],
@@ -48,10 +41,20 @@ function decimalsOf(
   return balanceOf(balances, instrument)?.decimals;
 }
 
+/**
+ * Every request this trader ever signed, newest first.
+ *
+ * It is read from the venue rather than from anything the browser kept, so a
+ * reload, a new tab or another machine all show the same history. A settled
+ * request reports what was actually paid, which can exceed the minimum signed
+ * for; nothing here derives it. Only a pool the trader's access opens offers a
+ * reclaim.
+ */
 export function SwapActivity({
   activity,
   balances,
   signer,
+  openPoolIds,
   recovering,
   olderCursor,
   canShowNewer,
@@ -62,6 +65,7 @@ export function SwapActivity({
   activity: AsyncResult<SwapActivityPage>;
   balances: readonly TokenBalance[];
   signer: WalletSigner;
+  openPoolIds: readonly string[];
   /** A request that was sent but has not appeared here yet. */
   recovering: string | undefined;
   /** The cursor to the page before this one, where there is one. */
@@ -73,10 +77,16 @@ export function SwapActivity({
 }) {
   const swapActivityTitle = useId();
   const client = useDexClient();
+  const live = useLive();
+  const currentPoolIds = useRef(openPoolIds);
+  currentPoolIds.current = openPoolIds;
+  const canReclaim = (poolId: string) => live() && currentPoolIds.current.includes(poolId);
   const [reclaiming, setReclaiming] = useState<string>();
 
   const reclaim = useAction(async (swap: Swap) => {
+    if (!canReclaim(swap.poolId)) return;
     const prepared = await client.swaps.prepareCancellation(swap.swapId);
+    if (!canReclaim(swap.poolId)) return;
     const symbol = instrumentLabel(balances, swap.inputInstrument);
     const signature = await signer.sign(prepared, {
       operation: 'Reclaim locked input',
@@ -84,6 +94,7 @@ export function SwapActivity({
       amount: `${swap.amountIn} ${symbol}`,
       sender: swap.trader,
     });
+    if (!canReclaim(swap.poolId)) return;
     return client.swaps.submitCancellation(swap.swapId, {
       preparationId: prepared.preparationId,
       signature,
@@ -92,7 +103,7 @@ export function SwapActivity({
 
   return (
     <Card>
-      <CardHeader title="Your requests" titleId={swapActivityTitle} />
+      <CardHeader title="Your swaps" titleId={swapActivityTitle} />
 
       {recovering ? (
         <CardContent className="p-5">
@@ -113,7 +124,7 @@ export function SwapActivity({
       <AsyncSection result={activity} label="Loading your requests" rows={3}>
         {(page) =>
           page.items.length === 0 ? (
-            <EmptyState title="No requests yet" />
+            <EmptyState title="No swaps yet" />
           ) : (
             <DataTable
               aria-labelledby={swapActivityTitle}
@@ -150,12 +161,16 @@ export function SwapActivity({
                 },
                 {
                   id: 'detail',
-                  header: 'Detail',
+                  header: <span className="sr-only">Detail</span>,
                   cell: (swap) => (
                     <SwapDetail
                       swap={swap}
+                      balances={balances}
                       busy={reclaim.pending && reclaiming === swap.swapId}
-                      disabled={reclaim.pending}
+                      disabled={
+                        reclaim.pending || !openPoolIds.includes(swap.poolId) ||
+                        (lacksPoolAccess(reclaim.error) && reclaiming === swap.swapId)
+                      }
                       onReclaim={async () => {
                         setReclaiming(swap.swapId);
                         await reclaim.perform(swap);
@@ -227,30 +242,47 @@ function SwapOutput({ swap, balances }: { swap: Swap; balances: readonly TokenBa
 
 function SwapDetail({
   swap,
+  balances,
   busy,
   disabled,
   onReclaim,
 }: {
   swap: Swap;
+  balances: readonly TokenBalance[];
   busy: boolean;
   disabled: boolean;
   onReclaim: () => void;
 }) {
+  const amount = (value: string, instrument: Swap['inputInstrument']) =>
+    `${formatExact(value, decimalsOf(balances, instrument))} ${instrumentLabel(balances, instrument)}`;
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex items-center justify-end gap-2">
       {swap.canWithdraw ? (
         <Button size="sm" variant="secondary" loading={busy} disabled={disabled} onClick={onReclaim}>
           Reclaim
         </Button>
       ) : null}
-      <Disclosure summary="Show detail">
+      <DetailDialog
+        title={`${swap.poolName} swap ${shortContract(swap.swapId)}`}
+        label={`Details for swap ${shortContract(swap.swapId)}`}
+      >
         <DataList
           items={[
+            { label: 'Status', value: swapStatusLabels[swap.status] },
+            { label: 'Amount in', value: amount(swap.amountIn, swap.inputInstrument) },
+            { label: 'Minimum out', value: amount(swap.minOut, swap.outputInstrument) },
+            {
+              label: 'Paid out',
+              value: swap.amountOut === null ? 'Not settled yet' : amount(swap.amountOut, swap.outputInstrument),
+            },
+            {
+              label: 'Expected out, not binding',
+              value: amount(swap.expectedOut, swap.outputInstrument),
+            },
             { label: 'Request', value: <Mono>{swap.swapId}</Mono> },
             {
-              label: 'Queue position',
-              value:
-                swap.arrivalSequence === null ? 'Not queued yet' : String(swap.arrivalSequence),
+              label: 'Arrival',
+              value: swap.arrivalSequence === null ? 'Not queued yet' : `#${swap.arrivalSequence}`,
             },
             {
               // The venue keeps these identifiers after a settlement consumes
@@ -258,33 +290,18 @@ function SwapDetail({
               // request created, not of what is locked now.
               label: 'Allocation references',
               value:
-                swap.allocationCids.length === 0 ? (
-                  'None recorded'
-                ) : (
-                  <Mono>
-                    {swap.allocationCids.map(shortContract).join(', ')}
-                  </Mono>
-                ),
+                swap.allocationCids.length === 0 ? 'None recorded' : <References ids={swap.allocationCids} />,
             },
             {
               label: 'Ledger update',
-              value: swap.updateId ? (
-                <Mono>{shortContract(swap.updateId)}</Mono>
-              ) : (
-                'Not confirmed yet'
-              ),
+              value: swap.updateId ? <Mono>{swap.updateId}</Mono> : 'Not confirmed yet',
             },
             ...(swap.error
-              ? [
-                  {
-                    label: 'Reported problem',
-                    value: `${swap.errorCode ?? ''} ${swap.error}`.trim(),
-                  },
-                ]
+              ? [{ label: 'Reported problem', value: `${swap.errorCode ?? ''} ${swap.error}`.trim() }]
               : []),
           ]}
         />
-      </Disclosure>
+      </DetailDialog>
     </div>
   );
 }

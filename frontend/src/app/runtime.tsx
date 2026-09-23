@@ -11,6 +11,7 @@ const WalletContext = createContext<CantonWallet | null>(null);
 const DemoApiContext = createContext<DemoApi | null>(null);
 const ControlsContext = createContext<DemoControls | null>(null);
 const SessionContext = createContext<Session | null>(null);
+const KeyIndexContext = createContext<[number, (keyIndex: number) => void] | null>(null);
 
 export interface Session {
   /** How the signed-in identity was established. */
@@ -76,6 +77,16 @@ export function useSession(): Session {
 }
 
 /**
+ * The Canton key index the reader's wallet derives, held for the session so
+ * the index a party was registered at carries to every screen that signs.
+ */
+export function useKeyIndex(): [number, (keyIndex: number) => void] {
+  const keyIndex = useContext(KeyIndexContext);
+  if (!keyIndex) throw new Error('useKeyIndex requires a DexProvider');
+  return keyIndex;
+}
+
+/**
  * Neutral provider. It takes a client that is already built and a session that
  * is already resolved, so the real client is injected without demo controls and
  * without enumerating actors.
@@ -95,12 +106,15 @@ export function DexProvider({
   wallet?: CantonWallet | null;
   children: ReactNode;
 }) {
+  const keyIndex = useState(0);
   return (
     <ControlsContext.Provider value={controls}>
       <DemoApiContext.Provider value={demo}>
         <WalletContext.Provider value={wallet}>
           <SessionContext.Provider value={session}>
-            <ClientContext.Provider value={client}>{children}</ClientContext.Provider>
+            <KeyIndexContext.Provider value={keyIndex}>
+              <ClientContext.Provider value={client}>{children}</ClientContext.Provider>
+            </KeyIndexContext.Provider>
           </SessionContext.Provider>
         </WalletContext.Provider>
       </DemoApiContext.Provider>

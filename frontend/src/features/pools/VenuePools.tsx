@@ -12,6 +12,7 @@ import type {
   PoolDetail,
   PoolProposalRecord,
   PoolProposalStatus,
+  PoolProposalTerms,
   PoolTerms,
 } from '../../lib/api/types';
 import {
@@ -20,8 +21,8 @@ import {
   poolProposalStatusLabels,
   poolProposalStatusTones,
   pairSymbols,
-  trimDecimal,
 } from '../../lib/labels';
+import { formatExact } from '../../lib/decimal';
 import { Mono } from '../../ui/Mono';
 import { StatusBadge } from '../../ui/Badge';
 import { Card, CardHeader, DataList } from '../../ui/Card';
@@ -55,7 +56,7 @@ function matchesFilter(proposal: PoolProposalRecord, filter: Filter): boolean {
   return SETTLING.has(proposal.status);
 }
 
-function pairOf(terms: PoolTerms): string {
+function pairOf(terms: PoolProposalTerms): string {
   return `${terms.baseInstrumentId.id} / ${terms.quoteInstrumentId.id}`;
 }
 
@@ -97,10 +98,7 @@ export function VenuePools() {
   if (proposals.error && !proposals.data) {
     return (
       <div className="flex flex-col gap-6 fade-in">
-        <PageHeader
-          title="Pools"
-          description="The venue catalogue, and the proposals waiting on the dvo."
-        />
+        <PageHeader title="Pools" />
         <Card padded>
           <ErrorState error={proposals.error} onRetry={proposals.reload} />
         </Card>
@@ -115,7 +113,6 @@ export function VenuePools() {
     <div className="flex flex-col gap-6 fade-in">
       <PageHeader
         title="Pools"
-        description="The venue catalogue, and the proposals waiting on the dvo."
         actions={creating ? null : <Button onClick={() => setCreating(true)}>New pool</Button>}
       />
 
@@ -215,7 +212,7 @@ export function VenuePools() {
 }
 
 /** The instruments, unless the name already is them. */
-function Pair({ terms, name }: { terms: PoolTerms; name: string }) {
+function Pair({ terms, name }: { terms: PoolProposalTerms; name: string }) {
   const pair = pairOf(terms);
   if (pair === name) return null;
   return <p className="text-muted-foreground text-xs font-mono">{pair}</p>;
@@ -230,20 +227,25 @@ function Stat({ label, value }: { label: string; value: number | undefined }) {
   );
 }
 
-function Terms({ terms }: { terms: PoolTerms }) {
+function parties(terms: PoolProposalTerms) {
+  return [
+    { label: 'Base admin', value: <Mono>{terms.baseInstrumentId.admin}</Mono> },
+    { label: 'Quote admin', value: <Mono>{terms.quoteInstrumentId.admin}</Mono> },
+    { label: 'dvo', value: <Mono>{terms.dvo}</Mono> },
+  ];
+}
+
+/** What the dvo configured on acceptance. The reserves are on the card itself. */
+function PoolTermsList({ terms }: { terms: PoolTerms }) {
   return (
     <DataList
       items={[
-        { label: 'Base reserve', value: trimDecimal(terms.baseReserve) },
-        { label: 'Quote reserve', value: trimDecimal(terms.quoteReserve) },
-        { label: 'LP supply', value: trimDecimal(terms.lpTokenSupply) },
-        { label: 'LP token', value: <Mono>{terms.lpTokenInstrumentId.id}</Mono> },
-        { label: 'Base admin', value: <Mono>{terms.baseInstrumentId.admin}</Mono> },
         {
-          label: 'Quote admin',
-          value: <Mono>{terms.quoteInstrumentId.admin}</Mono>,
+          label: 'Initial ratio',
+          value: `${formatExact(terms.initialRatio)} ${terms.quoteInstrumentId.id} per ${terms.baseInstrumentId.id}`,
         },
-        { label: 'dvo', value: <Mono>{terms.dvo}</Mono> },
+        { label: 'LP token', value: <Mono>{terms.lpTokenInstrumentId.id}</Mono> },
+        ...parties(terms),
       ]}
     />
   );
@@ -273,11 +275,21 @@ function PoolGrid({ pools }: { pools: PoolDetail[] }) {
             </div>
             <StatusBadge tone="success" label={formatFeeBps(pool.settings.feeBps)} />
           </div>
-          <div className="grid grid-cols-2 gap-2 min-[721px]:grid-cols-3">
-            <Figure label="Base" value={trimDecimal(pool.settings.baseReserve)} />
-            <Figure label="Quote" value={trimDecimal(pool.settings.quoteReserve)} />
-            <Figure label="LP supply" value={trimDecimal(pool.settings.lpTokenSupply)} />
-          </div>
+          {/* One figure per row: exact amounts run long and must never meet. */}
+          <DataList
+            variant="summary"
+            items={[
+              {
+                label: `${pool.settings.baseInstrumentId.id} reserve`,
+                value: formatExact(pool.settings.baseReserve),
+              },
+              {
+                label: `${pool.settings.quoteInstrumentId.id} reserve`,
+                value: formatExact(pool.settings.quoteReserve),
+              },
+              { label: 'LP supply', value: formatExact(pool.settings.lpTokenSupply) },
+            ]}
+          />
           <Disclosure summary="Contracts">
             <CopyField label="Pool" value={pool.poolId} />
             <CopyField label="Config" value={pool.configId} />
@@ -291,19 +303,10 @@ function PoolGrid({ pools }: { pools: PoolDetail[] }) {
                 },
               ]}
             />
-            <Terms terms={pool.settings} />
+            <PoolTermsList terms={pool.settings} />
           </Disclosure>
         </article>
       ))}
-    </div>
-  );
-}
-
-function Figure({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex flex-col">
-      <span className="text-muted-foreground text-[0.6875rem]">{label}</span>
-      <span className="text-xs tabular-nums">{value}</span>
     </div>
   );
 }
@@ -391,7 +394,7 @@ function ProposalRow({
         ) : null}
         {proposal.poolId ? <CopyField label="Pool" value={proposal.poolId} /> : null}
         {proposal.updateId ? <CopyField label="Ledger update" value={proposal.updateId} /> : null}
-        <Terms terms={proposal.settings} />
+        <DataList items={parties(proposal.settings)} />
       </Disclosure>
     </div>
   );

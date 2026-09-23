@@ -74,6 +74,12 @@ export function isZero(value: Decimal): boolean {
   return value.units === 0n;
 }
 
+/** True for text that reads as exactly zero. Unreadable text is not zero, so it never passes for nothing. */
+export function isZeroAmount(text: string): boolean {
+  const value = parseDecimal(text);
+  return value !== null && isZero(value);
+}
+
 /** The number of fractional digits written down, which is what a precision limit bounds. */
 export function fractionDigits(value: Decimal): number {
   const text = decimalText(value);
@@ -154,6 +160,16 @@ const LEDGER_SCALE = 10;
  */
 export function formatExact(text: string, decimals: number = LEDGER_SCALE): string {
   return formatDecimal(text, { maxFractionDigits: decimals });
+}
+
+/**
+ * A figure shown to every digit the venue wrote, for a value that is not one
+ * instrument's amount. A pool's invariant is a product of two reserves, so it
+ * can carry twenty fractional digits: at any fixed precision a real, tiny one
+ * reads as zero.
+ */
+export function formatUnrounded(text: string): string {
+  return formatDecimal(text, { maxFractionDigits: parseDecimal(text)?.scale ?? 0 });
 }
 
 /**

@@ -1,7 +1,7 @@
 import { useDexClient } from '../../app/runtime';
 import { useAsync } from '../../app/useAsync';
 import { errorCode, type TokenBalance } from '../../lib/api/types';
-import { formatExact, isZero, parseDecimal } from '../../lib/decimal';
+import { formatExact, isZeroAmount } from '../../lib/decimal';
 import { Card, CardHeader } from '../../ui/Card';
 import { AsyncSection, EmptyState } from '../../ui/States';
 import { TokenLogo } from '../../ui/TokenLogo';
@@ -11,19 +11,13 @@ function keyOf(balance: TokenBalance): string {
   return `${balance.instrument.admin}/${balance.instrument.id}`;
 }
 
-/** True where a figure reads as nothing held. Unreadable text is not nothing. */
-function isNone(amount: string): boolean {
-  const value = parseDecimal(amount);
-  return value !== null && isZero(value);
-}
-
 /**
  * Empty rows go last, so what the trader holds is what they see first. The
  * sort is stable, so the venue's own order survives inside each group.
  */
 function held(balances: readonly TokenBalance[]): TokenBalance[] {
   return [...balances].sort(
-    (left, right) => Number(isNone(left.total)) - Number(isNone(right.total)),
+    (left, right) => Number(isZeroAmount(left.total)) - Number(isZeroAmount(right.total)),
   );
 }
 
@@ -45,12 +39,7 @@ export function Holdings() {
 
   return (
     <Card>
-      <CardHeader
-        title="Your tokens"
-        description={
-          balances.data ? `Read at ledger offset ${balances.data.asOfOffset}` : undefined
-        }
-      />
+      <CardHeader title="Your tokens" />
       <AsyncSection result={balances} label="Loading your balances" rows={3}>
         {(tokens) =>
           tokens.balances.length === 0 ? (
@@ -69,7 +58,7 @@ export function Holdings() {
 }
 
 function Holding({ balance }: { balance: TokenBalance }) {
-  const locked = !isNone(balance.locked);
+  const locked = !isZeroAmount(balance.locked);
   return (
     <li className="flex flex-col gap-1 border-b px-5 py-3 last:border-b-0">
       <div className="flex items-center gap-3">

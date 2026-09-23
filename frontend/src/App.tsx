@@ -6,6 +6,7 @@ import { Mark } from './app/Mark';
 import { useTheme } from './app/useTheme';
 import type { NextStepTarget } from './features/dashboard/nextStep';
 import { TraderDashboard } from './features/dashboard/TraderDashboard';
+import { LiquidityDesk } from './features/liquidity/LiquidityDesk';
 import { OperatorOnboardingDetail } from './features/onboarding/OperatorOnboardingDetail';
 import { OperatorOnboardingList } from './features/onboarding/OperatorOnboardingList';
 import { TraderOnboarding } from './features/onboarding/TraderOnboarding';
@@ -25,6 +26,7 @@ type View =
   | { name: 'trader-dashboard' }
   /** `poolId` is the pool the trader asked for, where they named one. */
   | { name: 'trader-swap'; poolId?: string }
+  | { name: 'trader-liquidity' }
   | { name: 'trader-onboarding' }
   | { name: 'operator-onboardings' }
   | { name: 'operator-onboarding'; onboardingId: string }
@@ -38,8 +40,9 @@ type Section = Exclude<View['name'], 'operator-onboarding' | 'operator-proposal'
 type NavItem = { id: Section; label: string };
 
 /**
- * Sections per role. Settlement is the venue's alone: the demo runs no queue
- * and settles nothing, so it has no such screen to offer.
+ * Sections per role. Settlement and liquidity are the venue's alone: the demo
+ * runs no queue, holds no LP and settles nothing, so it has no such screens to
+ * offer.
  */
 function navFor(role: Role, simulated: boolean): readonly NavItem[] {
   if (role === 'OPERATOR') {
@@ -53,6 +56,7 @@ function navFor(role: Role, simulated: boolean): readonly NavItem[] {
   return [
     { id: 'trader-dashboard', label: 'Dashboard' },
     { id: 'trader-swap', label: 'Swap' },
+    ...(simulated ? [] : [{ id: 'trader-liquidity' as const, label: 'Liquidity' }]),
     { id: 'trader-onboarding', label: 'Onboarding' },
   ];
 }
@@ -73,6 +77,7 @@ function sectionOf(view: View): Section {
 const sectionViews: Record<Section, View> = {
   'trader-dashboard': { name: 'trader-dashboard' },
   'trader-swap': { name: 'trader-swap' },
+  'trader-liquidity': { name: 'trader-liquidity' },
   'trader-onboarding': { name: 'trader-onboarding' },
   'operator-onboardings': { name: 'operator-onboardings' },
   'operator-pools': { name: 'operator-pools' },
@@ -278,7 +283,7 @@ function AppBody({
         <div className="bg-card rounded-3xl border p-[clamp(1.5rem,5vw,2.25rem)] shadow-float">
           <h2 className="mb-2.5 text-xl">Sign in to continue</h2>
           <p className="text-muted-foreground text-sm leading-[1.65]">
-            Access your account, explore pools and manage your swaps.
+            Access your account, pools, swaps and liquidity.
           </p>
           <div className="mt-7 grid gap-3">
             <Button className="w-full" onClick={session.login}>
@@ -327,7 +332,6 @@ function ViewContent({
   view: View;
   navigate: (next: View) => void;
 }): ReactElement {
-  // Only the demo serves swaps and its own pool proposals.
   const demo = useDemoApi();
   const goTrader = (target: NextStepTarget, poolId?: string) =>
     navigate(target === 'swap' ? { name: 'trader-swap', poolId } : { name: 'trader-onboarding' });
@@ -350,6 +354,8 @@ function ViewContent({
           onGoToOnboarding={() => navigate({ name: 'trader-onboarding' })}
         />
       );
+    case 'trader-liquidity':
+      return <LiquidityDesk onGoToOnboarding={() => navigate({ name: 'trader-onboarding' })} />;
     case 'operator-onboardings':
       return (
         <OperatorOnboardingList

@@ -1,5 +1,5 @@
 import { DexClientError as ApiError, type DexClient as ApiClient } from '@canton-dex/client';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { errorCode } from '../lib/api/types';
 import { venueClient } from '../lib/api/venue';
 
@@ -164,16 +164,76 @@ describe('what the adapter forwards', () => {
     const client = venueClient(refusing(new Error('unused'))) as unknown as Record<string, unknown>;
 
     expect(Object.keys(client).sort()).toEqual([
+      'activity',
       'admin',
+      'lp',
       'me',
       'onboarding',
       'pools',
       'swaps',
       'tokens',
     ]);
-    for (const absent of ['instruments', 'proposals', 'lp', 'treasury']) {
+    for (const absent of ['instruments', 'proposals', 'liquidity', 'treasury']) {
       expect(client[absent]).toBeUndefined();
     }
-    expect(vi.isMockFunction(client['lp'])).toBe(false);
+  });
+
+  it('forwards the liquidity routes with their identifiers, inputs and signal', async () => {
+    const calls: unknown[][] = [];
+    const record =
+      (name: string) =>
+      (...args: unknown[]) => {
+        calls.push([name, ...args]);
+        return Promise.resolve(null);
+      };
+    const client = venueClient({
+      lp: {
+        submitDeposit: record('submitDeposit'),
+        prepareWithdrawalCancellation: record('prepareWithdrawalCancellation'),
+        deposits: record('deposits'),
+      },
+    } as unknown as ApiClient);
+    const signal = new AbortController().signal;
+
+    await client.lp.submitDeposit({ preparationId: 'p', signature: 's' }, { signal });
+    await client.lp.prepareWithdrawalCancellation(ID, { signal });
+    await client.lp.deposits({ status: 'EXPIRED' }, { signal });
+
+    expect(calls).toEqual([
+      ['submitDeposit', { preparationId: 'p', signature: 's' }, { signal }],
+      ['prepareWithdrawalCancellation', ID, { signal }],
+      ['deposits', { status: 'EXPIRED' }, { signal }],
+    ]);
+  });
+
+  it('forwards the batch preview, the hold and the history with every argument', async () => {
+    const calls: unknown[][] = [];
+    const record =
+      (name: string) =>
+      (...args: unknown[]) => {
+        calls.push([name, ...args]);
+        return Promise.resolve(null);
+      };
+    const client = venueClient({
+      admin: {
+        settlements: {
+          preview: record('preview'),
+          setDeferred: record('setDeferred'),
+          history: record('history'),
+        },
+      },
+    } as unknown as ApiClient);
+    const signal = new AbortController().signal;
+    const request = { type: 'withdraw', requestId: ID } as const;
+
+    await client.admin.settlements.preview('pool', 'withdraw', 'batch-0001', { signal });
+    await client.admin.settlements.setDeferred('pool', request, false, { signal });
+    await client.admin.settlements.history('pool', { status: 'REJECTED', before: 'cursor' }, { signal });
+
+    expect(calls).toEqual([
+      ['preview', 'pool', 'withdraw', 'batch-0001', { signal }],
+      ['setDeferred', 'pool', request, false, { signal }],
+      ['history', 'pool', { status: 'REJECTED', before: 'cursor' }, { signal }],
+    ]);
   });
 });

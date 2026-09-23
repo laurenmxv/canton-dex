@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PoolReserves } from '../lib/api/types';
-import { curveGeometry, invariantMatchesReserves, reserveDelta } from '../features/settlement/reserves';
+import { invariantMatchesReserves, reserveDelta, reserveGeometry } from '../features/settlement/reserves';
 
 function reserves(base: string, quote: string): PoolReserves {
   return {
@@ -12,47 +12,50 @@ function reserves(base: string, quote: string): PoolReserves {
   };
 }
 
-/** True when a point is inside the window the curves were sampled over. */
-function within(geometry: NonNullable<ReturnType<typeof curveGeometry>>, point: { x: number; y: number }) {
-  const xs = geometry.afterCurve.map((at) => at.x);
-  return point.x >= Math.min(...xs) && point.x <= Math.max(...xs) && point.y <= geometry.viewMax;
-}
+describe('the points a pool moves between', () => {
+  it('scales each axis by its own larger observation', () => {
+    const geometry = reserveGeometry([reserves('100', '100'), reserves('25', '400')])!;
 
-describe('the curve a batch moved along', () => {
-  it('draws a window that contains both observations', () => {
-    const geometry = curveGeometry(reserves('5', '300000'), reserves('5.05', '297038.525897'))!;
-
-    expect(within(geometry, geometry.beforePoint)).toBe(true);
-    expect(within(geometry, geometry.afterPoint)).toBe(true);
+    expect(geometry.points).toEqual([
+      { x: 1, y: 0.25 },
+      { x: 0.25, y: 1 },
+    ]);
+    expect([geometry.baseScale, geometry.quoteScale]).toEqual(['100', '400']);
   });
 
-  it('contains a marker a fixed window would have left off the chart', () => {
-    // A valid movement of this size puts the after point at a quarter of the
-    // larger base reserve, far below where a fixed start would begin.
-    const geometry = curveGeometry(reserves('100', '100'), reserves('25', '400'))!;
+  it('scales a whole trajectory by the largest reserve anywhere on it', () => {
+    const geometry = reserveGeometry([reserves('4', '100'), reserves('8', '50'), reserves('2', '200')])!;
 
-    expect(geometry.afterPoint).toEqual({ x: 0.25, y: 1 });
-    expect(within(geometry, geometry.beforePoint)).toBe(true);
-    expect(within(geometry, geometry.afterPoint)).toBe(true);
+    expect(geometry.points.map((point) => point.x)).toEqual([0.5, 1, 0.25]);
+    expect(geometry.points.map((point) => point.y)).toEqual([0.5, 0.25, 1]);
+    expect([geometry.baseScale, geometry.quoteScale]).toEqual(['8', '200']);
   });
 
-  it('contains a marker orders of magnitude below the other one', () => {
-    const geometry = curveGeometry(reserves('1000000', '0.0000000001'), reserves('0.0000000001', '1000000'))!;
+  it('keeps a point orders of magnitude below the other one above zero', () => {
+    const geometry = reserveGeometry([
+      reserves('1000000', '0.0000000001'),
+      reserves('0.0000000001', '1000000'),
+    ])!;
 
-    expect(geometry.afterPoint.x).toBeGreaterThan(0);
-    expect(within(geometry, geometry.beforePoint)).toBe(true);
-    expect(within(geometry, geometry.afterPoint)).toBe(true);
+    expect(geometry.points[1]!.x).toBeGreaterThan(0);
+    expect(geometry.points[0]!.y).toBeGreaterThan(0);
   });
 
-  it('draws the two curves apart, because retained fees raise the invariant', () => {
-    const geometry = curveGeometry(reserves('5', '300000'), reserves('5.05', '297038.525897'))!;
+  it('puts an empty pool at the origin once a first deposit gives the axes a scale', () => {
+    const geometry = reserveGeometry([reserves('0', '0'), reserves('5', '300000')])!;
 
-    // Same x, different y: the point after a batch is not on the curve before it.
-    expect(geometry.beforeCurve[0]!.y).not.toBe(geometry.afterCurve[0]!.y);
+    expect(geometry.points).toEqual([
+      { x: 0, y: 0 },
+      { x: 1, y: 1 },
+    ]);
+  });
+
+  it('has no scale for an empty pool that nothing moves', () => {
+    expect(reserveGeometry([reserves('0', '0')])).toBeNull();
   });
 
   it('answers nothing for a reserve it cannot read', () => {
-    expect(curveGeometry(reserves('unknown', '1'), reserves('1', '1'))).toBeNull();
+    expect(reserveGeometry([reserves('unknown', '1'), reserves('1', '1')])).toBeNull();
   });
 });
 

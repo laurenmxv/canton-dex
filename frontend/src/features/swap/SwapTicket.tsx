@@ -5,7 +5,7 @@ import {
 } from '@openzeppelin/ui-components';
 import { useState } from 'react';
 import { useDexClient } from '../../app/runtime';
-import { useAction, type AsyncResult } from '../../app/useAsync';
+import { useAction, useLive, type AsyncResult } from '../../app/useAsync';
 import { useNow } from '../../app/useNow';
 import { MAX_SLIPPAGE_BPS, venueErrorCode } from '../../lib/api/types';
 import type {
@@ -23,6 +23,7 @@ import { Card, CardHeader, DataList } from '../../ui/Card';
 import { SelectControl, TextControl } from '../../ui/Field';
 import { ErrorState, Loading } from '../../ui/States';
 import { TokenLogo } from '../../ui/TokenLogo';
+import { lacksPoolAccess } from '../onboarding/progress';
 import { walletMessage, type WalletSigner } from '../wallet/signing';
 import { amountProblem, balanceOf, instrumentLabel, sidesOf, slippageProblem } from './terms';
 
@@ -63,6 +64,7 @@ export function SwapTicket({
   onSubmitted: (swap: Swap) => void;
 }) {
   const client = useDexClient();
+  const live = useLive();
   const [direction, setDirection] = useState<SwapDirection>('BaseToQuote');
   const [amountIn, setAmountIn] = useState('');
   const [slippageBps, setSlippageBps] = useState('50');
@@ -119,6 +121,7 @@ export function SwapTicket({
       }
       throw cause;
     }
+    if (!live()) return;
     const signature = await signer.sign(prepared, {
       operation: 'Swap',
       tokenSymbol: `${inSymbol} to ${outSymbol}`,
@@ -126,10 +129,12 @@ export function SwapTicket({
       recipient: prepared.terms.poolName,
       sender: prepared.terms.trader,
     });
+    if (!live()) return;
     try {
       return await client.swaps.submit({ preparationId: prepared.preparationId, signature });
     } catch (cause) {
-      onDispatched(prepared.swapId);
+      // An access refusal is the venue's own answer that nothing was sent.
+      if (!lacksPoolAccess(cause)) onDispatched(prepared.swapId);
       throw cause;
     }
   });
@@ -156,7 +161,7 @@ export function SwapTicket({
     <Card>
       <CardHeader
         title="Request a swap"
-        description={pool.data ? formatFeeBps(pool.data.settings.feeBps) : undefined}
+        description={pool.data ? `Fee ${formatFeeBps(pool.data.settings.feeBps)}` : undefined}
         actions={
           <SelectControl
             label="Pool"
@@ -291,6 +296,7 @@ export function SwapTicket({
             if (result) {
               // A new quote is a new preparation, so the venue's refusal to
               // prepare the old one no longer applies.
+              requestSwap.clearError();
               setStale(false);
               setSubmitted(undefined);
               setQuote(result);
@@ -307,7 +313,7 @@ export function SwapTicket({
             outSymbol={outSymbol}
             expired={expired}
             now={now}
-            blocked={stale || unresolved !== undefined}
+            blocked={stale || unresolved !== undefined || (lacksPoolAccess(requestQuote.error) || lacksPoolAccess(requestSwap.error))}
             pending={requestSwap.pending}
             // A request that is already with the venue explains itself below;
             // repeating the transport failure beside a Request swap button
@@ -359,7 +365,7 @@ function QuotedTerms({
   outSymbol: string;
   expired: boolean;
   now: number;
-  /** True while an earlier request from this quote is still unresolved. */
+  /** True while an earlier request from this quote is unresolved, or the venue refused its pool access. */
   blocked: boolean;
   pending: boolean;
   error: Error | undefined;

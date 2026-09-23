@@ -14,6 +14,7 @@ import { PARTY_HINT_PATTERN } from '../../lib/api/types';
 import {
   formatDateTime,
   ledgerStepLabel,
+  ledgerStepLabels,
   ledgerStepTones,
   onboardingStatusLabels,
   onboardingStatusTones,
@@ -154,9 +155,11 @@ export function OperatorOnboardingDetail({
       {request.ledgerSteps.length > 0 ? (
         <Card>
           <CardHeader title="Onboarding progress" titleId={ledgerStepsTitle} />
-          <CardContent className="p-5">
-            {simulated ? <SimulatedLedgerNotice /> : null}
-          </CardContent>
+          {simulated ? (
+            <CardContent className="p-5">
+              <SimulatedLedgerNotice />
+            </CardContent>
+          ) : null}
           {/*
             The steps land one at a time while the operator watches. The kit
             table owns its own `tbody`, so the live region sits on the element
@@ -190,7 +193,7 @@ export function OperatorOnboardingDetail({
                     <StatusBadge
                       tone={ledgerStepTones[step.status]}
                       dot={step.status === 'SUBMITTING'}
-                      label={step.status}
+                      label={ledgerStepLabels[step.status]}
                     />
                   ),
                 },

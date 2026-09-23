@@ -10,6 +10,7 @@ import type {
   PoolDetail,
   PoolProposalRecord,
   PoolProposalStatus,
+  PoolProposalTerms,
   PoolTerms,
   Profile,
 } from '../lib/api/types';
@@ -24,17 +25,24 @@ const OPERATOR: Profile = {
   partyId: null,
 };
 
-const TERMS: PoolTerms = {
+/** What a proposal asks the dvo for: a pair and a fee, nothing the dvo configures. */
+const PROPOSAL_TERMS: PoolProposalTerms = {
   dvo: 'dvo::1220dvo',
   baseInstrumentId: { admin: 'issuer-usdc::1220usdc', id: 'USDC' },
   quoteInstrumentId: { admin: 'issuer-eurc::1220eurc', id: 'EURC' },
-  baseAccount: { owner: 'dvo::1220dvo', provider: null, id: 'usdc-eurc-base' },
-  quoteAccount: { owner: 'dvo::1220dvo', provider: null, id: 'usdc-eurc-quote' },
+  feeBps: '30',
+};
+
+/** What the dvo configured on acceptance: an empty pool at its initial ratio. */
+const TERMS: PoolTerms = {
+  ...PROPOSAL_TERMS,
+  baseAccount: { owner: 'dvo::1220dvo', provider: 'venue-operator::1220beef', id: 'usdc-eurc-base' },
+  quoteAccount: { owner: 'dvo::1220dvo', provider: 'venue-operator::1220beef', id: 'usdc-eurc-quote' },
   lpTokenInstrumentId: { admin: 'dvo::1220dvo', id: 'LP-USDC-EURC' },
-  feeBps: '30.0000000000',
-  baseReserve: '1000000.0000000000',
-  quoteReserve: '920000.0000000000',
-  lpTokenSupply: '959166.3050000000',
+  baseReserve: '0.0000000000',
+  quoteReserve: '0.0000000000',
+  lpTokenSupply: '0.0000000000',
+  initialRatio: '0.9200000000',
 };
 
 const OPTIONS: PoolCreationOptions = {
@@ -51,7 +59,7 @@ function proposal(overrides: Partial<PoolProposalRecord> = {}): PoolProposalReco
   return {
     proposalId: 'prop-0001',
     name: 'USDC / EURC',
-    settings: TERMS,
+    settings: PROPOSAL_TERMS,
     status: 'PENDING',
     createdAt: '2026-09-18T10:00:00Z',
     updatedAt: '2026-09-18T10:00:05Z',
@@ -276,7 +284,7 @@ describe('the venue pools console', () => {
               name: 'TBILL / USDC',
               status: 'CREATED',
               settings: {
-                ...TERMS,
+                ...PROPOSAL_TERMS,
                 baseInstrumentId: { admin: 'issuer-tbill::1220t', id: 'TBILL' },
                 quoteInstrumentId: { admin: 'issuer-usdc::1220usdc', id: 'USDC' },
               },
@@ -404,8 +412,10 @@ describe('the venue pools console', () => {
     expect(within(details).getByText('00config0001')).toBeInTheDocument();
     expect(within(details).getByText('00state0001')).toBeInTheDocument();
     expect(within(details).getByText('dvo::1220dvo')).toBeInTheDocument();
+    // The ratio the dvo configured, read from the confirmed pool.
+    expect(within(details).getByText('0.92 EURC per USDC')).toBeInTheDocument();
     // Nothing here invents a price, a volume or a value.
-    expect(card.textContent).not.toMatch(/TVL|APR|APY|\$|volume/i);
+    expect(card.textContent).not.toMatch(/TVL|APR|APY|\$|volume|NaN|Infinity/i);
   });
 });
 
@@ -413,12 +423,9 @@ describe('proposing a pool', () => {
   async function fillPair(user: ReturnType<typeof userEvent.setup>) {
     await pick(user, 'Base instrument', 'USDC');
     await pick(user, 'Quote instrument', 'EURC');
-    await user.type(screen.getByLabelText('Base reserve'), '1000000');
-    await user.type(screen.getByLabelText('Quote reserve'), '920000');
-    await user.type(screen.getByLabelText('LP supply'), '959166.305');
   }
 
-  it('sends what was entered, with the venue assigning the rest', async () => {
+  it('sends the pair, the name and the fee, and nothing the dvo configures', async () => {
     const createPoolProposal = vi.fn(() => Promise.resolve(proposal({ status: 'SUBMITTING' })));
     const user = renderPools({ admin: { createPoolProposal } });
 
@@ -426,11 +433,11 @@ describe('proposing a pool', () => {
     await user.click(screen.getByRole('button', { name: 'New pool' }));
     await fillPair(user);
 
-    // The identifiers the pair implies are filled in, and stay editable. The
-    // ones the operator rarely touches wait behind the advanced disclosure.
+    // The name the pair implies is filled in, and stays editable.
     expect(screen.getByLabelText('Pool name')).toHaveValue('USDC / EURC');
-    await user.click(screen.getByRole('button', { name: 'Advanced' }));
-    expect(await screen.findByLabelText('LP token')).toHaveValue('LP-USDC-EURC');
+    for (const field of ['Base reserve', 'LP supply', 'LP token', 'Base account']) {
+      expect(screen.queryByLabelText(field)).not.toBeInTheDocument();
+    }
 
     await user.click(screen.getByRole('button', { name: 'Review' }));
     await user.click(screen.getByRole('button', { name: 'Submit proposal' }));
@@ -439,13 +446,7 @@ describe('proposing a pool', () => {
       name: 'USDC / EURC',
       baseInstrumentId: { admin: 'issuer-usdc::1220usdc', id: 'USDC' },
       quoteInstrumentId: { admin: 'issuer-eurc::1220eurc', id: 'EURC' },
-      baseAccountId: 'usdc-eurc-base',
-      quoteAccountId: 'usdc-eurc-quote',
-      lpTokenId: 'LP-USDC-EURC',
       feeBps: '30',
-      baseReserve: '1000000',
-      quoteReserve: '920000',
-      lpTokenSupply: '959166.305',
     });
   });
 
@@ -455,10 +456,13 @@ describe('proposing a pool', () => {
 
     await openPools(user);
     await user.click(screen.getByRole('button', { name: 'New pool' }));
-    await user.type(screen.getByLabelText('Base reserve'), '0');
+    await user.clear(screen.getByLabelText('Fee, bps'));
+    await user.type(screen.getByLabelText('Fee, bps'), '2.5');
     await user.click(screen.getByRole('button', { name: 'Review' }));
 
-    expect(await screen.findByText('Base reserve must be greater than zero')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Fee must be whole basis points, from 0 to 9999'),
+    ).toBeInTheDocument();
     expect(screen.getByText('Base instrument is required')).toBeInTheDocument();
     expect(createPoolProposal).not.toHaveBeenCalled();
     expect(screen.queryByRole('button', { name: 'Submit proposal' })).not.toBeInTheDocument();
@@ -480,7 +484,7 @@ describe('proposing a pool', () => {
 
     expect(await screen.findByText('A pool for USDC/EURC already exists')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Edit' }));
-    expect(screen.getByLabelText('Base reserve')).toHaveValue('1000000');
+    expect(screen.getByLabelText('Pool name')).toHaveValue('USDC / EURC');
     expect(screen.getByLabelText('Base instrument')).toHaveTextContent('USDC');
   });
 

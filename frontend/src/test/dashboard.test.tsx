@@ -258,7 +258,7 @@ describe('a dashboard the venue cannot serve', () => {
       },
     });
 
-    // The demo's own card carries the request; the venue serves no swap route.
+    // The demo's own card carries the request.
     expect(await screen.findByText('USDC / EURC')).toBeInTheDocument();
     expect(screen.getByText('Your swap requests')).toBeInTheDocument();
   });

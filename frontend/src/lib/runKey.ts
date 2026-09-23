@@ -1,17 +1,25 @@
+import type { RunSettlementInput, SettlementSelection } from './api/types';
+
 /**
- * The key identifying one operator's outstanding manual batch.
+ * One operator's outstanding manual batch on one pool: the idempotency key it
+ * was sent with, and the exact selection it asked for.
  *
  * A `POST` that commits and loses its reply leaves an outcome nobody knows.
  * Repeating it with the same key resolves that: the venue answers with the
  * batch it already made instead of settling the next requests in the queue.
- * The key therefore has to outlive the form, the pool selection and the page,
- * which is why it is kept in browser storage rather than in a component.
+ * The venue also holds the key to the selection it first came with, so the two
+ * are kept and sent together: the same key with a newer preview would be a
+ * different request. They have to outlive the pool selection and the page,
+ * which is why they are kept in browser storage rather than in a component.
  *
- * It is not policy. A key says only which run is unanswered; the venue remains
- * the authority on what that run did.
+ * It is not policy. An intent says only which run is unanswered; the venue
+ * remains the authority on what that run did.
  */
 
-const PREFIX = 'dex.settlement-run';
+const PREFIX = 'dex.settlement-intent';
+
+/** What a manual run sends, and what its retry must send again unchanged. */
+export type RunIntent = Required<RunSettlementInput>;
 
 /** Thrown when a new run could not be made recoverable across a reload. */
 export class RunKeyUnavailable extends Error {
@@ -38,42 +46,59 @@ function readStored(name: string): string | undefined {
   }
 }
 
-/** True only once the key can be read back, which is the guarantee that matters. */
-function writeStored(name: string, key: string): boolean {
+/** True only once the value can be read back, which is the guarantee that matters. */
+function writeStored(name: string, value: string): boolean {
   try {
-    window.localStorage?.setItem(name, key);
-    return window.localStorage?.getItem(name) === key;
+    window.localStorage?.setItem(name, value);
+    return window.localStorage?.getItem(name) === value;
   } catch {
     return false;
   }
 }
 
+/** The run still waiting for an answer, where one is stored and readable. */
+export function outstandingRunIntent(accountId: string, poolId: string): RunIntent | undefined {
+  const stored = readStored(nameFor(accountId, poolId));
+  if (stored === undefined) return undefined;
+  try {
+    const intent = JSON.parse(stored) as Partial<RunIntent> | null;
+    return typeof intent?.idempotencyKey === 'string' && intent.selection
+      ? { idempotencyKey: intent.idempotencyKey, selection: intent.selection }
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
- * The key to run with: the one still outstanding, or a new one.
+ * A new intent for `selection`, under a fresh key.
  *
- * A new key is handed out only once it is stored, because a run dispatched
- * under a key a reload could not find would be retried as a second batch.
+ * It is handed out only once it is stored, because a run dispatched under a
+ * key a reload could not find would be retried as a second batch. It never
+ * replaces an unanswered one, whose key would then be lost.
  */
-export function claimRunKey(accountId: string, poolId: string): string {
-  const name = nameFor(accountId, poolId);
-  const outstanding = readStored(name);
-  if (outstanding !== undefined) return outstanding;
-
-  const fresh = crypto.randomUUID();
-  if (!writeStored(name, fresh)) throw new RunKeyUnavailable();
-  return fresh;
+export function recordRunIntent(
+  accountId: string,
+  poolId: string,
+  selection: SettlementSelection,
+): RunIntent {
+  if (outstandingRunIntent(accountId, poolId)) {
+    throw new Error('The last manual run on this pool has no answer yet. Retry it first.');
+  }
+  const intent: RunIntent = { idempotencyKey: crypto.randomUUID(), selection };
+  if (!writeStored(nameFor(accountId, poolId), JSON.stringify(intent))) throw new RunKeyUnavailable();
+  return intent;
 }
 
-/** Whether a run is outstanding, which is what makes the next press a retry. */
-export function outstandingRunKey(accountId: string, poolId: string): string | undefined {
-  return readStored(nameFor(accountId, poolId));
-}
-
-/** Called once the venue has answered for that key, whatever it answered. */
-export function resolveRunKey(accountId: string, poolId: string): void {
+/**
+ * Called once the venue has answered for that key, whatever it answered. An
+ * intent stored under another key since then stays.
+ */
+export function resolveRunIntent(accountId: string, poolId: string, idempotencyKey: string): void {
+  if (outstandingRunIntent(accountId, poolId)?.idempotencyKey !== idempotencyKey) return;
   try {
     window.localStorage?.removeItem(nameFor(accountId, poolId));
   } catch {
-    // Nothing more to do: the next claim reads whatever is still there.
+    // Nothing more to do: the next read finds whatever is still there.
   }
 }

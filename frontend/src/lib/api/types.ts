@@ -1,9 +1,9 @@
 /**
  * The data the screens render.
  *
- * Onboarding, the pool catalogue and the caller's profile come from
- * `@canton-dex/client`, which owns the backend's JSON contract. The richer pool
- * and swap shapes below have no route behind them and belong to the demo.
+ * Everything the venue serves comes from `@canton-dex/client`, which owns the
+ * backend's JSON contract. The richer pool and swap shapes below have no route
+ * behind them and belong to the demo.
  */
 
 import type { SwapDirection } from '@canton-dex/client';
@@ -39,12 +39,23 @@ export function parseAmount(raw: string): number | undefined {
  */
 export type {
   CreatePoolProposal,
+  DepositPreparation,
+  DepositQuote,
+  DepositRequest,
+  DepositResult,
   DocumentCategory,
   FaucetPreparation,
   FaucetResult,
   FaucetStatus,
   LedgerStep,
   LedgerStepStatus,
+  LiquidityActivity,
+  LiquidityActivityQuery,
+  LiquidityPreparation,
+  LiquidityRequest,
+  LiquidityStatus,
+  LpPosition,
+  LpPositions,
   Onboarding,
   OnboardingApplication,
   OnboardingApplicationInput,
@@ -62,29 +73,37 @@ export type {
   PoolHealth,
   PoolProposal as PoolProposalRecord,
   PoolProposalStatus,
+  PoolProposalTerms,
   PoolReserves,
   PoolSnapshot,
   PoolSummary,
   PoolTerms,
   PrepareSwapInput,
   Profile,
+  ProjectedPoolState,
+  RecoveryEffect,
   RegisteredInstrument,
+  RequestType,
   ReviewDecisionInput,
   Role,
   RunSettlementInput,
   Settlement,
   SettlementFill,
+  SettlementHistory,
+  SettlementHistoryQuery,
   SettlementMonitoring,
+  SettlementOutputCheck,
   SettlementPolicy,
+  SettlementPreview,
+  SettlementPreviewStep,
   SettlementQueueFilter,
   SettlementRequest,
+  SettlementRequestRef,
+  SettlementSelection,
   SettlementStatus,
-  SettlementTrigger,
   SubmitSignatureInput,
   Swap,
-  SwapAction,
   SwapActivity,
-  SwapActivityQuery,
   SwapDirection,
   SwapPreparation as SwapPreparationRecord,
   SwapQuote as SwapQuoteRecord,
@@ -95,6 +114,10 @@ export type {
   TokenBalance,
   TokenBalances,
   UpdateSettlementPolicy,
+  WithdrawalPreparation,
+  WithdrawalQuote,
+  WithdrawalRequest,
+  WithdrawalResult,
 } from '@canton-dex/client';
 
 /** Backend bounds on an application, mirrored so the form can warn early. */

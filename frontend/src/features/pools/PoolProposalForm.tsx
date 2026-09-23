@@ -18,15 +18,12 @@ import {
   proposalResolver,
   proposedPool,
   registeredInstrument,
-  suggestedIds,
+  suggestedName,
   toProposal,
   type DraftField,
   type ProposalDraft,
   type ProposedPool,
 } from './poolForm';
-
-/** Fields the operator only fills in to override what the pair implies. */
-const SUGGESTED: DraftField[] = ['name', 'baseAccountId', 'quoteAccountId', 'lpTokenId'];
 
 /** One shared empty array, so the memos below hold while the venue has not answered. */
 const NO_INSTRUMENTS: readonly RegisteredInstrument[] = [];
@@ -46,8 +43,8 @@ export function PoolProposalForm({
    * than a flag is what makes the summary and the submission provably the same.
    */
   const [reviewed, setReviewed] = useState<ProposedPool | null>(null);
-  /** Fields the operator wrote themselves, which a suggestion must not overwrite. */
-  const [written, setWritten] = useState<Set<DraftField>>(new Set());
+  /** True once the operator wrote the name themselves, which a suggestion must not overwrite. */
+  const [nameWritten, setNameWritten] = useState(false);
 
   const instruments = options.data?.instruments ?? NO_INSTRUMENTS;
   const choices = useMemo(() => instrumentChoices(instruments), [instruments]);
@@ -69,36 +66,27 @@ export function PoolProposalForm({
   const empty = options.data !== undefined && nothingToChoose;
 
   /**
-   * A suggestion only fills a field the operator has not written in.
+   * A suggestion only fills a name the operator has not written in.
    *
-   * `onUserEdit` fires on a keystroke and never on `setValue`, so a field this
-   * writes into stays open to the next suggestion, and one the operator typed
-   * into does not.
+   * `onUserEdit` fires on a keystroke and never on `setValue`, so a name this
+   * writes stays open to the next suggestion, and one the operator typed does
+   * not.
    */
   function suggest() {
-    const suggested = suggestedIds(getValues(), instruments);
-    for (const field of SUGGESTED) {
-      if (written.has(field)) continue;
-      const value = suggested[field as keyof typeof suggested];
-      if (value) setValue(field, value, { shouldValidate: false });
-    }
+    const suggested = suggestedName(getValues(), instruments);
+    if (!nameWritten && suggested) setValue('name', suggested, { shouldValidate: false });
   }
 
-  function claim(field: DraftField) {
-    setWritten((current) => new Set(current).add(field));
-  }
-
-  function text(name: DraftField, label: string, helperText?: string) {
+  function text(name: DraftField, label: string) {
     return (
       <TextField
         control={control}
         id={`proposal-${name}`}
         name={name}
         label={label}
-        {...(helperText === undefined ? {} : { helperText })}
         onUserEdit={() => {
           submit.clearError();
-          if (SUGGESTED.includes(name)) claim(name);
+          if (name === 'name') setNameWritten(true);
         }}
       />
     );
@@ -176,9 +164,6 @@ export function PoolProposalForm({
       { label: 'Quote admin', value: <Mono>{quote.admin}</Mono> },
       { label: 'Name', value: draft.name },
       { label: 'Fee', value: `${draft.feeBps} bps` },
-      { label: 'Reserves', value: `${draft.baseReserve} / ${draft.quoteReserve}` },
-      { label: 'LP supply', value: draft.lpTokenSupply },
-      { label: 'LP token', value: <Mono>{draft.lpTokenId}</Mono> },
     ];
   }
 
@@ -238,9 +223,8 @@ export function PoolProposalForm({
           kit's `readOnly` would have the submission receive an empty draft.
           `contents` keeps the grids below laying themselves out.
 
-          Only the data controls are inside a fieldset. The advanced panel's
-          own trigger stays outside one, so the operator can still open it and
-          read what they are about to send.
+          The dvo configures the accounts, the LP token and the initial ratio
+          when they accept, so the form asks for none of them.
         */}
         <fieldset disabled={reviewing} className="contents">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -248,25 +232,14 @@ export function PoolProposalForm({
             {instrumentField('quote', 'Quote instrument')}
           </div>
 
-          {text('name', 'Pool name')}
-
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {text('name', 'Pool name')}
             {text('feeBps', 'Fee, bps')}
-            {text('lpTokenSupply', 'LP supply')}
-            {text('baseReserve', 'Base reserve')}
-            {text('quoteReserve', 'Quote reserve')}
           </div>
         </fieldset>
 
-        <Disclosure summary="Advanced">
-          <fieldset disabled={reviewing} className="contents">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              {text('baseAccountId', 'Base account')}
-              {text('quoteAccountId', 'Quote account')}
-              {text('lpTokenId', 'LP token')}
-            </div>
-          </fieldset>
-          {options.data ? (
+        {options.data ? (
+          <Disclosure summary="dvo and factory">
             <DataList
               items={[
                 {
@@ -279,8 +252,8 @@ export function PoolProposalForm({
                 },
               ]}
             />
-          ) : null}
-        </Disclosure>
+          </Disclosure>
+        ) : null}
 
         {submit.error ? (
           <Banner

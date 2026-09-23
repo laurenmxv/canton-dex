@@ -9,6 +9,7 @@ import { WalletError, type CantonWallet } from '../wallet/types';
 import { testClient } from './clients';
 import { testWallet } from './wallets';
 import {
+  ACCESS_REFUSED,
   BALANCES,
   BTC,
   onboarded,
@@ -20,6 +21,7 @@ import {
   swap,
   TRADER,
   USDC,
+  withoutAccess,
 } from './venue-fixtures';
 
 const SIGNATURE = 'MEQCIBEiM0RVZneImaq7zN3u/wACIDNEVWZ3iJmqu8zd7v8AESIz';
@@ -226,6 +228,35 @@ describe('requesting a swap', () => {
     expect(await screen.findByText(/hashing scheme 2/)).toBeInTheDocument();
     expect(signTransaction).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ['preparing', { prepare: () => Promise.reject(ACCESS_REFUSED) }, 0],
+    [
+      'submitting',
+      { prepare: () => Promise.resolve(PREPARATION), submit: () => Promise.reject(ACCESS_REFUSED) },
+      1,
+    ],
+  ] as const)('signs nothing more once the venue refuses pool access while %s', async (_, swaps, signed) => {
+    const signTransaction = vi.fn<CantonWallet['signTransaction']>(() =>
+      Promise.resolve({ signature: SIGNATURE, fingerprint: PREPARATION.publicKeyFingerprint }),
+    );
+    const user = desk(
+      { swaps: { quote: () => Promise.resolve(QUOTE), ...swaps } },
+      signingWallet({ signTransaction }),
+    );
+
+    await quoteFor(user, '0.05');
+    await user.click(await screen.findByRole('button', { name: 'Request swap' }));
+
+    expect(await screen.findByText(ACCESS_REFUSED.message)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Request swap' })).toBeDisabled();
+    expect(screen.queryByText('Sent, outcome unknown')).not.toBeInTheDocument();
+    expect(signTransaction).toHaveBeenCalledTimes(signed);
+
+    // Only a new quote, which the venue gives only with access, opens signing again.
+    await user.click(screen.getByRole('button', { name: 'Refresh quote' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Request swap' })).toBeEnabled());
+  });
 });
 
 describe('what the form refuses before asking the venue', () => {
@@ -305,7 +336,7 @@ describe('what the form refuses before asking the venue', () => {
 
 describe('the trader’s own requests', () => {
   it('come from the venue, so a reload shows what this browser never held', async () => {
-    desk({
+    const user = desk({
       swaps: {
         activity: () =>
           Promise.resolve({
@@ -317,6 +348,12 @@ describe('the trader’s own requests', () => {
 
     expect(await screen.findByText('Settled')).toBeInTheDocument();
     expect(screen.getByText('2,950.123456 USDC')).toBeInTheDocument();
+
+    // The detail opens at full width, with every identifier whole.
+    await user.click(screen.getByRole('button', { name: 'Details for swap swap-0001' }));
+    const detail = await screen.findByRole('dialog');
+    expect(within(detail).getByText('Paid out').nextElementSibling).toHaveTextContent('2,950.123456 USDC');
+    expect(within(detail).getByText('00alloc0002')).toBeInTheDocument();
   });
 
   it('shows a minimum, not an output, until the pool has actually paid one', async () => {
@@ -370,6 +407,28 @@ describe('the trader’s own requests', () => {
     });
     expect(await screen.findByText('Reclaiming')).toBeInTheDocument();
     expect(screen.queryByText('Reclaimed')).not.toBeInTheDocument();
+  });
+
+  it('offers no reclaim once pool access lapses, and signs nothing', async () => {
+    const prepareCancellation = vi.fn();
+    const signTransaction = vi.fn();
+    const user = desk(
+      {
+        onboarding: { mine: () => Promise.resolve(withoutAccess()) },
+        swaps: {
+          activity: () =>
+            Promise.resolve({ items: [swap({ status: 'EXPIRED', canWithdraw: true })], nextCursor: null }),
+          prepareCancellation,
+        },
+      },
+      signingWallet({ signTransaction }),
+    );
+
+    const reclaim = await screen.findByRole('button', { name: 'Reclaim' });
+    expect(reclaim).toBeDisabled();
+    await user.click(reclaim);
+    expect(prepareCancellation).not.toHaveBeenCalled();
+    expect(signTransaction).not.toHaveBeenCalled();
   });
 });
 
@@ -441,8 +500,8 @@ describe('the development faucet', () => {
   it('offers no second claim once the account has had its one bundle', async () => {
     desk();
 
-    const card = (await screen.findByText('Test tokens')).closest<HTMLElement>('[data-slot="card"]')!;
-    expect(await within(card).findByText('Claimed')).toBeInTheDocument();
+    const card = (await screen.findByText('Balances')).closest<HTMLElement>('[data-slot="card"]')!;
+    expect(await within(card).findByText('Test tokens claimed')).toBeInTheDocument();
     expect(within(card).queryByRole('button', { name: 'Get test tokens' })).not.toBeInTheDocument();
   });
 
@@ -455,9 +514,9 @@ describe('the development faucet', () => {
       },
     });
 
-    await screen.findByText('Test tokens');
+    await screen.findByText('Balances');
     expect(screen.queryByRole('button', { name: 'Get test tokens' })).not.toBeInTheDocument();
-    expect(screen.queryByText('One claim per account')).not.toBeInTheDocument();
+    expect(screen.queryByText('One test-token claim')).not.toBeInTheDocument();
   });
 });
 
@@ -689,7 +748,7 @@ describe('a faucet claim whose reply never arrives', () => {
     answer = () => Promise.resolve(CLAIMED);
     await user.click(screen.getByRole('button', { name: 'Check again' }));
 
-    expect(await within(card('Test tokens')).findByText('Claimed')).toBeInTheDocument();
+    expect(await within(card('Balances')).findByText('Test tokens claimed')).toBeInTheDocument();
     expect(screen.queryByText('Claim sent, outcome unknown')).not.toBeInTheDocument();
     expect(submitFaucetClaim).toHaveBeenCalledTimes(1);
   });
@@ -713,7 +772,7 @@ describe('a faucet claim whose reply never arrives', () => {
     status = CLAIMED;
 
     expect(
-      await within(card('Test tokens')).findByText('Claimed', {}, { timeout: 10_000 }),
+      await within(card('Balances')).findByText('Test tokens claimed', {}, { timeout: 10_000 }),
     ).toBeInTheDocument();
     await waitFor(() => expect(balances.mock.calls.length).toBeGreaterThan(reads));
   });

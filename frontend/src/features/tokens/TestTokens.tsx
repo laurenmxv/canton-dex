@@ -6,7 +6,7 @@ import {
   LoadingButton as Button,
 } from '@openzeppelin/ui-components';
 import { NUMERIC } from '../../ui/table';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useDexClient } from '../../app/runtime';
 import { useAction, useAsync, useChange, type AsyncResult } from '../../app/useAsync';
 import {
@@ -17,9 +17,10 @@ import {
   type TokenBalance,
   type TokenBalances,
 } from '../../lib/api/types';
-import { formatExact } from '../../lib/decimal';
+import { formatExact, isZeroAmount } from '../../lib/decimal';
 import { StatusBadge } from '../../ui/Badge';
 import { Card, CardHeader } from '../../ui/Card';
+import { Disclosure } from '../../ui/Disclosure';
 import { AsyncSection, EmptyState, RefreshFailure } from '../../ui/States';
 import { walletMessage, type WalletSigner } from '../wallet/signing';
 
@@ -30,14 +31,6 @@ function granted(preparation: FaucetPreparation): string {
     .join(', ');
 }
 
-/**
- * What the trader holds, and the one development claim that seeds it.
- *
- * The tokens are local fixtures with no issuer, market or value behind them,
- * which is said here rather than left to be inferred. The claim is granted
- * once per account and is signed by the trader's own wallet, like any other
- * transaction the venue prepares.
- */
 /**
  * A balance at its instrument's own precision: a whole satoshi shown to six
  * places would read as nothing.
@@ -58,6 +51,51 @@ const BALANCE_COLUMNS: DataTableColumn<TokenBalance>[] = [
   },
 ];
 
+function keyOf(balance: TokenBalance): string {
+  return `${balance.instrument.admin}/${balance.instrument.id}`;
+}
+
+/**
+ * What is held leads; instruments with nothing held, available or locked, such
+ * as the LP of pools never joined, fold away under their own names.
+ */
+function BalanceList({ balances, titleId }: { balances: readonly TokenBalance[]; titleId: string }) {
+  const held = balances.filter((balance) => !isZeroAmount(balance.total));
+  const empty = balances.filter((balance) => isZeroAmount(balance.total));
+  return (
+    <>
+      {held.length === 0 ? (
+        <EmptyState title="No balances yet" />
+      ) : (
+        <DataTable
+          aria-labelledby={titleId}
+          columns={BALANCE_COLUMNS}
+          rows={held}
+          getRowKey={keyOf}
+          className="border-0"
+        />
+      )}
+      {empty.length > 0 ? (
+        <CardContent className="px-5 pt-2 pb-4">
+          <Disclosure
+            summary={`${empty.length} instrument${empty.length === 1 ? '' : 's'} with no balance`}
+          >
+            <ul className="flex flex-col gap-1">
+              {empty.map((balance) => (
+                <li key={keyOf(balance)}>{balance.symbol}</li>
+              ))}
+            </ul>
+          </Disclosure>
+        </CardContent>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * What the trader holds, and the one development claim that seeds it. The
+ * claim is granted once per account and signed by the trader's own wallet.
+ */
 export function TestTokens({
   balances,
   signer,
@@ -66,6 +104,7 @@ export function TestTokens({
   signer: WalletSigner;
 }) {
   const client = useDexClient();
+  const titleId = useId();
   const [prepared, setPrepared] = useState<FaucetPreparation>();
   /**
    * True from a signed claim leaving until the venue answers about it again.
@@ -129,32 +168,20 @@ export function TestTokens({
   return (
     <Card>
       <CardHeader
-        title="Test tokens"
+        title="Balances"
+        titleId={titleId}
         actions={
           offered && status ? (
-            <StatusBadge tone={status === 'COMPLETED' ? 'success' : 'neutral'} label={status === 'COMPLETED' ? 'Claimed' : 'One claim per account'} />
+            <StatusBadge
+              tone={status === 'COMPLETED' ? 'success' : 'neutral'}
+              label={status === 'COMPLETED' ? 'Test tokens claimed' : 'One test-token claim'}
+            />
           ) : null
         }
       />
 
-      {/* Balances arrive as one record rather than a list, so the empty case
-          is the record's own empty list, checked below. */}
       <AsyncSection result={balances} label="Loading your balances" rows={3}>
-        {(held) =>
-          held.balances.length === 0 ? (
-            <EmptyState title="No balances yet" />
-          ) : (
-            <DataTable
-              caption="Test token balances"
-              columns={BALANCE_COLUMNS}
-              rows={held.balances}
-              getRowKey={(balance) =>
-                `${balance.instrument.admin}/${balance.instrument.id}`
-              }
-              className="border-0"
-            />
-          )
-        }
+        {(read) => <BalanceList balances={read.balances} titleId={titleId} />}
       </AsyncSection>
 
       {offered && (notices || hasClaimAction(status, prepared !== undefined, unresolved)) ? (

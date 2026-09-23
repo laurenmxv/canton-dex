@@ -14,6 +14,7 @@ import { applicationLimits, COUNTRY_CODE_PATTERN } from '../../lib/api/types';
 import {
   documentCategoryLabels,
   ledgerStepLabel,
+  ledgerStepLabels,
   ledgerStepTones,
   onboardingStatusLabels,
   onboardingStatusTones,
@@ -295,7 +296,7 @@ function OnboardingProgress({
               {onboarding.ledgerSteps.map((step) => (
                 <li key={step.key} className="flex items-center justify-between gap-3">
                   <span>{ledgerStepLabel(step.key, (poolId) => poolNameOf(pools, poolId))}</span>
-                  <StatusBadge tone={ledgerStepTones[step.status]} dot={step.status === 'SUBMITTING'} label={step.status} />
+                  <StatusBadge tone={ledgerStepTones[step.status]} dot={step.status === 'SUBMITTING'} label={ledgerStepLabels[step.status]} />
                 </li>
               ))}
             </ul>

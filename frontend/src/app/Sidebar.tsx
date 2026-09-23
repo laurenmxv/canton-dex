@@ -37,6 +37,12 @@ function SectionIcon({ id }: { id: string }) {
         <path d="M17 20V7M17 7l-3 3M17 7l3 3" />
       </>
     ),
+    'trader-liquidity': (
+      <>
+        <path d="M12 3c3.5 4.2 6 7.6 6 10.5a6 6 0 0 1-12 0C6 10.6 8.5 7.2 12 3z" />
+        <path d="M9 14.5a3 3 0 0 0 3 3" />
+      </>
+    ),
     'trader-onboarding': (
       <>
         <path d="M20 6 9 17l-5-5" />

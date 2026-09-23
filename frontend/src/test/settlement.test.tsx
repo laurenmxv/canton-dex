@@ -5,25 +5,64 @@ import { DexProvider, type Session } from '../app/runtime';
 import { OperatorSettlement } from '../features/settlement/OperatorSettlement';
 import {
   DomainError,
+  type DepositRequest,
   type PoolDetail,
+  type RequestType,
   type RunSettlementInput,
   type Settlement,
+  type SettlementHistory,
+  type SettlementHistoryQuery,
   type SettlementPolicy,
+  type SettlementPreview,
   type SettlementQueueFilter,
+  type SettlementRequest,
+  type SettlementRequestRef,
+  type Swap,
+  type WithdrawalRequest,
 } from '../lib/api/types';
 import { testClient } from './clients';
 import { pick } from './listbox';
 import {
   BTC,
+  deposit,
   monitoring,
   OPERATOR,
   POOL,
   POOL_ID,
   POLICY,
+  preview,
+  previewStep,
+  projected,
   settlement,
   swap,
+  TRADER_PARTY,
   USDC,
+  withdrawal,
 } from './venue-fixtures';
+
+/** A swap as the queue carries it, tagged with its kind and its hold. */
+function queued(request: Swap, deferred = false): SettlementRequest {
+  return { type: 'swap', request, deferred };
+}
+
+function queuedDeposit(request: DepositRequest, deferred = false): SettlementRequest {
+  return { type: 'deposit', request, deferred };
+}
+
+function queuedWithdrawal(request: WithdrawalRequest, deferred = false): SettlementRequest {
+  return { type: 'withdraw', request, deferred };
+}
+
+/** One page of history holding exactly these batches. */
+function page(...items: Settlement[]): Promise<SettlementHistory> {
+  return Promise.resolve({ items, nextCursor: null });
+}
+
+/** A queue with nothing to settle, observed where monitoring says the pool is. */
+function nothingToSettle(type: RequestType = 'swap'): SettlementPreview {
+  const empty = preview({ steps: [] });
+  return { ...empty, selection: { ...empty.selection, type } };
+}
 
 /** A second pool, so a change of scope can be told apart from a shared setting. */
 const OTHER_ID = '00pool00ethusdc';
@@ -44,7 +83,91 @@ const OTHER_POLICY: SettlementPolicy = {
   version: 9,
 };
 
+const FIRST_WITHDRAWAL = withdrawal();
+const SECOND_WITHDRAWAL = withdrawal({
+  requestId: 'withdraw-0002',
+  quoteId: 'quote-withdraw-0002',
+  arrivalSequence: 4,
+  terms: {
+    ...FIRST_WITHDRAWAL.terms,
+    lpAmount: '40',
+    expectedBaseOut: '0.1632993162',
+    expectedQuoteOut: '9797.9589711327',
+    minBaseOut: '0.1624828196',
+    minQuoteOut: '9748.9691762770',
+  },
+  allocationCids: ['00alloc0024', '00alloc0025', '00alloc0026'],
+  updateId: '1220update32',
+});
+
+const WITHDRAWAL_BATCH = settlement({
+  requests: [
+    { type: 'withdraw', requestId: FIRST_WITHDRAWAL.requestId },
+    { type: 'withdraw', requestId: SECOND_WITHDRAWAL.requestId },
+  ],
+  fills: [
+    {
+      type: 'withdraw',
+      requestId: FIRST_WITHDRAWAL.requestId,
+      actualLpBurned: '100',
+      actualBaseOut: '0.408',
+      actualQuoteOut: '24480',
+    },
+    {
+      type: 'withdraw',
+      requestId: SECOND_WITHDRAWAL.requestId,
+      actualLpBurned: '40',
+      actualBaseOut: '0.1632',
+      actualQuoteOut: '9792',
+    },
+  ],
+  after: {
+    stateId: '00state0002',
+    baseReserve: '4.4288',
+    quoteReserve: '265728',
+    spotPrice: '60000',
+    invariant: '1176856.1664',
+  },
+});
+
+const FIRST_OUTCOME = { burned: '100.00 LP', paid: '0.408 BTC + 24,480.00 USDC' };
+const SECOND_OUTCOME = { burned: '40.00 LP', paid: '0.1632 BTC + 9,792.00 USDC' };
+
+/** Three queued swaps, and the preview that stops at the second. */
+const SECOND_SWAP = swap({ swapId: 'swap-0002', arrivalSequence: 2 });
+const THIRD_SWAP = swap({ swapId: 'swap-0003', arrivalSequence: 3 });
+const AFTER_FIRST = projected('5.05', '297049.876544');
+const BLOCKED_STEP = previewStep({
+  request: { type: 'swap', requestId: 'swap-0002' },
+  status: 'BLOCKED',
+  fill: null,
+  before: AFTER_FIRST,
+  after: null,
+  outputs: [{ instrument: USDC, amount: '2890.1', minimum: '2926.470588', headroomBps: '-125.8' }],
+  errorCode: 'MIN_OUT_NOT_MET',
+  error: 'Output is below the signed minimum at the projected reserves',
+});
+const UNCHECKED_STEP = previewStep({
+  request: { type: 'swap', requestId: 'swap-0003' },
+  status: 'NOT_EVALUATED',
+  fill: null,
+  before: AFTER_FIRST,
+  after: null,
+  outputs: [],
+});
+const STOPPED = preview({ steps: [previewStep(), BLOCKED_STEP, UNCHECKED_STEP] });
+
+/** Where the venue keeps this operator's unanswered run on the first pool. */
+const INTENT_NAME = `dex.settlement-intent.${OPERATOR.accountId}.${POOL_ID}`;
+
 type Parts = Parameters<typeof testClient>[0];
+type Run = (poolId: string, input: RunSettlementInput) => Promise<Settlement>;
+
+/** A queue whose next batch is one swap the venue would start now. */
+const RUNNABLE: NonNullable<Parts['settlements']> = {
+  requests: () => Promise.resolve([queued(swap())]),
+  preview: () => Promise.resolve(preview()),
+};
 
 function dashboard(parts: Parts = {}, pools: PoolDetail[] = [POOL]) {
   const client = testClient({
@@ -56,6 +179,11 @@ function dashboard(parts: Parts = {}, pools: PoolDetail[] = [POOL]) {
       monitoring: () => Promise.resolve(monitoring()),
       requests: () => Promise.resolve([]),
       list: () => Promise.resolve([]),
+      history: () => page(),
+      preview: (_poolId, type) => Promise.resolve(nothingToSettle(type)),
+      setDeferred: () => Promise.resolve(),
+      // A key nobody has run yet: the venue has no batch under it.
+      get: () => Promise.reject(new DomainError('Settlement not found', 'NOT_FOUND')),
       ...parts.settlements,
     },
   });
@@ -68,14 +196,79 @@ function dashboard(parts: Parts = {}, pools: PoolDetail[] = [POOL]) {
   return userEvent.setup();
 }
 
+const BATCH_SIZE = 'Batch size';
+const BATCH_SIZE_EXACT = 'Batch size, exact';
+
+/** The policy form sits behind a disclosure; each pool opens it anew. */
+async function openSettings(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(await screen.findByRole('button', { name: /^Policy settings/ }));
+}
+
+function cardOf(element: HTMLElement): HTMLElement {
+  return element.closest<HTMLElement>('[data-slot="card"]')!;
+}
+
+function batchHistory(): Promise<HTMLElement> {
+  return screen.findByRole('heading', { name: 'Batch history' }).then(cardOf);
+}
+
+/** Opens the listed batch's detail, which is a dialog of its own. */
+async function openBatch(user: ReturnType<typeof userEvent.setup>): Promise<HTMLElement> {
+  const history = await batchHistory();
+  await user.click(await within(history).findByRole('button', { name: /^Details for batch/ }));
+  return screen.findByRole('dialog');
+}
+
+/** The workspace's Run batch, once the venue's preview allows it. */
+async function runButton(): Promise<HTMLElement> {
+  const button = await screen.findByRole('button', { name: 'Run batch' });
+  await waitFor(() => expect(button).toBeEnabled());
+  return button;
+}
+
+/** The requests of the previewed batch, in order. */
+async function batchSteps(): Promise<HTMLElement[]> {
+  const list = await screen.findByRole('list', { name: /requests in the next batch/ });
+  return within(list).getAllByRole('listitem');
+}
+
+function chart(): HTMLElement {
+  return screen.getByRole('group', { name: /^Reserve trajectory/ });
+}
+
+function marker(step: number): HTMLElement {
+  return within(chart()).getByRole('button', { name: new RegExp(`^Step ${step},`) });
+}
+
+/** Where a marker is drawn, which is where its step leaves the pool. */
+function position(element: HTMLElement): [string | null, string | null] {
+  const dot = element.querySelector('circle')!;
+  return [dot.getAttribute('cx'), dot.getAttribute('cy')];
+}
+
+async function showFamily(user: ReturnType<typeof userEvent.setup>, name: RegExp) {
+  await user.click(await screen.findByRole('button', { name }));
+}
+
+async function queueCard(title: string): Promise<HTMLElement> {
+  return cardOf(await screen.findByRole('heading', { name: title }));
+}
+
+function rowTexts(card: HTMLElement): string[] {
+  return within(card)
+    .getAllByRole('row')
+    .slice(1)
+    .map((row) => row.textContent ?? '');
+}
+
 describe('what the dashboard reads', () => {
   it('asks for the whole outstanding queue, not the ready part alone', async () => {
     const requests = vi.fn((_poolId: string, _status?: SettlementQueueFilter) =>
-      Promise.resolve([swap()]),
+      Promise.resolve([queued(swap())]),
     );
     dashboard({ settlements: { requests } });
 
-    await screen.findByText('Queue');
+    await screen.findByText('Swap queue');
     await waitFor(() => expect(requests).toHaveBeenCalled());
     // Left to itself the route answers with READY only, which would show a
     // shorter queue than the pool actually has.
@@ -87,21 +280,32 @@ describe('what the dashboard reads', () => {
       Promise.resolve(poolId === POOL_ID ? POLICY : OTHER_POLICY),
     );
     const requests = vi.fn((_poolId: string) => Promise.resolve([]));
+    const previewed = vi.fn((_poolId: string, type: RequestType) => Promise.resolve(nothingToSettle(type)));
+    const history = vi.fn((_poolId: string) => page());
 
-    const user = dashboard({ settlements: { policy, requests } }, [POOL, OTHER]);
-    await screen.findByText('Ready 2 / 5');
+    const user = dashboard(
+      { settlements: { policy, requests, preview: previewed, history } },
+      [POOL, OTHER],
+    );
+    await screen.findByRole('button', { name: /^Swaps/ });
 
     await pick(user, 'Pool', OTHER.name);
 
     await waitFor(() => expect(policy).toHaveBeenLastCalledWith(OTHER_ID, expect.anything()));
+    await waitFor(() => expect(previewed.mock.calls.at(-1)?.[0]).toBe(OTHER_ID));
 
     // The screen polls while it is open, so what matters is not how many reads
     // it made but that every one names a pool the reader chose, starting on the
     // first and ending on the second.
-    const asked = requests.mock.calls.map((call) => call[0]);
-    expect(new Set(asked)).toEqual(new Set([POOL_ID, OTHER_ID]));
-    expect(asked.at(0)).toBe(POOL_ID);
-    expect(asked.at(-1)).toBe(OTHER_ID);
+    function expectChosenPools(calls: readonly (readonly unknown[])[]) {
+      const asked = calls.map((call) => call[0]);
+      expect(new Set(asked)).toEqual(new Set([POOL_ID, OTHER_ID]));
+      expect(asked.at(0)).toBe(POOL_ID);
+      expect(asked.at(-1)).toBe(OTHER_ID);
+    }
+    expectChosenPools(requests.mock.calls);
+    expectChosenPools(previewed.mock.calls);
+    expectChosenPools(history.mock.calls);
   });
 
   it('shows the settings the venue saved for this pool, not the previous pool’s', async () => {
@@ -114,12 +318,14 @@ describe('what the dashboard reads', () => {
       [POOL, OTHER],
     );
 
-    expect(await screen.findByLabelText('Batch target, exact')).toHaveValue(5);
+    await openSettings(user);
+    expect(await screen.findByLabelText(BATCH_SIZE_EXACT)).toHaveValue(5);
     expect(screen.getByLabelText('Automatic settlement')).not.toBeChecked();
 
     await pick(user, 'Pool', OTHER.name);
+    await openSettings(user);
 
-    await waitFor(() => expect(screen.getByLabelText('Batch target, exact')).toHaveValue(7));
+    await waitFor(() => expect(screen.getByLabelText(BATCH_SIZE_EXACT)).toHaveValue(7));
     expect(screen.getByLabelText('Automatic settlement')).toBeChecked();
   });
 
@@ -134,14 +340,16 @@ describe('what the dashboard reads', () => {
       [POOL, OTHER],
     );
 
-    expect(await screen.findByLabelText('Batch target, exact')).toHaveValue(5);
+    await openSettings(user);
+    expect(await screen.findByLabelText(BATCH_SIZE_EXACT)).toHaveValue(5);
 
     await pick(user, 'Pool', OTHER.name);
+    await openSettings(user);
 
-    // The previous pool's target must not sit under the new pool's name while
+    // The previous pool's batch size must not sit under the new pool's name while
     // the venue is still answering for it.
     await waitFor(() =>
-      expect(screen.queryByLabelText('Batch target, exact')).not.toBeInTheDocument(),
+      expect(screen.queryByLabelText(BATCH_SIZE_EXACT)).not.toBeInTheDocument(),
     );
     expect(screen.getByText("Loading this pool's settings…")).toBeInTheDocument();
   });
@@ -154,7 +362,8 @@ describe('saving one pool’s settings', () => {
     );
     const user = dashboard({ settlements: { updatePolicy } });
 
-    const exact = await screen.findByLabelText('Batch target, exact');
+    await openSettings(user);
+    const exact = await screen.findByLabelText(BATCH_SIZE_EXACT);
     await user.clear(exact);
     await user.type(exact, '3');
     await user.click(screen.getByLabelText('Automatic settlement'));
@@ -172,8 +381,9 @@ describe('saving one pool’s settings', () => {
   it('keeps the slider and the exact field on one value', async () => {
     const user = dashboard();
 
-    const slider = await screen.findByLabelText('Batch target');
-    const exact = screen.getByLabelText('Batch target, exact');
+    await openSettings(user);
+    const slider = await screen.findByLabelText(BATCH_SIZE);
+    const exact = screen.getByLabelText(BATCH_SIZE_EXACT);
     expect(slider).toHaveValue('5');
 
     await user.clear(exact);
@@ -182,16 +392,17 @@ describe('saving one pool’s settings', () => {
     expect(slider).toHaveValue('8');
   });
 
-  it('never carries a target above the maximum the venue published', async () => {
+  it('never carries a batch size above the maximum the venue published', async () => {
     const user = dashboard();
 
-    const exact = await screen.findByLabelText('Batch target, exact');
+    await openSettings(user);
+    const exact = await screen.findByLabelText(BATCH_SIZE_EXACT);
     await user.clear(exact);
     await user.type(exact, '11');
     await user.tab();
 
     expect(exact).toHaveValue(10);
-    expect(screen.getByLabelText('Batch target')).toHaveValue('10');
+    expect(screen.getByLabelText(BATCH_SIZE)).toHaveValue('10');
   });
 
   it('says a conflicting save changed nothing, rather than showing it as saved', async () => {
@@ -202,7 +413,8 @@ describe('saving one pool’s settings', () => {
       },
     });
 
-    const exact = await screen.findByLabelText('Batch target, exact');
+    await openSettings(user);
+    const exact = await screen.findByLabelText(BATCH_SIZE_EXACT);
     await user.clear(exact);
     await user.type(exact, '2');
     await user.click(screen.getByRole('button', { name: 'Save settings' }));
@@ -211,50 +423,891 @@ describe('saving one pool’s settings', () => {
     expect(screen.getByText(/Saved version 4/)).toBeInTheDocument();
   });
 
+  it('holds the manual run until a pending save is acknowledged, even with the settings folded', async () => {
+    let acknowledge = () => {};
+    const updatePolicy = vi.fn(
+      () =>
+        new Promise<SettlementPolicy>((resolve) => {
+          acknowledge = () => resolve({ ...POLICY, batchSize: 1, version: 5 });
+        }),
+    );
+    const user = dashboard({ settlements: { ...RUNNABLE, updatePolicy } });
+
+    const run = await runButton();
+    await openSettings(user);
+    const exact = await screen.findByLabelText(BATCH_SIZE_EXACT);
+    await user.clear(exact);
+    await user.type(exact, '1');
+    await user.click(screen.getByRole('button', { name: 'Save settings' }));
+
+    // A batch dispatched now would run under the batch size being replaced.
+    expect(run).toBeDisabled();
+    await openSettings(user);
+    expect(run).toBeDisabled();
+
+    await act(async () => acknowledge());
+    await waitFor(() => expect(run).toBeEnabled());
+    expect(updatePolicy).toHaveBeenCalledTimes(1);
+  });
+
   it('offers no save until something has actually changed', async () => {
-    dashboard();
+    await openSettings(dashboard());
 
     expect(await screen.findByRole('button', { name: 'Save settings' })).toBeDisabled();
   });
-
 });
 
-describe('running a batch by hand', () => {
-  it('carries one idempotency key, and does not send a second on a double click', async () => {
+describe('the next batch, before it runs', () => {
+  it('checks each request in order, stops at the first blocker and evaluates nothing after it', async () => {
+    dashboard({
+      settlements: {
+        requests: () => Promise.resolve([queued(swap()), queued(SECOND_SWAP), queued(THIRD_SWAP)]),
+        preview: () => Promise.resolve(STOPPED),
+      },
+    });
+
+    const [first, second, third] = await batchSteps();
+    expect(within(first!).getByText('Projected')).toBeInTheDocument();
+    // The projected payout, the signed minimum and the venue's own headroom.
+    expect(first).toHaveTextContent('2,950.123456 USDC');
+    expect(first).toHaveTextContent('min 2,926.470588 USDC');
+    expect(first).toHaveTextContent('80.1 bps');
+    expect(within(second!).getByText('Blocked')).toBeInTheDocument();
+    expect(second).toHaveTextContent('Output is below the signed minimum at the projected reserves');
+    expect(within(third!).getByText('Not evaluated')).toBeInTheDocument();
+
+    // A failed request moves nothing, and nothing after it is drawn at all.
+    expect(position(marker(2))).toEqual(position(marker(1)));
+    expect(within(chart()).queryByRole('button', { name: /^Step 3,/ })).not.toBeInTheDocument();
+    // The batch as a whole cannot run, so the key ends where the blocker would start.
+    const key = screen.getByRole('region', { name: 'Projected prefix' });
+    expect(within(key).getByText('Before blocker')).toBeInTheDocument();
+    expect(within(key).queryByText('After the batch')).not.toBeInTheDocument();
+
+    const run = screen.getByRole('button', { name: 'Run batch' });
+    await waitFor(() => expect(run).toHaveAccessibleDescription('Step 2 is blocked'));
+    expect(run).toBeDisabled();
+  });
+
+  it('marks an output at or under ten basis points of headroom as a thin margin', async () => {
+    dashboard({
+      settlements: {
+        requests: () => Promise.resolve([queued(swap()), queued(SECOND_SWAP)]),
+        preview: () =>
+          Promise.resolve(
+            preview({
+              steps: [
+                // The usual quote slippage leaves this much room, which is no warning.
+                previewStep({
+                  outputs: [{ instrument: USDC, amount: '2941.17647', minimum: '2926.470588', headroomBps: '50' }],
+                }),
+                previewStep({
+                  request: { type: 'swap', requestId: 'swap-0002' },
+                  outputs: [{ instrument: USDC, amount: '2929.4', minimum: '2926.470588', headroomBps: '10' }],
+                }),
+              ],
+            }),
+          ),
+      },
+    });
+
+    const [usual, thin] = await batchSteps();
+    expect(within(usual!).getByText('Projected')).toBeInTheDocument();
+    expect(within(thin!).getByText('Thin margin')).toBeInTheDocument();
+    expect(thin).toHaveTextContent('10 bps');
+    // A thin margin is a warning, not a refusal: the venue would still run it.
+    await runButton();
+  });
+
+  it('draws the constant-product guide for swaps and none for liquidity', async () => {
+    const user = dashboard({
+      settlements: {
+        requests: () =>
+          Promise.resolve([queued(swap()), queuedDeposit(deposit({ terms: { ...deposit().terms, mode: 'PROPORTIONAL' } }))]),
+        preview: (_poolId, type) =>
+          Promise.resolve(
+            type === 'swap'
+              ? preview()
+              : preview({
+                  steps: [
+                    previewStep({
+                      request: { type: 'deposit', requestId: 'deposit-0001' },
+                      fill: {
+                        type: 'deposit',
+                        requestId: 'deposit-0001',
+                        actualBaseIn: '0.05',
+                        actualQuoteIn: '3000',
+                        actualBaseRefund: '0',
+                        actualQuoteRefund: '0',
+                        actualLpOut: '12.2474486745',
+                      },
+                      after: projected('5.05', '303000'),
+                      outputs: [
+                        {
+                          instrument: POOL.settings.lpTokenInstrumentId,
+                          amount: '12.2474486745',
+                          minimum: '12.1862114311',
+                          headroomBps: '50',
+                        },
+                      ],
+                    }),
+                  ],
+                }),
+          ),
+      },
+    });
+
+    await batchSteps();
+    expect(chart().querySelector('[data-slot="swap-curve"]')).not.toBeNull();
+
+    await showFamily(user, /^Add liquidity/);
+    const [step] = await batchSteps();
+    // An LP output reads as LP, as it does in the queue.
+    expect(step).toHaveTextContent('12.2474486745 LP');
+    expect(chart().querySelector('[data-slot="swap-curve"]')).toBeNull();
+  });
+
+  it('shows a queue with nothing to settle as the observed state alone, with no move', async () => {
+    dashboard();
+
+    const run = await screen.findByRole('button', { name: 'Run batch' });
+    await waitFor(() => expect(run).toHaveAccessibleDescription('Nothing to settle'));
+    expect(run).toBeDisabled();
+    expect(within(chart()).queryAllByRole('button')).toHaveLength(0);
+    expect(screen.getByText('No projected move', { selector: 'figcaption span' })).toBeInTheDocument();
+  });
+
+  it('draws nothing it cannot scale, such as an empty pool no step would fill', async () => {
+    const empty = monitoring({
+      pool: {
+        ...monitoring().pool,
+        reserves: { stateId: '00state0001', baseReserve: '0', quoteReserve: '0', spotPrice: null, invariant: '0' },
+        lpTokenSupply: '0',
+        health: 'EMPTY',
+      },
+    });
+    dashboard({
+      settlements: {
+        monitoring: () => Promise.resolve(empty),
+        preview: () => Promise.resolve({ ...nothingToSettle(), pool: empty.pool }),
+      },
+    });
+
+    expect(await screen.findByText('No reserves to chart')).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/NaN|Infinity/);
+  });
+
+  it('links the chart and the list for hover, focus and a pinned step, from the keyboard too', async () => {
+    const user = dashboard({
+      settlements: {
+        requests: () => Promise.resolve([queued(swap()), queued(SECOND_SWAP), queued(THIRD_SWAP)]),
+        preview: () => Promise.resolve(STOPPED),
+      },
+    });
+
+    const [first, second, third] = await batchSteps();
+    await user.hover(second!);
+    expect(marker(2)).toHaveAttribute('data-active', 'true');
+    expect(screen.getByRole('heading', { name: 'Step 2 · Blocked' })).toBeInTheDocument();
+    await user.unhover(second!);
+
+    await user.hover(marker(1));
+    expect(first).toHaveAttribute('data-active', 'true');
+    await user.unhover(marker(1));
+
+    // One tab stop for the chart; the arrows walk the steps and Enter pins one.
+    await user.click(marker(1));
+    expect(within(first!).getAllByRole('button')[0]).toHaveAttribute('aria-pressed', 'true');
+    await user.keyboard('{ArrowRight}');
+    expect(marker(2)).toHaveFocus();
+    expect(second).toHaveAttribute('data-active', 'true');
+    await user.keyboard('{Enter}');
+    expect(within(second!).getAllByRole('button')[0]).toHaveAttribute('aria-pressed', 'true');
+    expect(within(first!).getAllByRole('button')[0]).toHaveAttribute('aria-pressed', 'false');
+    expect(marker(2)).toHaveAttribute('aria-pressed', 'true');
+
+    // An unchecked step has no marker and no projected state, and the chart keeps its tab stop.
+    await user.click(within(third!).getAllByRole('button')[0]!);
+    expect(within(screen.getByRole('region', { name: 'Step 3' })).queryByText('Before')).not.toBeInTheDocument();
+    expect(marker(1)).toHaveAttribute('tabindex', '0');
+    expect(marker(2)).toHaveAttribute('tabindex', '-1');
+  });
+
+  it('reads the preview again once the pool moves on, and holds the run until it has', async () => {
+    let version = monitoring().pool.version;
+    const later = '00state0002:00config0001';
+    const previewed = vi.fn(() => {
+      const current = preview();
+      return Promise.resolve({
+        ...current,
+        pool: { ...current.pool, version },
+        selection: { ...current.selection, stateVersion: version },
+      });
+    });
+    dashboard({
+      settlements: {
+        requests: RUNNABLE.requests,
+        preview: previewed,
+        monitoring: () => Promise.resolve(monitoring({ pool: { ...monitoring().pool, version } })),
+      },
+    });
+
+    await runButton();
+    const reads = previewed.mock.calls.length;
+    version = later;
+
+    await waitFor(() => expect(previewed.mock.calls.length).toBeGreaterThan(reads), { timeout: 10_000 });
+    await runButton();
+  });
+
+  it('holds the run on a preview it could not read again, and keeps that preview in view', async () => {
+    let reachable = true;
+    const user = dashboard({
+      settlements: {
+        ...RUNNABLE,
+        preview: () =>
+          reachable ? Promise.resolve(preview()) : Promise.reject(new Error('The venue could not be reached.')),
+      },
+    });
+
+    const run = await runButton();
+    reachable = false;
+    await user.click(screen.getByRole('button', { name: 'Refresh' }));
+
+    await waitFor(() => expect(run).toHaveAccessibleDescription('Could not refresh the preview'));
+    expect(run).toBeDisabled();
+    expect(await batchSteps()).toHaveLength(1);
+
+    reachable = true;
+    await user.click(screen.getByRole('button', { name: 'Try again' }));
+    await runButton();
+  });
+
+  it('holds the run while a batch is in flight, and for a request past its deadline', async () => {
+    dashboard({
+      settlements: {
+        ...RUNNABLE,
+        monitoring: () =>
+          Promise.resolve(monitoring({ activeSettlement: settlement({ settlementId: 'settle-live', status: 'SUBMITTING' }) })),
+      },
+    });
+
+    const run = await screen.findByRole('button', { name: 'Run batch' });
+    await waitFor(() => expect(run).toHaveAccessibleDescription('A batch is in flight'));
+    expect(run).toBeDisabled();
+    expect(screen.getByText(/Batch in flight/)).toHaveTextContent('settle-live');
+    cleanup();
+
+    dashboard({
+      settlements: {
+        ...RUNNABLE,
+        requests: () =>
+          Promise.resolve([queued(swap({ settlementDeadline: new Date(Date.now() - 1000).toISOString() }))]),
+      },
+    });
+
+    const expired = await screen.findByRole('button', { name: 'Run batch' });
+    await waitFor(() => expect(expired).toHaveAccessibleDescription('A deadline has elapsed'));
+    expect(expired).toBeDisabled();
+  });
+});
+
+describe('running the previewed batch', () => {
+  it('sends exactly the previewed selection under one key, and nothing more on a double click', async () => {
     let release = () => {};
     const held = new Promise<void>((resolve) => {
       release = resolve;
     });
+    let recent: Settlement[] = [];
+    const list = vi.fn(() => Promise.resolve(recent));
     const run = vi.fn(async (_poolId: string, _input: RunSettlementInput) => {
       await held;
-      return settlement({ status: 'SUBMITTING' });
+      // The venue's worker takes the batch on as soon as it exists.
+      recent = [settlement({ status: 'CONFIRMED', updatedAt: '2026-09-19T12:01:09Z' })];
+      return settlement({ status: 'PREPARING' });
     });
-    const user = dashboard({ settlements: { run } });
+    const user = dashboard({ settlements: { ...RUNNABLE, run, list } });
 
-    const button = await screen.findByRole('button', { name: 'Run batch' });
+    const button = await runButton();
     await user.click(button);
     await user.click(button);
     await act(async () => release());
 
     await waitFor(() => expect(run).toHaveBeenCalledTimes(1));
-    const key = run.mock.calls[0]![1].idempotencyKey;
-    expect(key).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    const [poolId, input] = run.mock.calls[0]!;
+    expect(poolId).toBe(POOL_ID);
+    expect(input.idempotencyKey).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(input.selection).toEqual(preview().selection);
+    // Answered, so nothing is left outstanding for a reload to find.
+    await waitFor(() => expect(window.localStorage.getItem(INTENT_NAME)).toBeNull());
+    // The last run follows its batch as the venue moves it on, not the answer it came with.
+    await waitFor(() => expect(screen.getByText(/Last run/)).toHaveTextContent('Confirmed'));
+
+    // Newer batches push it out of the bounded list, and it keeps the state it reached. A
+    // second read after the change means the first one is already on screen.
+    recent = [settlement({ settlementId: 'settle-0002' })];
+    const reads = list.mock.calls.length;
+    await waitFor(() => expect(list.mock.calls.length).toBeGreaterThan(reads + 1), { timeout: 10_000 });
+    expect(screen.getByText(/Last run/)).toHaveTextContent('Confirmed');
   });
 
-  it('repeats the same key after a failure, because the outcome is unknown', async () => {
+  it('repeats the same key and the same selection after an unknown outcome', async () => {
     const run = vi
-      .fn<(poolId: string, input: RunSettlementInput) => Promise<Settlement>>()
+      .fn<Run>()
+      .mockRejectedValueOnce(new Error('The venue could not be reached.'))
+      // Refused before the venue looked the key up, so the first send may still have made a batch.
+      .mockRejectedValueOnce(new DomainError('Operator access required', 'FORBIDDEN'))
+      .mockResolvedValue(settlement({ status: 'SUBMITTING' }));
+    const user = dashboard({ settlements: { ...RUNNABLE, run } });
+
+    await user.click(await runButton());
+    await screen.findByText('Batch status unknown');
+    // No new run starts while this one has no answer.
+    expect(screen.getByRole('button', { name: 'Run batch' })).toHaveAccessibleDescription(
+      'The last run is unresolved',
+    );
+    await user.click(screen.getByRole('button', { name: 'Retry this run' }));
+
+    expect(await screen.findByText(/Operator access required/)).toBeInTheDocument();
+    expect(screen.getByText('Batch status unknown')).toBeInTheDocument();
+    expect(window.localStorage.getItem(INTENT_NAME)).not.toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Retry this run' }));
+
+    await waitFor(() => expect(run).toHaveBeenCalledTimes(3));
+    expect(run.mock.calls[1]![1]).toEqual(run.mock.calls[0]![1]);
+    expect(run.mock.calls[2]![1]).toEqual(run.mock.calls[0]![1]);
+  });
+
+  it('treats a stale selection the venue refused as answered, and previews again', async () => {
+    const previewed = vi.fn(() => Promise.resolve(preview()));
+    const run = vi
+      .fn<Run>()
+      .mockRejectedValueOnce(new DomainError('Queue changed. Refresh the preview.', 'CONFLICT', 'QUEUE_CHANGED'))
+      .mockResolvedValue(settlement({ status: 'SUBMITTING' }));
+    const user = dashboard({ settlements: { ...RUNNABLE, preview: previewed, run } });
+
+    await user.click(await runButton());
+
+    expect(await screen.findByText('Queue changed. Refresh the preview.')).toBeInTheDocument();
+    expect(screen.queryByText('Batch status unknown')).not.toBeInTheDocument();
+    expect(window.localStorage.getItem(INTENT_NAME)).toBeNull();
+    await waitFor(() => expect(previewed.mock.calls.length).toBeGreaterThan(1));
+
+    // The refused key made nothing, so the next run is a new intent.
+    await user.click(await runButton());
+    await waitFor(() => expect(run).toHaveBeenCalledTimes(2));
+    expect(run.mock.calls[1]![1].idempotencyKey).not.toBe(run.mock.calls[0]![1].idempotencyKey);
+  });
+
+  it('keeps the unanswered key with its own selection across a newer preview and a policy save', async () => {
+    let shown = preview();
+    const run = vi
+      .fn<Run>()
       .mockRejectedValueOnce(new Error('The venue could not be reached.'))
       .mockResolvedValue(settlement({ status: 'SUBMITTING' }));
-    const user = dashboard({ settlements: { run } });
+    const user = dashboard({
+      settlements: {
+        requests: () => Promise.resolve([queued(swap()), queued(SECOND_SWAP)]),
+        preview: () => Promise.resolve(shown),
+        run,
+        updatePolicy: () => Promise.resolve({ ...POLICY, batchSize: 3, version: 5 }),
+      },
+    });
 
-    const button = await screen.findByRole('button', { name: 'Run batch' });
-    await user.click(button);
+    await user.click(await runButton());
     await screen.findByText('Batch status unknown');
-    await user.click(button);
+
+    // The queue moves on and the policy is saved, which reads a new preview.
+    shown = preview({ steps: [previewStep({ request: { type: 'swap', requestId: 'swap-0002' } })] });
+    await openSettings(user);
+    const exact = await screen.findByLabelText(BATCH_SIZE_EXACT);
+    await user.clear(exact);
+    await user.type(exact, '3');
+    await user.click(screen.getByRole('button', { name: 'Save settings' }));
+    await within((await batchSteps())[0]!).findByText('swap-0002');
+
+    await user.click(screen.getByRole('button', { name: 'Retry this run' }));
 
     await waitFor(() => expect(run).toHaveBeenCalledTimes(2));
-    expect(run.mock.calls[0]![1]).toEqual(run.mock.calls[1]![1]);
+    expect(run.mock.calls[1]![1]).toEqual(run.mock.calls[0]![1]);
+    expect(run.mock.calls[1]![1].selection?.requests).toEqual([{ type: 'swap', requestId: 'swap-0001' }]);
+  });
+
+  it('keeps the key across a pool switch and a fresh page, and resends the same intent', async () => {
+    const run = vi.fn<Run>().mockRejectedValue(new Error('The venue could not be reached.'));
+    const user = dashboard({ settlements: { ...RUNNABLE, run } }, [POOL, OTHER]);
+
+    await user.click(await runButton());
+    await screen.findByText('Batch status unknown');
+
+    await pick(user, 'Pool', OTHER.name);
+    await pick(user, 'Pool', POOL.name);
+    await user.click(await screen.findByRole('button', { name: 'Retry this run' }));
+    await waitFor(() => expect(run).toHaveBeenCalledTimes(2));
+
+    // A whole new page, as after a reload: the intent is still the venue's to
+    // resolve, so it is read back rather than replaced.
+    cleanup();
+    const second = dashboard({ settlements: { ...RUNNABLE, run } }, [POOL, OTHER]);
+    expect(await screen.findByText('Batch status unknown')).toBeInTheDocument();
+    await second.click(screen.getByRole('button', { name: 'Retry this run' }));
+
+    await waitFor(() => expect(run).toHaveBeenCalledTimes(3));
+    const inputs = run.mock.calls.map((call) => call[1]);
+    expect(new Set(inputs.map((input) => input.idempotencyKey)).size).toBe(1);
+    expect(inputs[2]).toEqual(inputs[0]);
+  });
+
+  it('settles an unanswered run from the batch its key made, before offering a new one', async () => {
+    const intent = { idempotencyKey: '11111111-0000-4000-8000-000000000042', selection: preview().selection };
+    window.localStorage.setItem(INTENT_NAME, JSON.stringify(intent));
+    const get = vi.fn((settlementId: string) =>
+      Promise.resolve(settlement({ settlementId, status: 'SUBMITTING' })),
+    );
+    const run = vi.fn<Run>();
+    dashboard({ settlements: { ...RUNNABLE, get, run } });
+
+    await waitFor(() => expect(get).toHaveBeenCalledWith(intent.idempotencyKey, expect.anything()));
+    await waitFor(() => expect(window.localStorage.getItem(INTENT_NAME)).toBeNull());
+    expect(screen.queryByText('Batch status unknown')).not.toBeInTheDocument();
+    await runButton();
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('sends nothing when the key cannot be made to survive a reload', async () => {
+    const run = vi.fn<Run>();
+    const user = dashboard({ settlements: { ...RUNNABLE, run } });
+    const button = await runButton();
+    const setItem = vi
+      .spyOn(Storage.prototype, 'setItem')
+      .mockImplementation(() => {
+        throw new DOMException('QuotaExceededError');
+      });
+
+    try {
+      await user.click(button);
+
+      expect(await screen.findByText(/will not store the key/)).toBeInTheDocument();
+      expect(run).not.toHaveBeenCalled();
+    } finally {
+      setItem.mockRestore();
+    }
+  });
+
+  it('never runs the previous pool’s preview on the pool now chosen', async () => {
+    const run = vi.fn<Run>((poolId) => Promise.resolve(settlement({ poolId, status: 'SUBMITTING' })));
+    const otherStep = previewStep({ request: { type: 'swap', requestId: 'swap-eth-0001' } });
+    const user = dashboard(
+      {
+        settlements: {
+          requests: (poolId) =>
+            Promise.resolve([queued(poolId === POOL_ID ? swap() : swap({ swapId: 'swap-eth-0001' }))]),
+          preview: (poolId) => {
+            if (poolId === POOL_ID) return Promise.resolve(preview());
+            const other = preview({ steps: [otherStep] });
+            return Promise.resolve({ ...other, pool: { ...other.pool, poolId: OTHER_ID } });
+          },
+          run,
+        },
+      },
+      [POOL, OTHER],
+    );
+
+    await user.click(within((await batchSteps())[0]!).getAllByRole('button')[0]!);
+    await pick(user, 'Pool', OTHER.name);
+    await within((await batchSteps())[0]!).findByText('swap-eth-0001');
+    await user.click(await runButton());
+
+    await waitFor(() => expect(run).toHaveBeenCalledTimes(1));
+    expect(run.mock.calls[0]![0]).toBe(OTHER_ID);
+    expect(run.mock.calls[0]![1].selection?.requests).toEqual([otherStep.request]);
+  });
+});
+
+describe('holding a request back', () => {
+  it('defers the blocker, refreshes every read, and runs what is left as the preview now shows it', async () => {
+    let deferred = false;
+    const setDeferred = vi.fn((_poolId: string, _request: SettlementRequestRef, next: boolean) => {
+      deferred = next;
+      return Promise.resolve();
+    });
+    const previewed = vi.fn(() =>
+      Promise.resolve(deferred ? preview({ steps: [previewStep(), previewStep({ request: { type: 'swap', requestId: 'swap-0003' } })] }) : STOPPED),
+    );
+    const run = vi.fn<Run>(() => Promise.resolve(settlement({ status: 'SUBMITTING' })));
+    const user = dashboard({
+      settlements: {
+        requests: () => Promise.resolve([queued(swap()), queued(SECOND_SWAP, deferred), queued(THIRD_SWAP)]),
+        preview: previewed,
+        setDeferred,
+        run,
+      },
+    });
+
+    const [, blocker] = await batchSteps();
+    await user.click(within(blocker!).getByRole('button', { name: 'Defer request swap-0002' }));
+
+    await waitFor(() =>
+      expect(setDeferred).toHaveBeenCalledWith(POOL_ID, { type: 'swap', requestId: 'swap-0002' }, true),
+    );
+    // The hold is a scheduling choice, listed apart from the queue it left.
+    const held = await queueCard('Deferred · Swaps');
+    expect(within(held).getByText('swap-0002')).toBeInTheDocument();
+    expect(within(await queueCard('Swap queue')).queryByText('swap-0002')).not.toBeInTheDocument();
+
+    await user.click(await runButton());
+    await waitFor(() => expect(run).toHaveBeenCalledTimes(1));
+    expect(run.mock.calls[0]![1].selection?.requests).toEqual([
+      { type: 'swap', requestId: 'swap-0001' },
+      { type: 'swap', requestId: 'swap-0003' },
+    ]);
+  });
+
+  it('returns a deferred request to its queue, and counts it apart from the ready ones', async () => {
+    const setDeferred = vi.fn(() => Promise.resolve());
+    const user = dashboard({
+      settlements: {
+        requests: () => Promise.resolve([queued(swap()), queued(SECOND_SWAP, true)]),
+        setDeferred,
+      },
+    });
+
+    const swaps = await screen.findByRole('button', { name: /^Swaps/ });
+    await waitFor(() => expect(swaps).toHaveTextContent('1 ready'));
+    expect(swaps).toHaveTextContent('Deferred 1');
+
+    const held = await queueCard('Deferred · Swaps');
+    await user.click(within(held).getByRole('button', { name: 'Return to queue: request swap-0002' }));
+
+    await waitFor(() =>
+      expect(setDeferred).toHaveBeenCalledWith(POOL_ID, { type: 'swap', requestId: 'swap-0002' }, false),
+    );
+  });
+
+  it('keeps an expired deferred request visibly expired, with no way back into a batch', async () => {
+    const lapsed = swap({
+      swapId: 'swap-0002',
+      arrivalSequence: 2,
+      settlementDeadline: new Date(Date.now() - 60_000).toISOString(),
+    });
+    dashboard({ settlements: { requests: () => Promise.resolve([queued(lapsed, true)]) } });
+
+    const held = await queueCard('Deferred · Swaps');
+    expect(within(held).getByText('Elapsed')).toBeInTheDocument();
+    expect(within(held).getByRole('button', { name: 'Return to queue: request swap-0002' })).toBeDisabled();
+  });
+
+  it('changes no hold while the pool has a batch in flight', async () => {
+    dashboard({
+      settlements: {
+        requests: () => Promise.resolve([queued(swap()), queued(SECOND_SWAP, true)]),
+        monitoring: () => Promise.resolve(monitoring({ activeSettlement: settlement({ status: 'SUBMITTING' }) })),
+      },
+    });
+
+    const queue = await queueCard('Swap queue');
+    await waitFor(() =>
+      expect(within(queue).getByRole('button', { name: 'Defer request swap-0001' })).toBeDisabled(),
+    );
+    const held = await queueCard('Deferred · Swaps');
+    expect(within(held).getByRole('button', { name: 'Return to queue: request swap-0002' })).toBeDisabled();
+  });
+});
+
+describe('reviewing a retry', () => {
+  const REJECTED = settlement({
+    settlementId: 'settle-old',
+    status: 'REJECTED',
+    requests: [
+      { type: 'swap', requestId: 'swap-0001' },
+      { type: 'swap', requestId: 'swap-0002' },
+    ],
+    fills: [],
+    after: null,
+    errorCode: 'MIN_OUT_NOT_MET',
+    error: 'Output below the signed minimum',
+  });
+
+  it('previews what the attempt still has eligible, and runs it as a new batch that names it', async () => {
+    const previewed = vi.fn((_poolId: string, type: RequestType, retryOf?: string) => {
+      const shown = retryOf ? preview() : nothingToSettle(type);
+      return Promise.resolve({ ...shown, selection: { ...shown.selection, retryOf: retryOf ?? null } });
+    });
+    const run = vi.fn<Run>(() =>
+      Promise.resolve(settlement({ settlementId: 'settle-new', status: 'SUBMITTING', retryOf: 'settle-old' })),
+    );
+    const user = dashboard({
+      settlements: {
+        requests: () => Promise.resolve([queued(swap())]),
+        preview: previewed,
+        history: () => page(REJECTED),
+        run,
+      },
+    });
+
+    const history = await batchHistory();
+    await user.click(await within(history).findByRole('button', { name: 'Review retry of batch settle-old' }));
+
+    await waitFor(() => expect(previewed).toHaveBeenLastCalledWith(POOL_ID, 'swap', 'settle-old', expect.anything()));
+    const workspace = screen.getByRole('region', { name: /next batch/ });
+    await waitFor(() => expect(workspace).toHaveFocus());
+    expect(workspace).toHaveTextContent('Retry of settle-old');
+    // Reviewing runs nothing: the operator runs it.
+    expect(run).not.toHaveBeenCalled();
+
+    await user.click(await runButton());
+    await waitFor(() => expect(run).toHaveBeenCalledTimes(1));
+    expect(run.mock.calls[0]![1].selection?.retryOf).toBe('settle-old');
+    // The new batch is the retry, so the workspace is back on the queue.
+    await waitFor(() => expect(previewed).toHaveBeenLastCalledWith(POOL_ID, 'swap', undefined, expect.anything()));
+  });
+
+  it('offers a retry for rejected and cancelled attempts only', async () => {
+    dashboard({
+      settlements: {
+        history: () =>
+          page(
+            settlement({ settlementId: 'settle-a', status: 'PREPARING' }),
+            settlement({ settlementId: 'settle-b', status: 'SUBMITTING' }),
+            settlement({ settlementId: 'settle-c', status: 'UNRESOLVED' }),
+            settlement({ settlementId: 'settle-d' }),
+            settlement({ settlementId: 'settle-e', status: 'CANCELLED' }),
+            settlement({ settlementId: 'settle-f', status: 'REJECTED', retryOf: 'settle-e' }),
+          ),
+      },
+    });
+
+    const history = await batchHistory();
+    const offered = await within(history).findAllByRole('button', { name: /^Review retry of batch/ });
+    expect(offered.map((button) => button.getAttribute('aria-label'))).toEqual([
+      'Review retry of batch settle-e',
+      'Review retry of batch settle-f',
+    ]);
+    // A retry names the attempt it followed, which stays as it was.
+    expect(within(history).getByText('settle-e', { selector: '.font-mono' })).toBeInTheDocument();
+  });
+});
+
+describe('the batch history', () => {
+  it('pages back through older batches and forward again', async () => {
+    const newest = settlement({ settlementId: 'settle-new' });
+    const oldest = settlement({ settlementId: 'settle-old', status: 'CANCELLED' });
+    const history = vi.fn((_poolId: string, query?: SettlementHistoryQuery) =>
+      Promise.resolve<SettlementHistory>(
+        query?.before === 'cursor-2' ? { items: [oldest], nextCursor: null } : { items: [newest], nextCursor: 'cursor-2' },
+      ),
+    );
+    const user = dashboard({ settlements: { history } });
+
+    const card = await batchHistory();
+    await within(card).findByRole('button', { name: 'Details for batch settle-new' });
+    await user.click(within(card).getByRole('button', { name: 'Older' }));
+
+    await within(card).findByRole('button', { name: 'Details for batch settle-old' });
+    expect(history).toHaveBeenLastCalledWith(POOL_ID, expect.objectContaining({ before: 'cursor-2', limit: 25 }), expect.anything());
+    expect(within(card).getByRole('button', { name: 'Older' })).toBeDisabled();
+
+    await user.click(within(card).getByRole('button', { name: 'Newer' }));
+    await within(card).findByRole('button', { name: 'Details for batch settle-new' });
+  });
+
+  it('asks the venue for the queue and status it filters on, from the newest page', async () => {
+    const history = vi.fn((_poolId: string, _query?: SettlementHistoryQuery) => page());
+    const user = dashboard({ settlements: { history } });
+
+    await batchHistory();
+    await pick(user, 'Batch status', 'Rejected');
+    await pick(user, 'Batch queue', 'Withdraw liquidity');
+
+    await waitFor(() =>
+      expect(history).toHaveBeenLastCalledWith(
+        POOL_ID,
+        { type: 'withdraw', status: 'REJECTED', before: undefined, limit: 25 },
+        expect.anything(),
+      ),
+    );
+    expect(await screen.findByText('No batch matches')).toBeInTheDocument();
+  });
+
+  it('keeps the identifiers and the fills in a detail the reader opens, and returns focus', async () => {
+    const user = dashboard({ settlements: { history: () => page(settlement()) } });
+
+    const history = await batchHistory();
+    // The row says what happened; the contract identifiers wait for the reader.
+    expect(await within(history).findByText('Confirmed')).toBeInTheDocument();
+    expect(within(history).getByText('1 swap')).toBeInTheDocument();
+    expect(within(history).queryByText('settle-0001')).not.toBeInTheDocument();
+
+    const details = within(history).getByRole('button', { name: 'Details for batch settle-0001' });
+    await user.click(details);
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('Batch').nextElementSibling).toHaveTextContent('settle-0001');
+    expect(within(dialog).getByText(/2,941.17647 USDC/)).toBeInTheDocument();
+
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(details).toHaveFocus();
+  });
+
+  it('says an unconfirmed batch filled nothing, rather than showing it as empty', async () => {
+    const user = dashboard({
+      settlements: {
+        history: () => page(settlement({ status: 'UNRESOLVED', fills: [], updateId: null })),
+      },
+    });
+
+    expect(await within(await batchHistory()).findByText('Confirming')).toBeInTheDocument();
+    const dialog = await openBatch(user);
+
+    expect(within(dialog).getByText('No fill')).toBeInTheDocument();
+    expect(within(dialog).getByText('Not confirmed')).toBeInTheDocument();
+  });
+
+  it('shows the reserve change a confirmed batch made, signed both ways', async () => {
+    const user = dashboard({ settlements: { history: () => page(settlement()) } });
+
+    const dialog = await openBatch(user);
+
+    expect(within(dialog).getByText('+0.05')).toBeInTheDocument();
+    expect(within(dialog).getByText('-2,941.17647')).toBeInTheDocument();
+    // The invariant is a product of reserves, shown to every digit reported.
+    expect(within(dialog).getByText('1,500,000.00 → 1,500,147.0588265 · rose')).toBeInTheDocument();
+  });
+});
+
+describe('an operator watching an idle pool', () => {
+  it('discovers work nobody on this screen created', async () => {
+    let queue: SettlementRequest[] = [];
+    let batches: Settlement[] = [];
+    let counts = monitoring({ readyCount: 0, pendingCount: 0 });
+
+    dashboard({
+      settlements: {
+        requests: () => Promise.resolve(queue),
+        history: () => page(...batches),
+        monitoring: () => Promise.resolve(counts),
+      },
+    });
+
+    expect(await screen.findByText('Nothing queued')).toBeInTheDocument();
+
+    // A trader signs a request, and the venue's own worker settles it. Neither
+    // happens on this screen, and neither should need a reload to appear.
+    queue = [queued(swap({ status: 'READY' }))];
+    counts = monitoring({ readyCount: 1, pendingCount: 0 });
+
+    expect(
+      await screen.findByText('Queued for settlement', {}, { timeout: 10_000 }),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Swaps/ })).toHaveTextContent('1 ready'));
+
+    queue = [];
+    batches = [settlement()];
+    counts = monitoring({ readyCount: 0, pendingCount: 0 });
+
+    expect(await within(await batchHistory()).findByText('Confirmed', {}, { timeout: 10_000 })).toBeInTheDocument();
+  });
+});
+
+describe('what the counts mean', () => {
+  it('never shows a queue of requests as nothing outstanding', async () => {
+    dashboard({
+      settlements: {
+        requests: () =>
+          Promise.resolve([queued(swap()), queued(swap({ swapId: 'swap-0002' }))]),
+        // The venue counts only the requests whose own command is in flight,
+        // which is none of these.
+        monitoring: () => Promise.resolve(monitoring({ readyCount: 2, pendingCount: 0 })),
+      },
+    });
+
+    const swaps = await screen.findByRole('button', { name: /^Swaps/ });
+    await waitFor(() => expect(swaps).toHaveTextContent('2 ready'));
+    expect(swaps).toHaveTextContent('In flight 0');
+    expect(await screen.findByText('2 queued')).toBeInTheDocument();
+  });
+});
+
+describe('a batch that has not been confirmed', () => {
+  it('shows its fills as a projection rather than as money paid', async () => {
+    const user = dashboard({
+      settlements: {
+        history: () => page(settlement({ status: 'SUBMITTING', after: null })),
+      },
+    });
+
+    const dialog = await openBatch(user);
+
+    expect(within(dialog).getByText('Projected, not paid')).toBeInTheDocument();
+    // A reserve change is a confirmed fact, so an unconfirmed batch claims none.
+    expect(within(dialog).queryByText(/change/)).not.toBeInTheDocument();
+  });
+
+  it('shows a confirmed batch as paid', async () => {
+    const user = dashboard({ settlements: { history: () => page(settlement()) } });
+
+    const dialog = await openBatch(user);
+
+    expect(within(dialog).getByText('Paid out')).toBeInTheDocument();
+    expect(within(dialog).queryByText(/Nothing has been paid/)).not.toBeInTheDocument();
+  });
+});
+
+describe('the mode an operator reads', () => {
+  it('describes the saved policy, not the switch being edited', async () => {
+    const user = dashboard({
+      settlements: { policy: () => Promise.resolve({ ...POLICY, automaticEnabled: true }) },
+    });
+
+    const panel = cardOf(await screen.findByRole('heading', { name: 'Policy', level: 2 }));
+    expect(await within(panel).findByText('Automatic')).toBeInTheDocument();
+
+    await openSettings(user);
+    await user.click(await screen.findByLabelText('Automatic settlement'));
+
+    // Unticking a box changes nothing at the venue until it is saved.
+    expect(within(panel).getByText('Automatic')).toBeInTheDocument();
+    expect(within(panel).getByText('Unsaved changes')).toBeInTheDocument();
+  });
+
+  it('keeps describing the saved policy after a save is refused', async () => {
+    const user = dashboard({
+      settlements: {
+        policy: () => Promise.resolve({ ...POLICY, automaticEnabled: true }),
+        updatePolicy: () =>
+          Promise.reject(new DomainError('Settings changed elsewhere', 'CONFLICT')),
+      },
+    });
+
+    await openSettings(user);
+    await user.click(await screen.findByLabelText('Automatic settlement'));
+    await user.click(screen.getByRole('button', { name: 'Save settings' }));
+
+    expect(await screen.findByText('These settings changed elsewhere')).toBeInTheDocument();
+    const panel = cardOf(screen.getByRole('heading', { name: 'Policy', level: 2 }));
+    expect(within(panel).getByText('Automatic')).toBeInTheDocument();
+  });
+
+  it('keeps the policy editor folded away, with the mode in view', async () => {
+    dashboard();
+
+    const panel = cardOf(await screen.findByRole('heading', { name: 'Policy', level: 2 }));
+    expect(await within(panel).findByText('Manual')).toBeInTheDocument();
+    expect(
+      within(panel).getByRole('button', { name: 'Policy settings · batch size 5' }),
+    ).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByLabelText(BATCH_SIZE_EXACT)).not.toBeInTheDocument();
+  });
+
+  it('says which requests share the batch size, and which settle one at a time', async () => {
+    await openSettings(dashboard());
+
+    expect(
+      await screen.findByText(
+        '1 to 10 swaps, proportional deposits or withdrawals. Initial deposits settle one at a time.',
+      ),
+    ).toBeInTheDocument();
   });
 });
 
@@ -263,11 +1316,11 @@ describe('what the pool state says', () => {
     const blocked = swap({ status: 'BLOCKED' });
     dashboard({
       settlements: {
-        requests: () => Promise.resolve([blocked]),
+        requests: () => Promise.resolve([queued(blocked)]),
         monitoring: () =>
           Promise.resolve(
             monitoring({
-              blockedSwapId: blocked.swapId,
+              blockedRequest: { type: 'swap', requestId: blocked.swapId },
               blockedReason: 'Output is below the signed minimum at the current reserves.',
               readyCount: 0,
             }),
@@ -277,7 +1330,7 @@ describe('what the pool state says', () => {
 
     expect(await screen.findByText('The head of this queue cannot settle')).toBeInTheDocument();
     expect(
-      screen.getByText('Output is below the signed minimum at the current reserves.'),
+      screen.getByText(/Output is below the signed minimum at the current reserves\./),
     ).toBeInTheDocument();
   });
 
@@ -287,7 +1340,7 @@ describe('what the pool state says', () => {
         monitoring: () =>
           Promise.resolve(
             monitoring({
-              blockedSwapId: null,
+              blockedRequest: null,
               blockedReason:
                 "Saved batch size 12 exceeds the current maximum 10. Update this pool's settlement policy before dispatching.",
             }),
@@ -341,250 +1394,35 @@ describe('what the pool state says', () => {
     expect(await screen.findByText(/does not match the reserves/)).toBeInTheDocument();
   });
 
-  it('shows the reserve change of the last confirmed batch, signed both ways', async () => {
-    dashboard({ settlements: { list: () => Promise.resolve([settlement()]) } });
-
-    expect(await screen.findByText('+0.05')).toBeInTheDocument();
-    expect(screen.getByText('-2,941.17647')).toBeInTheDocument();
-  });
-
-  it('claims no reserve change for a batch the ledger has not confirmed', async () => {
+  it('reads an empty pool as awaiting its first deposit, with no price to divide', async () => {
     dashboard({
       settlements: {
-        list: () =>
-          Promise.resolve([settlement({ status: 'SUBMITTING', before: null, after: null, fills: [] })]),
+        monitoring: () =>
+          Promise.resolve(
+            monitoring({
+              pool: {
+                ...monitoring().pool,
+                reserves: {
+                  stateId: '00state0001',
+                  baseReserve: '0',
+                  quoteReserve: '0',
+                  spotPrice: null,
+                  invariant: '0',
+                },
+                lpTokenSupply: '0',
+                health: 'EMPTY',
+              },
+            }),
+          ),
       },
     });
 
-    const state = (await screen.findByText('Pool state')).closest<HTMLElement>('[data-slot="card"]')!;
-    expect(within(state).queryByText(/change, last confirmed batch/)).not.toBeInTheDocument();
-  });
-});
-
-describe('the batch history', () => {
-  it('keeps the identifiers and the fills behind a detail the reader opens', async () => {
-    const user = dashboard({ settlements: { list: () => Promise.resolve([settlement()]) } });
-
-    const history = (await screen.findByText('Recent batches')).closest<HTMLElement>('[data-slot="card"]')!;
-    const summary = await within(history).findByRole('button', { name: 'Show detail' });
-    // The row says what happened; the contract identifiers stay closed until
-    // the reader asks for them.
-    expect(summary).toHaveAttribute('aria-expanded', 'false');
-    expect(within(history).queryByText('settle-0001')).not.toBeInTheDocument();
-    expect(within(history).getByText('Confirmed')).toBeInTheDocument();
-
-    await user.click(summary);
-
-    const disclosure = await screen.findByRole('region', { name: 'Show detail' });
-    expect(summary).toHaveAttribute('aria-expanded', 'true');
-    expect(within(disclosure).getByText('settle-0001')).toBeInTheDocument();
-    expect(within(disclosure).getByText(/2,941.17647 USDC/)).toBeInTheDocument();
-  });
-
-  it('says an unconfirmed batch filled nothing, rather than showing it as empty', async () => {
-    const user = dashboard({
-      settlements: {
-        list: () =>
-          Promise.resolve([settlement({ status: 'UNRESOLVED', fills: [], updateId: null })]),
-      },
-    });
-
-    const history = (await screen.findByText('Recent batches')).closest<HTMLElement>('[data-slot="card"]')!;
-    await user.click(await within(history).findByText('Show detail'));
-
-    expect(within(history).getByText('No fills')).toBeInTheDocument();
-    expect(within(history).getByText('Confirming')).toBeInTheDocument();
-    expect(within(history).getByText('Not confirmed')).toBeInTheDocument();
-  });
-});
-
-describe('an operator watching an idle pool', () => {
-  it('discovers work nobody on this screen created', async () => {
-    let queue: ReturnType<typeof swap>[] = [];
-    let batches: ReturnType<typeof settlement>[] = [];
-    let counts = monitoring({ readyCount: 0, pendingCount: 0 });
-
-    dashboard({
-      settlements: {
-        requests: () => Promise.resolve(queue),
-        list: () => Promise.resolve(batches),
-        monitoring: () => Promise.resolve(counts),
-      },
-    });
-
-    expect(await screen.findByText('Nothing outstanding')).toBeInTheDocument();
-
-    // A trader signs a request, and the venue's own worker settles it. Neither
-    // happens on this screen, and neither should need a reload to appear.
-    queue = [swap({ status: 'READY' })];
-    counts = monitoring({ readyCount: 1, pendingCount: 0 });
-
-    expect(
-      await screen.findByText('Queued for settlement', {}, { timeout: 10_000 }),
-    ).toBeInTheDocument();
-    expect(await screen.findByText(/1 ready/, {}, { timeout: 10_000 })).toBeInTheDocument();
-
-    queue = [];
-    batches = [settlement()];
-    counts = monitoring({ readyCount: 0, pendingCount: 0 });
-
-    expect(await screen.findByText('Confirmed', {}, { timeout: 10_000 })).toBeInTheDocument();
-  });
-});
-
-describe('what the counts mean', () => {
-  it('never shows a queue of requests as nothing outstanding', async () => {
-    dashboard({
-      settlements: {
-        requests: () => Promise.resolve([swap(), swap({ swapId: 'swap-0002' })]),
-        // The venue counts only the requests whose own command is in flight,
-        // which is none of these.
-        monitoring: () => Promise.resolve(monitoring({ readyCount: 2, pendingCount: 0 })),
-      },
-    });
-
-    const queue = (await screen.findByText('Queue')).closest<HTMLElement>('[data-slot="card"]')!;
-    expect(await within(queue).findByText(/2 in this queue/)).toBeInTheDocument();
-    expect(within(queue).getByText(/2 ready/)).toBeInTheDocument();
-    expect(within(queue).getByText(/0 awaiting confirmation/)).toBeInTheDocument();
-  });
-});
-
-describe('a batch that has not been confirmed', () => {
-  it('shows its fills as a projection rather than as money paid', async () => {
-    const user = dashboard({
-      settlements: {
-        list: () => Promise.resolve([settlement({ status: 'SUBMITTING', after: null })]),
-      },
-    });
-
-    const history = (await screen.findByText('Recent batches')).closest<HTMLElement>('[data-slot="card"]')!;
-    await user.click(await within(history).findByText('Show detail'));
-
-    expect(within(history).getByText('Projected, not paid')).toBeInTheDocument();
-    // A reserve change is a confirmed fact, so an unconfirmed batch claims none.
-    expect(within(history).queryByText(/change/)).not.toBeInTheDocument();
-  });
-
-  it('shows a confirmed batch as paid', async () => {
-    const user = dashboard({ settlements: { list: () => Promise.resolve([settlement()]) } });
-
-    const history = (await screen.findByText('Recent batches')).closest<HTMLElement>('[data-slot="card"]')!;
-    await user.click(await within(history).findByText('Show detail'));
-
-    expect(within(history).getByText('Paid out')).toBeInTheDocument();
-    expect(within(history).queryByText(/Nothing has been paid/)).not.toBeInTheDocument();
-  });
-});
-
-describe('the mode an operator reads', () => {
-  it('describes the saved policy, not the switch being edited', async () => {
-    const user = dashboard({
-      settlements: { policy: () => Promise.resolve({ ...POLICY, automaticEnabled: true }) },
-    });
-
-    const panel = (await screen.findByRole('heading', { name: 'Settlement', level: 2 })).closest<HTMLElement>(
-      '[data-slot="card"]',
-    )!;
-    expect(await within(panel).findByText('Automatic')).toBeInTheDocument();
-
-    await user.click(screen.getByLabelText('Automatic settlement'));
-
-    // Unticking a box changes nothing at the venue until it is saved.
-    expect(within(panel).getByText('Automatic')).toBeInTheDocument();
-    expect(within(panel).getByText('Unsaved changes')).toBeInTheDocument();
-  });
-
-  it('keeps describing the saved policy after a save is refused', async () => {
-    const user = dashboard({
-      settlements: {
-        policy: () => Promise.resolve({ ...POLICY, automaticEnabled: true }),
-        updatePolicy: () =>
-          Promise.reject(new DomainError('Settings changed elsewhere', 'CONFLICT')),
-      },
-    });
-
-    await user.click(await screen.findByLabelText('Automatic settlement'));
-    await user.click(screen.getByRole('button', { name: 'Save settings' }));
-
-    expect(await screen.findByText('These settings changed elsewhere')).toBeInTheDocument();
-    const panel = screen
-      .getByRole('heading', { name: 'Settlement', level: 2 })
-      .closest<HTMLElement>('[data-slot="card"]')!;
-    expect(within(panel).getByText('Automatic')).toBeInTheDocument();
-  });
-});
-
-describe('an unanswered manual run', () => {
-  it('keeps its key across a saved policy change', async () => {
-    const run = vi
-      .fn<(poolId: string, input: RunSettlementInput) => Promise<Settlement>>()
-      .mockRejectedValueOnce(new Error('The venue could not be reached.'))
-      .mockResolvedValue(settlement({ status: 'SUBMITTING' }));
-    const user = dashboard({
-      settlements: {
-        run,
-        updatePolicy: () => Promise.resolve({ ...POLICY, batchSize: 3, version: 5 }),
-      },
-    });
-
-    await user.click(await screen.findByRole('button', { name: 'Run batch' }));
-    await screen.findByText('Batch status unknown');
-
-    // Saving replaces the form the key used to live in.
-    const exact = screen.getByLabelText('Batch target, exact');
-    await user.clear(exact);
-    await user.type(exact, '3');
-    await user.click(screen.getByRole('button', { name: 'Save settings' }));
-
-    await user.click(await screen.findByRole('button', { name: 'Run batch' }));
-
-    await waitFor(() => expect(run).toHaveBeenCalledTimes(2));
-    expect(run.mock.calls[1]![1]).toEqual(run.mock.calls[0]![1]);
-  });
-
-  it('keeps its key across a pool switch and a fresh page', async () => {
-    const run = vi
-      .fn<(poolId: string, input: RunSettlementInput) => Promise<Settlement>>()
-      .mockRejectedValue(new Error('The venue could not be reached.'));
-    const user = dashboard({ settlements: { run } }, [POOL, OTHER]);
-
-    await user.click(await screen.findByRole('button', { name: 'Run batch' }));
-    await screen.findByText('Batch status unknown');
-
-    await pick(user, 'Pool', OTHER.name);
-    await pick(user, 'Pool', POOL.name);
-    await user.click(await screen.findByRole('button', { name: 'Run batch' }));
-
-    // A whole new page, as after a reload: the key is still the venue's to
-    // resolve, so it is read back rather than replaced.
-    cleanup();
-    const second = dashboard({ settlements: { run } }, [POOL, OTHER]);
-    expect(await screen.findByText('Batch status unknown')).toBeInTheDocument();
-    await second.click(screen.getByRole('button', { name: 'Run batch' }));
-
-    await waitFor(() => expect(run).toHaveBeenCalledTimes(3));
-    const keys = run.mock.calls.map((call) => call[1].idempotencyKey);
-    expect(new Set(keys).size).toBe(1);
-  });
-
-  it('sends nothing when the key cannot be made to survive a reload', async () => {
-    const run = vi.fn<(poolId: string, input: RunSettlementInput) => Promise<Settlement>>();
-    const setItem = vi
-      .spyOn(Storage.prototype, 'setItem')
-      .mockImplementation(() => {
-        throw new DOMException('QuotaExceededError');
-      });
-
-    try {
-      const user = dashboard({ settlements: { run } });
-      await user.click(await screen.findByRole('button', { name: 'Run batch' }));
-
-      expect(await screen.findByText(/will not store the key/)).toBeInTheDocument();
-      expect(run).not.toHaveBeenCalled();
-    } finally {
-      setItem.mockRestore();
-    }
+    // The card is found once the observation is on it, not while it waits for one.
+    const state = cardOf(await screen.findByText('None until the first deposit'));
+    expect(within(state).getByRole('heading', { name: 'Pool state' })).toBeInTheDocument();
+    expect(within(state).getByText('Awaiting initial liquidity')).toBeInTheDocument();
+    expect(within(state).getByText('60,000.00 USDC per BTC')).toBeInTheDocument();
+    expect(state.textContent).not.toMatch(/NaN|Infinity/);
   });
 });
 
@@ -592,66 +1430,502 @@ describe('what a payout is denominated in', () => {
   it('names the instrument the venue recorded for each fill', async () => {
     const user = dashboard({
       settlements: {
-        list: () =>
-          Promise.resolve([
+        history: () =>
+          page(
             settlement({
+              requests: [
+                { type: 'swap', requestId: 'swap-0001' },
+                { type: 'swap', requestId: 'swap-0002' },
+              ],
               fills: [
-                { swapId: 'swap-0001', amountOut: '2941.176470', outputInstrument: USDC },
-                { swapId: 'swap-0002', amountOut: '0.048', outputInstrument: BTC },
+                { type: 'swap', requestId: 'swap-0001', amountOut: '2941.176470', outputInstrument: USDC },
+                { type: 'swap', requestId: 'swap-0002', amountOut: '0.048', outputInstrument: BTC },
               ],
             }),
-          ]),
+          ),
       },
     });
 
-    const history = (await screen.findByText('Recent batches')).closest<HTMLElement>('[data-slot="card"]')!;
-    await user.click(await within(history).findByText('Show detail'));
+    const dialog = await openBatch(user);
 
     // Either side of the pair can be the output, so the fill's own instrument
     // is what says which.
-    expect(within(history).getByText(/2,941.17647 USDC/)).toBeInTheDocument();
-    expect(within(history).getByText(/0.048 BTC/)).toBeInTheDocument();
-  });
-
-  it('says a fill stored without one is unknown, rather than guessing the pair', async () => {
-    const user = dashboard({
-      settlements: {
-        list: () =>
-          Promise.resolve([
-            settlement({
-              fills: [{ swapId: 'swap-0001', amountOut: '2941.176470', outputInstrument: null }],
-            }),
-          ]),
-      },
-    });
-
-    const history = (await screen.findByText('Recent batches')).closest<HTMLElement>('[data-slot="card"]')!;
-    await user.click(await within(history).findByText('Show detail'));
-
-    const unknown = within(history).getByText('token unknown');
-    // The pair is named elsewhere on the card; the payout cell itself must
-    // carry no instrument at all.
-    expect(unknown.closest('td')!.textContent).toBe('2,941.17647 token unknown');
+    expect(within(dialog).getByText(/2,941.17647 USDC/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/0.048 BTC/)).toBeInTheDocument();
   });
 
   it('keeps naming an unconfirmed batch’s amounts a projection', async () => {
     const user = dashboard({
       settlements: {
-        list: () =>
-          Promise.resolve([
+        history: () =>
+          page(
             settlement({
               status: 'SUBMITTING',
               after: null,
-              fills: [{ swapId: 'swap-0001', amountOut: '2941.176470', outputInstrument: USDC }],
+              fills: [
+                { type: 'swap', requestId: 'swap-0001', amountOut: '2941.176470', outputInstrument: USDC },
+              ],
             }),
+          ),
+      },
+    });
+
+    const dialog = await openBatch(user);
+
+    expect(within(dialog).getByText('Projected, not paid')).toBeInTheDocument();
+    expect(within(dialog).getByText(/2,941.17647 USDC/)).toBeInTheDocument();
+  });
+});
+
+describe('one queue per request family', () => {
+  it('shows each family’s queue in its own arrival order, with its own bounds', async () => {
+    const user = dashboard({
+      settlements: {
+        requests: () =>
+          Promise.resolve([
+            queuedDeposit(deposit({ requestId: 'deposit-0002', arrivalSequence: 9 })),
+            queued(swap({ outputInstrument: BTC, minOut: '0.00000003' })),
+            queuedDeposit(deposit({ arrivalSequence: 4 })),
+            queuedWithdrawal(withdrawal()),
           ]),
       },
     });
 
-    const history = (await screen.findByText('Recent batches')).closest<HTMLElement>('[data-slot="card"]')!;
-    await user.click(await within(history).findByText('Show detail'));
+    // A minimum is shown to its last digit, never rounded to zero.
+    const swaps = await queueCard('Swap queue');
+    await waitFor(() => expect(rowTexts(swaps)).toHaveLength(1));
+    expect(rowTexts(swaps)[0]).toContain('0.00000003 BTC');
 
-    expect(within(history).getByText('Projected, not paid')).toBeInTheDocument();
-    expect(within(history).getByText(/2,941.17647 USDC/)).toBeInTheDocument();
+    await showFamily(user, /^Add liquidity/);
+    const [first, second] = rowTexts(await queueCard('Add liquidity queue'));
+    expect(first).toMatch(/^4/);
+    expect(second).toMatch(/^9/);
+    // A deposit offers two maximums and is guaranteed an LP floor.
+    expect(first).toContain('0.05 BTC + 3,000.00 USDC');
+    expect(first).toContain('12.1862114311 LP');
+
+    await showFamily(user, /^Withdraw liquidity/);
+    // A withdrawal offers LP and is guaranteed a floor on each side.
+    const [withdrawRow] = rowTexts(await queueCard('Withdraw liquidity queue'));
+    expect(withdrawRow).toContain('100.00 LP');
+    expect(withdrawRow).toContain('0.406207049 BTC + 24,372.4229406926 USDC');
+  });
+
+  it('holds only the blocked family, and names why', async () => {
+    const blocked = deposit({ status: 'BLOCKED', error: 'Ratio outside signed bounds' });
+    const user = dashboard({
+      settlements: {
+        requests: () => Promise.resolve([queued(swap()), queuedDeposit(blocked)]),
+        monitoring: () =>
+          Promise.resolve(
+            monitoring({
+              blockedRequest: { type: 'deposit', requestId: blocked.requestId },
+              blockedReason: 'The deposit ratio is outside its signed bounds.',
+            }),
+          ),
+      },
+    });
+
+    const swaps = await queueCard('Swap queue');
+    expect(await within(swaps).findByText('Queued for settlement')).toBeInTheDocument();
+    expect(within(swaps).queryByText('The head of this queue cannot settle')).not.toBeInTheDocument();
+
+    await showFamily(user, /^Add liquidity/);
+    const deposits = await queueCard('Add liquidity queue');
+    expect(within(deposits).getByText('The head of this queue cannot settle')).toBeInTheDocument();
+    expect(within(deposits).getByText('Blocked in the queue')).toBeInTheDocument();
+    expect(within(deposits).getByText('Ratio outside signed bounds')).toBeInTheDocument();
+  });
+
+  it('counts each family from its own requests, and opens one workspace at a time', async () => {
+    const user = dashboard({
+      settlements: {
+        requests: () =>
+          Promise.resolve([
+            queued(swap()),
+            queued(swap({ swapId: 'swap-0002', status: 'SUBMITTING', arrivalSequence: 2 })),
+            queuedDeposit(deposit({ status: 'BLOCKED' })),
+          ]),
+      },
+    });
+
+    const swaps = await screen.findByRole('button', { name: /^Swaps/ });
+    await waitFor(() => expect(swaps).toHaveTextContent('1 ready'));
+    expect(swaps).toHaveTextContent('In flight 1');
+    expect(swaps).toHaveAttribute('aria-pressed', 'true');
+    const deposits = screen.getByRole('button', { name: /^Add liquidity/ });
+    expect(deposits).toHaveTextContent('Attention 1');
+
+    await user.click(deposits);
+    expect(deposits).toHaveAttribute('aria-pressed', 'true');
+    expect(swaps).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.queryByRole('heading', { name: 'Swap queue' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Add liquidity queue' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Add liquidity · next batch' })).toBeInTheDocument();
+  });
+
+  it('narrows by attention and by identifier, keeping the queue in order', async () => {
+    const user = dashboard({
+      settlements: {
+        requests: () =>
+          Promise.resolve([
+            queued(swap({ swapId: 'swap-0003', arrivalSequence: 3, trader: 'other::1220bb' })),
+            queued(swap()),
+            queued(swap({ swapId: 'swap-0002', arrivalSequence: 2, status: 'BLOCKED' })),
+          ]),
+      },
+    });
+
+    const swaps = await queueCard('Swap queue');
+    await waitFor(() => expect(rowTexts(swaps).map((text) => text[0])).toEqual(['1', '2', '3']));
+
+    await user.click(screen.getByRole('button', { name: 'Needs attention' }));
+    expect(rowTexts(swaps)).toHaveLength(1);
+    expect(within(swaps).getByText('1 of 3 shown')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'All' }));
+    await user.type(screen.getByLabelText('Search requests'), 'other::');
+    expect(rowTexts(swaps)).toHaveLength(1);
+    expect(rowTexts(swaps)[0]).toMatch(/^3/);
+
+    await user.clear(screen.getByLabelText('Search requests'));
+    await user.type(screen.getByLabelText('Search requests'), 'nothing-like-this');
+    expect(within(swaps).getByText('No request matches')).toBeInTheDocument();
+  });
+
+  it('shows empty queues, and a failed first read with a way back', async () => {
+    let fail = true;
+    dashboard({
+      settlements: {
+        requests: () =>
+          fail ? Promise.reject(new Error('The venue could not be reached.')) : Promise.resolve([]),
+      },
+    });
+
+    const queue = await queueCard('Swap queue');
+    expect(await within(queue).findByText('The venue could not be reached.')).toBeInTheDocument();
+    fail = false;
+    await userEvent.click(within(queue).getByRole('button', { name: 'Try again' }));
+    expect(await within(queue).findByText('Nothing queued')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Withdraw liquidity/ })).toHaveTextContent('Empty');
+  });
+
+  it('shows what each deposit in a confirmed batch minted, took and refunded', async () => {
+    const user = dashboard({
+      settlements: {
+        history: () =>
+          page(
+            settlement({
+              requests: [
+                { type: 'deposit', requestId: 'deposit-0001' },
+                { type: 'deposit', requestId: 'deposit-0002' },
+              ],
+              fills: [
+                {
+                  type: 'deposit',
+                  requestId: 'deposit-0001',
+                  actualBaseIn: '0.05',
+                  actualQuoteIn: '2990',
+                  actualBaseRefund: '0',
+                  actualQuoteRefund: '10',
+                  actualLpOut: '12.2270',
+                },
+                {
+                  type: 'deposit',
+                  requestId: 'deposit-0002',
+                  actualBaseIn: '0.02',
+                  actualQuoteIn: '1200',
+                  actualBaseRefund: '0.01',
+                  actualQuoteRefund: '0',
+                  actualLpOut: '4.8989',
+                },
+              ],
+            }),
+          ),
+      },
+    });
+
+    expect(await within(await batchHistory()).findByText('2 deposits')).toBeInTheDocument();
+    const dialog = await openBatch(user);
+
+    const first = within(dialog).getByText(/12.227 LP for/).closest('td')!;
+    expect(first.textContent).toContain('for 0.05 BTC + 2,990.00 USDC');
+    expect(first.textContent).toContain('refunded 0.00 BTC + 10.00 USDC');
+    const second = within(dialog).getByText(/4.8989 LP for/).closest('td')!;
+    expect(second.textContent).toContain('for 0.02 BTC + 1,200.00 USDC');
+    expect(second.textContent).toContain('refunded 0.01 BTC + 0.00 USDC');
+    expect(within(dialog).getAllByText('Deposit')).toHaveLength(2);
+  });
+
+  it('shows what each withdrawal in a confirmed batch burned and paid out', async () => {
+    const user = dashboard({ settlements: { history: () => page(WITHDRAWAL_BATCH) } });
+
+    expect(await within(await batchHistory()).findByText('2 withdrawals')).toBeInTheDocument();
+    const dialog = await openBatch(user);
+
+    const [first, second] = rowTexts(dialog);
+    expect(first).toContain(FIRST_WITHDRAWAL.requestId);
+    expect(first).toContain(`${FIRST_OUTCOME.paid} for ${FIRST_OUTCOME.burned}`);
+    expect(second).toContain(SECOND_WITHDRAWAL.requestId);
+    expect(second).toContain(`${SECOND_OUTCOME.paid} for ${SECOND_OUTCOME.burned}`);
+    expect(within(dialog).getAllByText('Withdrawal')).toHaveLength(2);
+  });
+});
+
+describe('a queued request in full', () => {
+  /** The `CopyField` a label names inside the open dialog. */
+  function copied(dialog: HTMLElement, label: string): string | null | undefined {
+    const field = within(dialog)
+      .getAllByText(label)
+      .map((node) => node.closest('[data-slot="copy-field"]'))
+      .find((node) => node !== null);
+    return field?.querySelector('pre')?.textContent;
+  }
+
+  /** The value a `DataList` label carries inside the open dialog. */
+  function valueOf(dialog: HTMLElement, label: string): string | null {
+    return within(dialog).getByText(label).nextElementSibling!.textContent;
+  }
+
+  async function open(user: ReturnType<typeof userEvent.setup>, requestId: string) {
+    await user.click(
+      await screen.findByRole('button', { name: `Details for request ${requestId}` }),
+    );
+    return screen.findByRole('dialog');
+  }
+
+  async function openEvidence(user: ReturnType<typeof userEvent.setup>, dialog: HTMLElement) {
+    await user.click(
+      within(dialog).getByRole('button', { name: 'Identifiers, instruments and ledger evidence' }),
+    );
+  }
+
+  it('leads a deposit with its bounds and result, and keeps full identities one step away', async () => {
+    const user = dashboard({
+      settlements: { requests: () => Promise.resolve([queuedDeposit(deposit())]) },
+    });
+
+    await showFamily(user, /^Add liquidity/);
+    const dialog = await open(user, 'deposit-0001');
+
+    expect(within(dialog).getByRole('heading', { name: 'Deposit deposit-0001' })).toBeInTheDocument();
+    // An arrival counter, not a rank in the queue.
+    expect(within(dialog).getByText('Arrival #2')).toBeInTheDocument();
+    expect(valueOf(dialog, 'Mode')).toBe('Initial, at the configured ratio');
+    expect(valueOf(dialog, 'Maximum in')).toBe('0.05 BTC + 3,000.00 USDC');
+    expect(valueOf(dialog, 'Minimum LP')).toBe('12.1862114311 LP');
+    expect(valueOf(dialog, 'Locked minimum LP')).toBe('0.0000001 LP');
+    expect(valueOf(dialog, 'Expected refund')).toBe('0.00 BTC + 0.00 USDC');
+    expect(within(dialog).getByText('Not settled yet.')).toBeInTheDocument();
+    expect(within(dialog).queryByText('Request ID')).not.toBeInTheDocument();
+
+    await openEvidence(user, dialog);
+    expect(copied(dialog, 'Request ID')).toBe('deposit-0001');
+    expect(copied(dialog, 'Trader')).toBe(TRADER_PARTY);
+    expect(copied(dialog, 'Allocation 3')).toBe('00alloc0013');
+    // The LP amounts say "LP"; its full identity and administrator are here.
+    expect(within(dialog).getByText('LP-BTC-USDC')).toBeInTheDocument();
+    expect(within(dialog).getAllByText('dvo::1220dvo').length).toBeGreaterThan(0);
+  });
+
+  it('marks a deferred request as held, apart from its status', async () => {
+    const user = dashboard({
+      settlements: { requests: () => Promise.resolve([queued(swap({ status: 'BLOCKED' }), true)]) },
+    });
+
+    const dialog = await open(user, 'swap-0001');
+
+    expect(within(dialog).getByText('Blocked in the queue')).toBeInTheDocument();
+    expect(within(dialog).getByText('Deferred')).toBeInTheDocument();
+  });
+
+  it('shows a withdrawal’s burn and both payout floors, and a swap’s minimum and actual output', async () => {
+    const user = dashboard({
+      settlements: {
+        requests: () =>
+          Promise.resolve([
+            queuedWithdrawal(withdrawal()),
+            queued(swap({ status: 'SETTLING', amountOut: '2950.123456' })),
+          ]),
+      },
+    });
+
+    await showFamily(user, /^Withdraw liquidity/);
+    const withdraw = await open(user, 'withdraw-0001');
+    expect(valueOf(withdraw, 'LP to burn')).toBe('100.00 LP');
+    expect(valueOf(withdraw, 'Minimum out')).toBe('0.406207049 BTC + 24,372.4229406926 USDC');
+    await user.keyboard('{Escape}');
+
+    await showFamily(user, /^Swaps/);
+    const swapDetail = await open(user, 'swap-0001');
+    expect(valueOf(swapDetail, 'Minimum out')).toBe('2,926.470588 USDC');
+    expect(valueOf(swapDetail, 'Paid out')).toBe('2,950.123456 USDC');
+  });
+
+  it('treats a newer confirmed batch as the outcome, over a stale row and an older attempt', async () => {
+    // The last queue read is BLOCKED, with an error, naming an attempt that was rejected.
+    const earlier = settlement({
+      settlementId: 'settle-old',
+      status: 'REJECTED',
+      requests: [{ type: 'deposit', requestId: 'deposit-0001' }],
+      fills: [],
+      after: null,
+    });
+    let queueFails = false;
+    let batches: Settlement[] = [earlier];
+    const user = dashboard({
+      settlements: {
+        requests: () =>
+          queueFails
+            ? Promise.reject(new Error('The venue could not be reached.'))
+            : Promise.resolve([
+                queuedDeposit(
+                  deposit({
+                    status: 'BLOCKED',
+                    settlementId: 'settle-old',
+                    error: 'Ratio outside signed bounds',
+                  }),
+                ),
+              ]),
+        list: () => Promise.resolve(batches),
+      },
+    });
+
+    await showFamily(user, /^Add liquidity/);
+    const dialog = await open(user, 'deposit-0001');
+    expect(within(dialog).getByText('Ratio outside signed bounds')).toBeInTheDocument();
+
+    // The queue stops answering, so the row stays BLOCKED, while a newer batch confirms it.
+    queueFails = true;
+    batches = [
+      settlement({
+        requests: [
+          { type: 'deposit', requestId: 'deposit-0000' },
+          { type: 'deposit', requestId: 'deposit-0001' },
+        ],
+        fills: [
+          // Same id, other family: never this request's fill.
+          { type: 'swap', requestId: 'deposit-0001', amountOut: '1', outputInstrument: USDC },
+          // Same family and batch, another deposit: never this request's fill either.
+          {
+            type: 'deposit',
+            requestId: 'deposit-0000',
+            actualBaseIn: '0.02',
+            actualQuoteIn: '1200',
+            actualBaseRefund: '0.01',
+            actualQuoteRefund: '0',
+            actualLpOut: '4.8989',
+          },
+          {
+            type: 'deposit',
+            requestId: 'deposit-0001',
+            actualBaseIn: '0.05',
+            actualQuoteIn: '2990',
+            actualBaseRefund: '0',
+            actualQuoteRefund: '10',
+            actualLpOut: '12.2270',
+          },
+        ],
+      }),
+      earlier,
+    ];
+
+    expect(await within(dialog).findByText('Settled', {}, { timeout: 10_000 })).toBeInTheDocument();
+    expect(valueOf(dialog, 'LP minted')).toBe('12.227 LP');
+    expect(within(dialog).queryByText('Blocked in the queue')).not.toBeInTheDocument();
+    expect(within(dialog).queryByText('Ratio outside signed bounds')).not.toBeInTheDocument();
+    expect(valueOf(dialog, 'Refunded')).toBe('0.00 BTC + 10.00 USDC');
+    expect(within(dialog).queryByText('Not settled yet.')).not.toBeInTheDocument();
+
+    await openEvidence(user, dialog);
+    expect(copied(dialog, 'Settlement')).toBe('settle-0001');
+    expect(copied(dialog, 'Batch ledger update')).toBe('1220update21');
+  });
+
+  it('matches each withdrawal to its own burn and payout in the batch they share', async () => {
+    const user = dashboard({
+      settlements: {
+        requests: () =>
+          Promise.resolve([queuedWithdrawal(FIRST_WITHDRAWAL), queuedWithdrawal(SECOND_WITHDRAWAL)]),
+        list: () => Promise.resolve([WITHDRAWAL_BATCH]),
+      },
+    });
+
+    async function readOutcome(requestId: string) {
+      const dialog = await open(user, requestId);
+      await within(dialog).findByText('Settled');
+      const read = { burned: valueOf(dialog, 'LP burned'), paid: valueOf(dialog, 'Paid out') };
+      await user.keyboard('{Escape}');
+      return read;
+    }
+
+    await showFamily(user, /^Withdraw liquidity/);
+    // The later request goes first: the first withdrawal fill in the batch is not its own.
+    expect(await readOutcome(SECOND_WITHDRAWAL.requestId)).toEqual(SECOND_OUTCOME);
+    expect(await readOutcome(FIRST_WITHDRAWAL.requestId)).toEqual(FIRST_OUTCOME);
+  });
+
+  it('says an outcome was not observed when a request vanishes without a batch', async () => {
+    let queue: SettlementRequest[] = [queuedWithdrawal(withdrawal())];
+    const user = dashboard({ settlements: { requests: () => Promise.resolve(queue) } });
+
+    await showFamily(user, /^Withdraw liquidity/);
+    const dialog = await open(user, 'withdraw-0001');
+    queue = [];
+
+    expect(
+      await within(dialog).findByText(/Outcome not observed\. Last known status: Queued for settlement/, {}, {
+        timeout: 10_000,
+      }),
+    ).toBeInTheDocument();
+    expect(within(dialog).queryByText('Not settled yet.')).not.toBeInTheDocument();
+  });
+
+  it('returns keyboard focus to the Details button that opened it', async () => {
+    const user = dashboard({ settlements: { requests: () => Promise.resolve([queued(swap())]) } });
+
+    const details = await screen.findByRole('button', { name: 'Details for request swap-0001' });
+    details.focus();
+    await user.keyboard('{Enter}');
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+
+    await user.keyboard('{Escape}');
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(details).toHaveFocus();
+  });
+
+  it('returns focus to the search field when the request left the queue', async () => {
+    let queue: SettlementRequest[] = [queued(swap())];
+    const user = dashboard({ settlements: { requests: () => Promise.resolve(queue) } });
+
+    const dialog = await open(user, 'swap-0001');
+    queue = [];
+    await within(dialog).findByText('No longer in the active queue', {}, { timeout: 10_000 });
+
+    await user.keyboard('{Escape}');
+
+    await waitFor(() => expect(screen.getByLabelText('Search requests')).toHaveFocus());
+  });
+
+  it('drops the open request, the filters and the preview when the operator changes pool', async () => {
+    const user = dashboard(
+      {
+        settlements: {
+          requests: (poolId) =>
+            Promise.resolve(
+              poolId === POOL_ID ? [queued(swap())] : [queued(swap({ swapId: 'swap-eth-0001' }))],
+            ),
+        },
+      },
+      [POOL, OTHER],
+    );
+
+    await user.type(await screen.findByLabelText('Search requests'), 'swap-0001');
+    await pick(user, 'Pool', OTHER.name);
+
+    expect(await screen.findByLabelText('Search requests')).toHaveValue('');
+    expect(await screen.findByRole('button', { name: 'Details for request swap-eth-0001' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Details for request swap-0001' })).not.toBeInTheDocument();
   });
 });

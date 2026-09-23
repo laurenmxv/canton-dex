@@ -15,9 +15,18 @@ export function createKeycloakAuth(config: KeycloakConfig): AuthAdapter {
     clientId: config.clientId,
   });
   const origin = window.location.origin + window.location.pathname;
-  let publish: (state: AuthState) => void = () => {};
+  let subscriber: (state: AuthState) => void = () => {};
   // keycloak-js refuses a second init, and StrictMode mounts effects twice.
   let started: Promise<void> | null = null;
+  // The last state published, null until there is one. Every sign-in and
+  // sign-out keycloak-js makes arrives through onAuthSuccess or onAuthLogout,
+  // so this is never an identity the provider has since dropped.
+  let current: AuthState | null = null;
+
+  function publish(state: AuthState) {
+    current = state;
+    subscriber(state);
+  }
 
   function snapshot(): AuthState {
     if (!keycloak.authenticated || !keycloak.tokenParsed) {
@@ -47,7 +56,10 @@ export function createKeycloakAuth(config: KeycloakConfig): AuthAdapter {
   return {
 
     async start(onChange) {
-      publish = onChange;
+      subscriber = onChange;
+      // A runtime mounted again after the answer, as HMR does, is told it
+      // rather than left starting.
+      if (current) onChange(current);
       if (started) return started;
       keycloak.onAuthSuccess = () => publish(snapshot());
       keycloak.onAuthLogout = () => publish(snapshot());

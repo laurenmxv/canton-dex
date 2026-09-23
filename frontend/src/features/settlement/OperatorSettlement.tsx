@@ -33,29 +33,30 @@ export function OperatorSettlement() {
     <div className="flex flex-col gap-6 fade-in">
       <PageHeader
         title="Settlement"
-        description="One pool at a time: its queue, its state, and the batches it has run."
+        actions={
+          pool ? (
+            <div className="w-64">
+              <SelectControl
+                label="Pool"
+                hideLabel
+                value={pool.poolId}
+                onValueChange={setChosen}
+                options={available.map((candidate) => ({
+                  value: candidate.poolId,
+                  label: candidate.name,
+                }))}
+              />
+            </div>
+          ) : null
+        }
       />
 
       {pools.error ? <RefreshFailure error={pools.error} onRetry={pools.reload} /> : null}
 
       {pool ? (
-        <>
-          <Card padded>
-            <SelectControl
-              label="Pool"
-              value={pool.poolId}
-              onValueChange={setChosen}
-              options={available.map((candidate) => ({
-                value: candidate.poolId,
-                label: candidate.name,
-              }))}
-            />
-          </Card>
-
-          {/* Keyed on the pool, so one pool's settings and queue can never be
-              on screen under another pool's name. */}
-          <PoolSettlement key={pool.poolId} pool={pool} />
-        </>
+        // Keyed on the pool, so one pool's settings and queue can never be on
+        // screen under another pool's name.
+        <PoolSettlement key={pool.poolId} pool={pool} />
       ) : (
         <Card>
           <EmptyState title="No pools yet" />

@@ -170,7 +170,9 @@ public final class BackendFixture implements AutoCloseable {
   public String poolId() {
     return fixtures
         .sql()
-        .sql("SELECT pool_id FROM pools WHERE active ORDER BY name LIMIT 1")
+        .sql(
+            "SELECT p.pool_id FROM test_token_pools t JOIN pools p ON p.pool_id=t.pool_id WHERE"
+                + " t.pair='BTC/USDC' AND p.active")
         .query(String.class)
         .single();
   }

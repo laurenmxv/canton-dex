@@ -224,6 +224,42 @@ class SwapWorkflowTest {
   }
 
   @Test
+  void revocationBlocksCachedPreparationsAndDispatchWithoutHidingProgress() {
+    var quote = quote("10");
+    var preparation = prepare(quote);
+    ledger.accessRevoked = true;
+    assertThatThrownBy(() -> prepare(quote))
+        .isInstanceOfSatisfying(
+            SwapFailure.class,
+            failure -> assertThat(failure.code()).isEqualTo("POOL_ACCESS_REQUIRED"));
+    assertThatThrownBy(() -> workflow.submit(trader, TOKEN, signed(preparation)))
+        .isInstanceOfSatisfying(
+            SwapFailure.class,
+            failure -> assertThat(failure.code()).isEqualTo("POOL_ACCESS_REQUIRED"));
+    assertThat(store.attempted).isEmpty();
+    assertThat(ledger.submissions).isZero();
+    assertThat(workflow.get(preparation.swapId(), trader).status()).isEqualTo(Status.PREPARED);
+    ledger.accessRevoked = false;
+    workflow.submit(trader, TOKEN, signed(preparation));
+    clock.now = preparation.terms().settlementDeadline();
+    var withdrawal = workflow.prepareWithdrawal(preparation.swapId(), trader, TOKEN);
+    ledger.accessRevoked = true;
+    assertThatThrownBy(() -> workflow.prepareWithdrawal(preparation.swapId(), trader, TOKEN))
+        .isInstanceOfSatisfying(
+            SwapFailure.class,
+            failure -> assertThat(failure.code()).isEqualTo("POOL_ACCESS_REQUIRED"));
+    assertThatThrownBy(
+            () -> workflow.withdraw(preparation.swapId(), trader, TOKEN, signed(withdrawal)))
+        .isInstanceOfSatisfying(
+            SwapFailure.class,
+            failure -> assertThat(failure.code()).isEqualTo("POOL_ACCESS_REQUIRED"));
+    assertThat(store.attempted).containsExactly(preparation.preparationId());
+    assertThat(ledger.withdrawals).isZero();
+    assertThat(workflow.submit(trader, TOKEN, signed(preparation)).status())
+        .isEqualTo(Status.READY);
+  }
+
+  @Test
   void quoteAcceptsNativeDecimalAmountsAboveOneMillion() {
     for (var valid :
         List.of("1000000.0000000001", "9999999999999999999999999999.9999999999", "0.0000000001"))
@@ -393,6 +429,21 @@ class SwapWorkflowTest {
   }
 
   @Test
+  void lateSettlementInvalidatesAnUnsignedWithdrawalPreparation() {
+    var preparation = prepare(quote("10"));
+    workflow.submit(trader, TOKEN, signed(preparation));
+    clock.now = preparation.terms().settlementDeadline();
+    workflow.prepareWithdrawal(preparation.swapId(), trader, TOKEN);
+    ledger.observation = Optional.of(ledger.confirmation(Status.SETTLED));
+    workflow.reconcile();
+    assertThatThrownBy(() -> workflow.prepareWithdrawal(preparation.swapId(), trader, TOKEN))
+        .isInstanceOfSatisfying(
+            SwapFailure.class,
+            failure -> assertThat(failure.code()).isEqualTo("WITHDRAWAL_UNAVAILABLE"));
+    assertThat(ledger.withdrawals).isZero();
+  }
+
+  @Test
   void elapsedDeadlineWithoutConfirmedAllocationsCannotReleaseFunds() {
     var preparation = prepare(quote("10"));
     ledger.failure = new IllegalStateException("response lost");
@@ -508,6 +559,7 @@ class SwapWorkflowTest {
     String feeOverride;
     String expectedOut = "100";
     String minOut = "99";
+    boolean accessRevoked;
     RuntimeException failure;
     RuntimeException verificationFailure;
     RuntimeException recoveryFailure;
@@ -527,6 +579,11 @@ class SwapWorkflowTest {
 
     Ledger(Clock clock) {
       this.clock = clock;
+    }
+
+    public void requireAccess(Account caller, String poolId) {
+      if (accessRevoked)
+        throw SwapFailure.conflict("POOL_ACCESS_REQUIRED", "Current pool access is required");
     }
 
     public long offset() {

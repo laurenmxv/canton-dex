@@ -223,6 +223,12 @@ class TokenStoreIT {
     assertThat(store.claimGrant(accountId, 200)).isFalse();
     assertThat(store.beginGrantRecovery(accountId, commandId)).isTrue();
     assertThat(store.get(accountId).orElseThrow().grantCommandId()).isEqualTo(commandId);
+    store.excludeGrant(accountId, commandId);
+    assertThat(store.get(accountId).orElseThrow().grantStatus()).isEqualTo(GrantStatus.PENDING);
+    assertThat(store.claimGrant(accountId, 200)).isTrue();
+    Claim replacement = store.get(accountId).orElseThrow();
+    store.excludeGrant(accountId, commandId);
+    assertThat(store.get(accountId)).contains(replacement);
   }
 
   @Test

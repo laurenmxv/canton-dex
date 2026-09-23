@@ -1,6 +1,6 @@
 package com.openzeppelin.dex.canton;
 
-import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.*;
 
 import com.daml.ledger.api.v2.EventOuterClass.Event;
 import com.daml.ledger.api.v2.EventOuterClass.ExercisedEvent;
@@ -12,18 +12,74 @@ import com.openzeppelin.dex.canton.generated.splice.api.token.allocationv2.Alloc
 import com.openzeppelin.dex.canton.generated.splice.api.token.allocationv2.AllocationResult;
 import com.openzeppelin.dex.canton.generated.splice.api.token.allocationv2.allocationresult_output.AllocationResult_Withdrawn;
 import com.openzeppelin.dex.canton.generated.splice.api.token.metadatav1.Metadata;
+import com.openzeppelin.dex.operations.OperatorCommandStore;
 import com.openzeppelin.dex.pools.PoolModels.Instrument;
 import com.openzeppelin.dex.settlements.SettlementModels.*;
+import com.openzeppelin.dex.swaps.SwapFailure;
 import com.openzeppelin.dex.swaps.SwapModels;
 import com.openzeppelin.dex.swaps.SwapModels.Swap;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class CantonSettlementRecoveryTest {
   private static final Instant NOW = Instant.parse("2026-09-19T00:00:00Z");
+
+  @Test
+  void constructionFailureIsDurableAndCannotBeRebuiltAfterRestart() {
+    var store = new CommandsStore();
+    UUID id = UUID.randomUUID();
+    assertThatThrownBy(
+            () ->
+                new CantonOperatorCommands(null, store)
+                    .submit(
+                        id,
+                        "batch",
+                        () -> {
+                          throw SwapFailure.conflict("ACCESS_REQUIRED", "Pool access was revoked");
+                        }))
+        .isInstanceOf(CantonOperatorCommands.PreparationFailed.class);
+    assertThat(store.find(id, "batch").orElseThrow().payload()).isNull();
+    assertThatThrownBy(
+            () ->
+                new CantonOperatorCommands(null, store)
+                    .submit(
+                        id,
+                        "batch",
+                        () -> {
+                          throw new AssertionError("A failed durable command cannot be rebuilt");
+                        }))
+        .isInstanceOf(CantonOperatorCommands.PreparationFailed.class);
+
+    var pending = pending();
+    var commands = new CantonOperatorCommands(null, store);
+    var settlement = new CantonSettlementLedger(null, null, commands, null, null);
+    assertThatThrownBy(() -> settlement.submit(pending))
+        .isInstanceOfSatisfying(
+            com.openzeppelin.dex.settlements.SettlementLedger.Excluded.class,
+            excluded -> assertThat(excluded.code()).isEqualTo("COMMAND_NOT_PREPARED"));
+  }
+
+  @Test
+  void persistenceFailureDoesNotProveThatACommandCannotBeSubmitted() {
+    var store = new CommandsStore();
+    store.saveFailure = new IllegalStateException("database unavailable");
+    assertThatThrownBy(
+            () ->
+                new CantonOperatorCommands(null, store)
+                    .submit(
+                        UUID.randomUUID(),
+                        "batch",
+                        () -> {
+                          throw SwapFailure.conflict("ACCESS_REQUIRED", "Pool access was revoked");
+                        }))
+        .isSameAs(store.saveFailure);
+    assertThat(store.prepared).isEmpty();
+  }
 
   @Test
   void consumptionOfTheFrozenStateExcludesTheBatch() {
@@ -106,6 +162,26 @@ class CantonSettlementRecoveryTest {
     assertThat(CantonSettlementLedger.inputsConsumed(List.of(transaction), pending())).isFalse();
   }
 
+  private static final class CommandsStore extends OperatorCommandStore {
+    final Map<UUID, Prepared> prepared = new HashMap<>();
+    RuntimeException saveFailure;
+
+    CommandsStore() {
+      super(null);
+    }
+
+    @Override
+    public Optional<Prepared> find(UUID id, String kind) {
+      return Optional.ofNullable(prepared.get(id));
+    }
+
+    @Override
+    public Prepared storeOnce(UUID id, String kind, Prepared command) {
+      if (saveFailure != null) throw saveFailure;
+      return prepared.computeIfAbsent(id, ignored -> command);
+    }
+  }
+
   private static ExercisedEvent stateConsumption() {
     return ExercisedEvent.newBuilder()
         .setContractId("frozen-state")
@@ -151,7 +227,7 @@ class CantonSettlementRecoveryTest {
             "pool",
             Trigger.MANUAL,
             Status.UNRESOLVED,
-            swaps.stream().map(Swap::swapId).toList(),
+            swaps.stream().map(swap -> new RequestRef("swap", swap.swapId())).toList(),
             List.of(),
             new Reserves("frozen-state", "100", "200", "2", "20000"),
             null,
@@ -160,8 +236,14 @@ class CantonSettlementRecoveryTest {
             NOW,
             null,
             null,
+            null,
             null);
-    return new Pending(settlement, swaps, id, 42, "frozen-state:config");
+    return new Pending(
+        settlement,
+        swaps.stream().map(swap -> (QueueRequest) new SwapRequest(swap)).toList(),
+        id,
+        42,
+        "frozen-state:config");
   }
 
   private static Swap swap(String name, long sequence) {

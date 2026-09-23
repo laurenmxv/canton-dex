@@ -51,7 +51,7 @@ public final class PoolWorkflow {
   public synchronized Proposal create(Create input, Account caller) {
     caller.requireRole(Account.Role.OPERATOR);
     var options = options();
-    Terms terms;
+    ProposalTerms terms;
     try {
       terms = input.terms(options);
     } catch (IllegalArgumentException e) {

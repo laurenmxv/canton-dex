@@ -45,6 +45,7 @@ public class SecurityConfiguration {
                     .hasRole("TRADER")
                     .requestMatchers(
                         "/v1/swaps/**",
+                        "/v1/lp/**",
                         "/v1/activity",
                         "/v1/balances",
                         "/v1/dev/faucet",

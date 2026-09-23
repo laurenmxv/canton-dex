@@ -102,7 +102,9 @@ class SwapStoreIT {
     assertThat(submitted.swap().arrivalSequence()).isEqualTo(1);
     assertThat(submitted.swap().status()).isEqualTo(Status.SUBMITTING);
     assertThat(
-            sql.sql("SELECT next_sequence FROM pool_swap_queues WHERE pool_id='pool'")
+            sql.sql(
+                    "SELECT next_sequence FROM pool_request_queues WHERE pool_id='pool' AND"
+                        + " family='swap'")
                 .query(Long.class)
                 .single())
         .isEqualTo(1);
@@ -158,13 +160,17 @@ class SwapStoreIT {
     sql.sql("UPDATE swap_requests SET status='BLOCKED',error_code='MIN_OUT' WHERE id=?")
         .param(head.swap().swapId())
         .update();
-    sql.sql("UPDATE pool_swap_queues SET blocked_version='same-pool-state' WHERE pool_id='pool'")
+    sql.sql(
+            "UPDATE pool_request_queues SET blocked_version='same-pool-state' WHERE pool_id='pool'"
+                + " AND family='swap'")
         .update();
     Pending follower = save(quote(now.plusSeconds(300)));
     store.begin(follower.preparationId(), trader, "follower-signature", 50, now);
     store.confirm(follower.preparationId(), evidence(follower, Status.READY));
     assertThat(
-            sql.sql("SELECT blocked_version FROM pool_swap_queues WHERE pool_id='pool'")
+            sql.sql(
+                    "SELECT blocked_version FROM pool_request_queues WHERE pool_id='pool' AND"
+                        + " family='swap'")
                 .query(String.class)
                 .single())
         .isEqualTo("same-pool-state");
@@ -178,7 +184,7 @@ class SwapStoreIT {
     Pending preparation = save(quote(now.plusSeconds(300)));
     store.begin(preparation.preparationId(), trader, "signature", 42, now);
     assertThat(
-            sql.sql("SELECT batch_size FROM pool_swap_queues WHERE pool_id='pool'")
+            sql.sql("SELECT batch_size FROM pool_queues WHERE pool_id='pool'")
                 .query(Integer.class)
                 .single())
         .isEqualTo(2);

@@ -11,17 +11,21 @@ public final class PoolDecisionMain {
   private PoolDecisionMain() {}
 
   public static void main(String[] args) {
-    if (args.length != 2 || !Set.of("accept", "reject").contains(args[0]))
-      throw new IllegalArgumentException("Usage: decide-pool.sh accept|reject PROPOSAL_UUID");
+    if (args.length < 2
+        || !Set.of("accept", "reject").contains(args[0])
+        || (args[0].equals("accept") && args.length != 3))
+      throw new IllegalArgumentException(
+          "Usage: decide-pool.sh accept PROPOSAL_UUID INITIAL_RATIO | reject PROPOSAL_UUID");
     var id = UUID.fromString(args[1]);
     var sql = JdbcClient.create(DevelopmentFixtures.dataSource());
     var row = sql.sql("SELECT * FROM pool_proposals WHERE id=?").param(id).query().singleRow();
     String expected = args[0].equals("accept") ? "CREATED" : "REJECTED";
-    if (expected.equals(row.get("status"))) {
+    if (expected.equals(row.get("status")) && args[0].equals("reject")) {
       System.out.println("Proposal already " + expected.toLowerCase() + ": " + id);
       return;
     }
-    if (!"PENDING".equals(row.get("status")))
+    if (!"PENDING".equals(row.get("status"))
+        && !(args[0].equals("accept") && "CREATED".equals(row.get("status"))))
       throw new IllegalStateException(
           "Proposal must be confirmed pending; current status: " + row.get("status"));
     var actor = sql.sql("SELECT * FROM fixture_parties WHERE name='dvo'").query().singleRow();
@@ -37,7 +41,7 @@ public final class PoolDecisionMain {
       var terms =
           JsonMapper.builder()
               .build()
-              .readValue(row.get("settings").toString(), PoolModels.Terms.class);
+              .readValue(row.get("settings").toString(), PoolModels.ProposalTerms.class);
       String update =
           CantonPoolLedger.decide(
               ledger,
@@ -45,7 +49,9 @@ public final class PoolDecisionMain {
               (String) row.get("factory_id"),
               terms,
               id,
-              args[0].equals("accept"));
+              args[0].equals("accept"),
+              args[0].equals("accept") ? new java.math.BigDecimal(args[2]) : null,
+              new CantonTokenRegistry(new com.openzeppelin.dex.tokens.TokenRegistryStore(sql)));
       System.out.println("Confirmed " + args[0] + " for " + id + "; ledger update: " + update);
       System.out.println("The dashboard will refresh automatically.");
     }

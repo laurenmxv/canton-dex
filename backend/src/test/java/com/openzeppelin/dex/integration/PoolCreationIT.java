@@ -74,13 +74,7 @@ class PoolCreationIT {
             Map.entry("name", "Pool " + suffix),
             Map.entry("baseInstrumentId", Map.of("admin", admin, "id", base)),
             Map.entry("quoteInstrumentId", Map.of("admin", admin, "id", quote)),
-            Map.entry("feeBps", "30"),
-            Map.entry("baseReserve", "1000"),
-            Map.entry("quoteReserve", "2000"),
-            Map.entry("lpTokenSupply", "1000"),
-            Map.entry("baseAccountId", "base-" + suffix),
-            Map.entry("quoteAccountId", "quote-" + suffix),
-            Map.entry("lpTokenId", "LP-" + suffix)));
+            Map.entry("feeBps", "30")));
   }
 
   private JsonNode status(BackendFixture f, String token, String id, String expected) {
@@ -120,23 +114,37 @@ class PoolCreationIT {
                       "forbidden-" + UUID.randomUUID(),
                       operator.primaryParty(),
                       List.of(),
-                      new PoolProposal.ContractId(cid).exercisePoolProposal_Accept()))
+                      new PoolProposal.ContractId(cid)
+                          .exercisePoolProposal_Accept(new java.math.BigDecimal("2"))))
           .isInstanceOf(RuntimeException.class);
       // Simulate a lost proposal response; only this test's record is changed.
       f.fixtures
           .sql()
           .sql(
-              "UPDATE pool_proposals SET proposal_cid=NULL,status='UNRESOLVED',update_id=NULL WHERE id=?")
+              "UPDATE pool_proposals SET proposal_cid=NULL,status='UNRESOLVED',update_id=NULL WHERE"
+                  + " id=?")
           .param(UUID.fromString(id))
           .update();
       assertThat(status(f, token, id, "PENDING").path("proposalCid").asString()).isEqualTo(cid);
-      PoolDecisionMain.main(new String[] {"accept", id});
+      acceptWithoutDelegation(f, cid, data);
       var result = status(f, token, id, "CREATED");
       String poolId = result.path("poolId").asString();
+      assertThat(
+              f.request("GET", "/v1/admin/monitoring?poolId=" + poolId, token, null, 200)
+                  .path("pool")
+                  .path("health")
+                  .asString())
+          .isEqualTo("DELEGATION_MISSING");
+      PoolDecisionMain.main(new String[] {"accept", id, "2"});
+      assertThat(
+              f.request("GET", "/v1/admin/monitoring?poolId=" + poolId, token, null, 200)
+                  .path("pool")
+                  .path("health")
+                  .asString())
+          .isEqualTo("EMPTY");
       var detail = f.request("GET", "/v1/pools/" + poolId, token, null, 200);
       f.request("GET", "/v1/pools/" + poolId, trader, null, 200);
-      assertThat(detail.path("settings").path("baseReserve").asString())
-          .isEqualTo("1000.0000000000");
+      assertThat(detail.path("settings").path("baseReserve").asString()).isEqualTo("0.0000000000");
       var row =
           f.fixtures
               .sql()
@@ -155,7 +163,12 @@ class PoolCreationIT {
               .filter(t -> t.getUpdateId().equals(result.path("updateId").asString()))
               .findFirst()
               .orElseThrow();
-      assertThat(tx.getEventsList().stream().filter(e -> e.hasCreated()).count()).isEqualTo(3);
+      assertThat(
+              tx.getEventsList().stream()
+                  .filter(e -> e.hasCreated())
+                  .filter(e -> e.getCreated().getTemplateId().getModuleName().equals("Pool"))
+                  .count())
+          .isEqualTo(3);
       var poolEvent = LedgerConnection.created(tx, Pool.TEMPLATE_ID);
       assertThat(java.time.Instant.parse(detail.path("createdAt").asString()))
           .isEqualTo(
@@ -164,7 +177,7 @@ class PoolCreationIT {
       assertThat(operator.activeContracts(operator.primaryParty(), PoolFactory.TEMPLATE_ID))
           .anyMatch(e -> e.getContractId().equals(options.path("factoryId").asString()));
       var before = operator.ledgerEnd();
-      PoolDecisionMain.main(new String[] {"accept", id});
+      PoolDecisionMain.main(new String[] {"accept", id, "2"});
       assertThat(operator.ledgerEnd()).isEqualTo(before);
       // Replay evidence after a lost final DB confirmation, never another ledger write.
       f.fixtures
@@ -177,7 +190,48 @@ class PoolCreationIT {
       f.request("POST", ROOT + "/" + id + "/withdraw", token, Map.of(), 409);
       assertThat(f.request("GET", "/v1/pools", token, null, 200).toString()).contains(poolId);
       System.out.println(
-          "PASS pool acceptance: API/Postgres/Canton CIDs match; exact three creates; operator forbidden; uncertainty reconciled; replay creates nothing.");
+          "PASS pool acceptance: API/Postgres/Canton CIDs match; exact three creates; operator"
+              + " forbidden; uncertainty reconciled; missing delegation repaired; replay creates"
+              + " nothing.");
+    }
+  }
+
+  private static void acceptWithoutDelegation(
+      BackendFixture f, String proposalCid, Map<String, Object> input) {
+    var actor =
+        f.fixtures.sql().sql("SELECT * FROM fixture_parties WHERE name='dvo'").query().singleRow();
+    var identity =
+        new LedgerIdentity(
+            (String) actor.get("ledger_user_id"),
+            (String) actor.get("ledger_client_id"),
+            System.getenv().getOrDefault("DEX_DVO_CLIENT_SECRET", "local-fixture-dvo"));
+    var registry =
+        new CantonTokenRegistry(
+            new com.openzeppelin.dex.tokens.TokenRegistryStore(f.fixtures.sql()));
+    var disclosures =
+        new LinkedHashMap<String, com.daml.ledger.api.v2.CommandsOuterClass.DisclosedContract>();
+    var issuers = new LinkedHashSet<String>();
+    issuers.add((String) actor.get("party_id"));
+    for (String field : List.of("baseInstrumentId", "quoteInstrumentId"))
+      issuers.add(f.json.valueToTree(input.get(field)).path("admin").asString());
+    for (String issuer : issuers) {
+      registry
+          .inlineAllocation(issuer)
+          .disclosures()
+          .forEach(d -> disclosures.put(d.getContractId(), d));
+      registry
+          .inlineSettlement(issuer)
+          .disclosures()
+          .forEach(d -> disclosures.put(d.getContractId(), d));
+    }
+    try (var dvo = DevelopmentFixtures.connection(identity)) {
+      dvo.submit(
+          "accept-without-delegation-" + UUID.randomUUID(),
+          dvo.primaryParty(),
+          List.of(),
+          new PoolProposal.ContractId(proposalCid)
+              .exercisePoolProposal_Accept(new java.math.BigDecimal("2")),
+          List.copyOf(disclosures.values()));
     }
   }
 
@@ -199,7 +253,10 @@ class PoolCreationIT {
               f.json,
               new org.springframework.jdbc.datasource.DataSourceTransactionManager(ds));
       var rejected = new java.util.concurrent.atomic.AtomicBoolean(true);
-      var delegate = new CantonPoolLedger(connection);
+      var registry =
+          new com.openzeppelin.dex.tokens.TokenRegistryStore(
+              org.springframework.jdbc.core.simple.JdbcClient.create(ds));
+      var delegate = new CantonPoolLedger(connection, registry, new CantonTokenRegistry(registry));
       var ledger =
           new com.openzeppelin.dex.pools.PoolLedger() {
             public String operator() {
@@ -314,10 +371,11 @@ class PoolCreationIT {
       bad.put("feeBps", "10000");
       f.request("POST", ROOT, token, bad, 400);
       bad.put("feeBps", "30");
-      bad.put("baseReserve", "0");
+      bad.put("quoteInstrumentId", bad.get("baseInstrumentId"));
       f.request("POST", ROOT, token, bad, 400);
       System.out.println(
-          "PASS reject/withdraw: no pools, pair released; concurrent duplicate guarded; invalid quantities rejected.");
+          "PASS reject/withdraw: no pools, pair released; concurrent duplicate guarded; invalid"
+              + " quantities rejected.");
     }
   }
 }

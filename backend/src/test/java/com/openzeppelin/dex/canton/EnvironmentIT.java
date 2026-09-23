@@ -83,8 +83,19 @@ class EnvironmentIT {
               .listOfRows();
       assertThat(rows).extracting(r -> r.get("pair")).containsExactly("BTC/USDC", "ETH/USDC");
       var names = new HashMap<String, String>();
-      rows.forEach(r -> names.put((String) r.get("pool_id"), (String) r.get("name")));
-      var catalog = new CantonPoolLedger(ledger).pools(names, authority);
+      fixtures
+          .sql()
+          .sql("SELECT pool_id,name FROM pools")
+          .query()
+          .listOfRows()
+          .forEach(r -> names.put((String) r.get("pool_id"), (String) r.get("name")));
+      var catalog =
+          new CantonPoolLedger(
+                  ledger,
+                  new com.openzeppelin.dex.tokens.TokenRegistryStore(fixtures.sql()),
+                  new CantonTokenRegistry(
+                      new com.openzeppelin.dex.tokens.TokenRegistryStore(fixtures.sql())))
+              .pools(names, authority);
       var events = ledger.activeContracts(ledger.primaryParty(), Pool.TEMPLATE_ID);
       String issuer =
           fixtures
@@ -110,15 +121,15 @@ class EnvironmentIT {
         assertThat(pool.venueOperator).isEqualTo(ledger.primaryParty());
         assertThat(event.getSignatoriesList()).containsExactly(authority);
         assertThat(event.getObserversList()).contains(ledger.primaryParty());
-        assertThat(pool.lpTokenInstrumentId.admin).isEqualTo(authority);
+        assertThat(pool.lpToken.instrument.admin).isEqualTo(authority);
         assertThat(pool.baseAccount.owner).contains(authority);
         assertThat(pool.quoteAccount.owner).contains(authority);
-        assertThat(pool.baseAccount.provider).isEmpty();
-        assertThat(pool.quoteAccount.provider).isEmpty();
+        assertThat(pool.baseAccount.provider).contains(ledger.primaryParty());
+        assertThat(pool.quoteAccount.provider).contains(ledger.primaryParty());
         assertThat(pool.baseAccount.id).isNotBlank().isNotEqualTo(pool.quoteAccount.id);
-        assertThat(pool.baseInstrumentId.admin).isEqualTo(issuer);
-        assertThat(pool.quoteInstrumentId.admin).isEqualTo(issuer);
-        assertThat(pool.baseInstrumentId.id + "/" + pool.quoteInstrumentId.id)
+        assertThat(pool.baseToken.instrument.admin).isEqualTo(issuer);
+        assertThat(pool.quoteToken.instrument.admin).isEqualTo(issuer);
+        assertThat(pool.baseToken.instrument.id + "/" + pool.quoteToken.instrument.id)
             .isEqualTo(row.get("pair"));
         var detail =
             catalog.stream().filter(p -> p.poolId().equals(poolId)).findFirst().orElseThrow();

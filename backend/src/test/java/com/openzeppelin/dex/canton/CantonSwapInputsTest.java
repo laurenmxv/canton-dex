@@ -24,7 +24,7 @@ class CantonSwapInputsTest {
     var holdings = new ArrayList<CreatedEvent>();
     for (int i = 0; i < 16; i++) holdings.add(holding("a-" + i, "0.01"));
     holdings.add(holding("z-large", "100"));
-    assertThat(CantonSwapPools.selectInputs(holdings, "trader", TOKEN, BigDecimal.ONE))
+    assertThat(CantonPools.selectInputs(holdings, "trader", TOKEN, BigDecimal.ONE))
         .extracting(id -> id.contractId)
         .containsExactly("z-large");
   }
@@ -32,11 +32,10 @@ class CantonSwapInputsTest {
   @Test
   void breaksEqualAmountTiesByContractIdRegardlessOfLedgerOrder() {
     var holdings = List.of(holding("c", "1"), holding("b", "2"), holding("a", "2"));
-    assertThat(CantonSwapPools.selectInputs(holdings, "trader", TOKEN, new BigDecimal("3")))
+    assertThat(CantonPools.selectInputs(holdings, "trader", TOKEN, new BigDecimal("3")))
         .extracting(id -> id.contractId)
         .containsExactly("a", "b");
-    assertThat(
-            CantonSwapPools.selectInputs(holdings.reversed(), "trader", TOKEN, new BigDecimal("3")))
+    assertThat(CantonPools.selectInputs(holdings.reversed(), "trader", TOKEN, new BigDecimal("3")))
         .extracting(id -> id.contractId)
         .containsExactly("a", "b");
   }
@@ -55,14 +54,14 @@ class CantonSwapInputsTest {
                 "trader",
                 new InstrumentId("issuer", "BTC"),
                 Optional.empty()));
-    assertThat(CantonSwapPools.selectInputs(holdings, "trader", TOKEN, BigDecimal.ONE))
+    assertThat(CantonPools.selectInputs(holdings, "trader", TOKEN, BigDecimal.ONE))
         .extracting(id -> id.contractId)
         .containsExactly("available");
-    assertThat(CantonSwapPools.selectInputs(holdings, "trader", TOKEN, new BigDecimal("2")))
+    assertThat(CantonPools.selectInputs(holdings, "trader", TOKEN, new BigDecimal("2")))
         .extracting(id -> id.contractId)
         .containsExactly("available", "locked");
     assertThatThrownBy(
-            () -> CantonSwapPools.selectInputs(holdings, "trader", TOKEN, new BigDecimal("102")))
+            () -> CantonPools.selectInputs(holdings, "trader", TOKEN, new BigDecimal("102")))
         .isInstanceOfSatisfying(
             SwapFailure.class, e -> assertThat(e.code()).isEqualTo("INSUFFICIENT_BALANCE"));
   }
@@ -72,7 +71,7 @@ class CantonSwapInputsTest {
     var holdings = new ArrayList<CreatedEvent>();
     for (int i = 0; i < 17; i++) holdings.add(holding("holding-" + i, "1"));
     assertThatThrownBy(
-            () -> CantonSwapPools.selectInputs(holdings, "trader", TOKEN, new BigDecimal("17")))
+            () -> CantonPools.selectInputs(holdings, "trader", TOKEN, new BigDecimal("17")))
         .isInstanceOfSatisfying(
             SwapFailure.class, e -> assertThat(e.code()).isEqualTo("TOO_MANY_HOLDINGS"));
   }

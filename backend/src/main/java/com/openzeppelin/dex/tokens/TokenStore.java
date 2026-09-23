@@ -201,13 +201,22 @@ public class TokenStore {
   }
 
   public void rejectedGrant(UUID accountId, UUID commandId) {
+    resetGrant(accountId, commandId, false);
+  }
+
+  public void excludeGrant(UUID accountId, UUID commandId) {
+    resetGrant(accountId, commandId, true);
+  }
+
+  private void resetGrant(UUID accountId, UUID commandId, boolean neverSubmitted) {
     sql.sql(
             """
             UPDATE dev_faucet_claims SET grant_status='PENDING',error_code='GRANT_REJECTED',
               error='The previous grant attempt did not commit; retry the request',updated_at=now()
-            WHERE account_id=? AND grant_command_id=? AND grant_status='SUBMITTING'
+            WHERE account_id=? AND grant_command_id=?
+              AND (grant_status='SUBMITTING' OR (? AND grant_status='UNRESOLVED'))
             """)
-        .params(accountId, commandId)
+        .params(accountId, commandId, neverSubmitted)
         .update();
   }
 

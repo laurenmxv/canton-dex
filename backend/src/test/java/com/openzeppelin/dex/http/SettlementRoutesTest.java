@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.*;
 
 import com.openzeppelin.dex.iam.Account;
 import com.openzeppelin.dex.onboarding.http.RequestBody;
+import com.openzeppelin.dex.settlements.SettlementModels.QueueRequest;
+import com.openzeppelin.dex.settlements.SettlementModels.SwapRequest;
 import com.openzeppelin.dex.settlements.SettlementStore;
 import com.openzeppelin.dex.settlements.SettlementWorkflow;
 import com.openzeppelin.dex.swaps.SwapModels.*;
@@ -20,14 +22,14 @@ import org.springframework.web.servlet.function.*;
 import tools.jackson.databind.json.JsonMapper;
 
 class SettlementRoutesTest {
-  private final List<Swap> queue =
+  private final List<QueueRequest> queue =
       List.of(
           swap(Status.READY), swap(Status.BLOCKED), swap(Status.UNRESOLVED), swap(Status.SETTLING));
   private int queueReads;
   private final SettlementStore store =
       new SettlementStore(null, null, null, 10) {
         @Override
-        public List<Swap> queue(String poolId) {
+        public List<QueueRequest> queue(String poolId) {
           assertThat(poolId).isEqualTo("pool");
           queueReads++;
           return queue;
@@ -108,33 +110,34 @@ class SettlementRoutesTest {
     return routes.route(request).orElseThrow().handle(request);
   }
 
-  private static Swap swap(Status status) {
+  private static SwapRequest swap(Status status) {
     var now = Instant.parse("2026-09-19T00:00:00Z");
-    return new Swap(
-        UUID.randomUUID(),
-        null,
-        "pool",
-        "Pool",
-        "trader",
-        Direction.BaseToQuote,
-        null,
-        null,
-        "1",
-        "2",
-        "0",
-        "1",
-        now.plusSeconds(60),
-        status,
-        1L,
-        now,
-        now,
-        now,
-        null,
-        null,
-        List.of(),
-        null,
-        null,
-        null,
-        false);
+    return new SwapRequest(
+        new Swap(
+            UUID.randomUUID(),
+            null,
+            "pool",
+            "Pool",
+            "trader",
+            Direction.BaseToQuote,
+            null,
+            null,
+            "1",
+            "2",
+            "0",
+            "1",
+            now.plusSeconds(60),
+            status,
+            1L,
+            now,
+            now,
+            now,
+            null,
+            null,
+            List.of(),
+            null,
+            null,
+            null,
+            false));
   }
 }

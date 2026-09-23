@@ -33,7 +33,8 @@ class PoolStoreIT {
           "30",
           "100",
           "200",
-          "100");
+          "100",
+          "2");
   private PGSimpleDataSource dataSource;
   private JdbcClient sql;
 

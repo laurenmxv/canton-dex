@@ -137,6 +137,25 @@ class TokenWorkflowTest {
     assertThat(store.current.grantStatus()).isEqualTo(GrantStatus.UNRESOLVED);
     assertThat(store.current.grantCommandId()).isEqualTo(original.grantCommandId());
     assertThat(ledger.grants).isEqualTo(1);
+    ledger.grantNotSubmitted = true;
+    assertThat(workflow.status(trader).status()).isEqualTo(Status.AVAILABLE);
+    ledger.loseGrantResponse = false;
+    ledger.grantNotSubmitted = false;
+    workflow.prepare(trader, "caller-token");
+    assertThat(ledger.grants).isEqualTo(2);
+    assertThat(store.current.grantCommandId()).isNotEqualTo(original.grantCommandId());
+  }
+
+  @Test
+  void grantPreparationFailureAllowsAnotherAttemptWithoutReconciliation() {
+    ledger.grantNotSubmitted = true;
+    assertThatThrownBy(() -> workflow.prepare(trader, "caller-token"))
+        .isInstanceOf(TokenConflict.class);
+    assertThat(store.current.grantStatus()).isEqualTo(GrantStatus.PENDING);
+    ledger.grantNotSubmitted = false;
+    workflow.prepare(trader, "caller-token");
+    assertThat(ledger.grants).isEqualTo(2);
+    assertThat(ledger.preparations).isEqualTo(1);
   }
 
   @ParameterizedTest
@@ -179,7 +198,11 @@ class TokenWorkflowTest {
 
   private static final class Ledger implements TokenLedger {
     int grants, preparations, claims;
-    boolean loseGrantResponse, loseClaimResponse, rejectClaim, provenMissingClaim;
+    boolean loseGrantResponse,
+        loseClaimResponse,
+        rejectClaim,
+        provenMissingClaim,
+        grantNotSubmitted;
     Confirmation recoveredGrant, recoveredClaim;
     Claim submittedClaim;
 
@@ -189,11 +212,13 @@ class TokenWorkflowTest {
 
     public Confirmation issueGrant(Claim claim, Signer signer) {
       grants++;
+      if (grantNotSubmitted) throw new TokenLedger.GrantNotSubmitted("Command was not prepared");
       if (loseGrantResponse) throw new IllegalStateException("response lost");
       return new Confirmation("grant", "grant-update");
     }
 
     public Optional<Confirmation> recoverGrant(Claim claim, Signer signer) {
+      if (grantNotSubmitted) throw new TokenLedger.GrantNotSubmitted("Command was not prepared");
       return Optional.ofNullable(recoveredGrant);
     }
 
@@ -294,7 +319,7 @@ class TokenWorkflowTest {
           new Claim(
               id,
               current.grantId(),
-              current.grantCommandId(),
+              UUID.randomUUID(),
               null,
               offset,
               GrantStatus.SUBMITTING,
@@ -430,7 +455,17 @@ class TokenWorkflowTest {
 
     @Override
     public void rejectedGrant(UUID id, UUID commandId) {
-      if (current.grantStatus() != GrantStatus.SUBMITTING
+      resetGrant(id, commandId, false);
+    }
+
+    @Override
+    public void excludeGrant(UUID id, UUID commandId) {
+      resetGrant(id, commandId, true);
+    }
+
+    private void resetGrant(UUID id, UUID commandId, boolean neverSubmitted) {
+      if (!(current.grantStatus() == GrantStatus.SUBMITTING
+              || (neverSubmitted && current.grantStatus() == GrantStatus.UNRESOLVED))
           || !current.grantCommandId().equals(commandId)) return;
       current =
           new Claim(

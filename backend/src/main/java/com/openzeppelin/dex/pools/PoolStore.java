@@ -64,7 +64,7 @@ public class PoolStore {
   }
 
   public Proposal reserve(
-      UUID id, Create input, Terms terms, String factoryId, UUID account, long offset) {
+      UUID id, Create input, ProposalTerms terms, String factoryId, UUID account, long offset) {
     try {
       return tx.execute(
           s -> {
@@ -236,7 +236,7 @@ public class PoolStore {
     return new Proposal(
         r.getObject("id", UUID.class),
         r.getString("name"),
-        json.readValue(r.getString("settings"), Terms.class),
+        json.readValue(r.getString("settings"), ProposalTerms.class),
         Status.valueOf(r.getString("status")),
         r.getTimestamp("created_at").toInstant(),
         r.getTimestamp("updated_at").toInstant(),

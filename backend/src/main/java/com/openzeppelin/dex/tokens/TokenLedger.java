@@ -11,6 +11,12 @@ public interface TokenLedger {
     }
   }
 
+  final class GrantNotSubmitted extends RuntimeException {
+    public GrantNotSubmitted(String message) {
+      super(message);
+    }
+  }
+
   long ledgerEnd();
 
   Confirmation issueGrant(Claim claim, Signer signer);

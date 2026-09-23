@@ -4,6 +4,7 @@ import static com.openzeppelin.dex.settlements.SettlementModels.*;
 import static org.assertj.core.api.Assertions.*;
 
 import com.openzeppelin.dex.iam.Account;
+import com.openzeppelin.dex.liquidity.LiquidityModels;
 import com.openzeppelin.dex.pools.PoolModels.Instrument;
 import com.openzeppelin.dex.swaps.LedgerRejected;
 import com.openzeppelin.dex.swaps.SwapModels;
@@ -20,7 +21,7 @@ class SettlementWorkflowTest {
       new Account(UUID.randomUUID(), "issuer", "operator", "Operator", Account.Role.OPERATOR);
   private static final Reserves RESERVES = new Reserves("state", "100", "200", "2", "20000");
   private static final Snapshot SNAPSHOT =
-      new Snapshot("pool", "state-v1", RESERVES, "30", "READY", null, NOW, 42);
+      new Snapshot("pool", "state-v1", RESERVES, "30", "READY", null, NOW, 42, "100", "2");
   private final Progress store = new Progress();
   private final Ledger ledger = new Ledger();
   private final SettlementWorkflow workflow = new SettlementWorkflow(store, ledger, CLOCK);
@@ -45,9 +46,9 @@ class SettlementWorkflowTest {
     RunInput input = new RunInput(UUID.randomUUID());
     Settlement result = workflow.run("pool", input, OPERATOR);
     assertThat(result.status()).isEqualTo(Status.CONFIRMED);
-    assertThat(ledger.submitted.swaps())
-        .extracting(Swap::swapId)
-        .containsExactly(store.queued.get(0).swapId(), store.queued.get(1).swapId());
+    assertThat(ledger.submitted.requests())
+        .extracting(QueueRequest::reference)
+        .containsExactly(store.queued.get(0).reference(), store.queued.get(1).reference());
     assertThat(workflow.run("pool", input, OPERATOR)).isEqualTo(result);
     assertThat(ledger.submissions).isEqualTo(1);
     assertThatThrownBy(() -> workflow.run("another-pool", input, OPERATOR))
@@ -57,12 +58,12 @@ class SettlementWorkflowTest {
   @Test
   void manualPreflightSettlesValidPrefixAndKeepsBlockedSuffixOut() {
     store.queued = List.of(swap(1), swap(2), swap(3));
-    ledger.blockedId = store.queued.get(1).swapId();
+    ledger.blockedId = store.queued.get(1).reference();
     Settlement result = workflow.run("pool", new RunInput(UUID.randomUUID()), OPERATOR);
     assertThat(result.status()).isEqualTo(Status.CONFIRMED);
-    assertThat(ledger.submitted.swaps())
-        .extracting(Swap::swapId)
-        .containsExactly(store.queued.getFirst().swapId());
+    assertThat(ledger.submitted.requests())
+        .extracting(QueueRequest::reference)
+        .containsExactly(store.queued.getFirst().reference());
     assertThat(store.blocked).isEqualTo(ledger.blockedId);
     assertThat(ledger.preflights).isEqualTo(2);
   }
@@ -71,7 +72,7 @@ class SettlementWorkflowTest {
   void automaticNeverSubmitsPartialBatchAfterPreflightFailure() {
     store.queued = List.of(swap(1), swap(2), swap(3));
     store.automaticEnabled = true;
-    ledger.blockedId = store.queued.get(1).swapId();
+    ledger.blockedId = store.queued.get(1).reference();
     workflow.automatic();
     assertThat(store.batch.status()).isEqualTo(Status.REJECTED);
     assertThat(store.blockedVersion).isEqualTo(SNAPSHOT.version());
@@ -79,6 +80,34 @@ class SettlementWorkflowTest {
     workflow.automatic();
     assertThat(ledger.preflights).isEqualTo(1);
     assertThat(ledger.submissions).isZero();
+  }
+
+  @Test
+  void automaticLiquiditySubmitsTheValidPrefixAndReconcilesItAfterALostResponse() {
+    for (var kind : LiquidityModels.Kind.values()) {
+      var store = new Progress();
+      var ledger = new Ledger();
+      var workflow = new SettlementWorkflow(store, ledger, CLOCK);
+      var first = liquidity(1, kind, LiquidityModels.Status.READY);
+      var second = liquidity(2, kind, LiquidityModels.Status.READY);
+      var blocked = liquidity(3, kind, LiquidityModels.Status.READY);
+      store.queued = List.of(first, second, blocked);
+      store.automaticEnabled = true;
+      ledger.blockedId = blocked.reference();
+      ledger.failure = new IllegalStateException("response lost");
+      workflow.automatic();
+      assertThat(store.batch.status()).isEqualTo(Status.UNRESOLVED);
+      assertThat(ledger.submitted.requests()).containsExactly(first, second);
+      assertThat(store.blocked).isEqualTo(blocked.reference());
+      assertThat(ledger.preflights).isEqualTo(2);
+      ledger.evidence = Optional.of(confirmation(ledger.submitted));
+      new SettlementWorkflow(store, ledger, CLOCK).reconcile();
+      assertThat(store.batch.status()).isEqualTo(Status.CONFIRMED);
+      assertThat(store.batch.fills())
+          .extracting(Fill::requestId)
+          .containsExactly(first.reference().requestId(), second.reference().requestId());
+      assertThat(ledger.submissions).isEqualTo(1);
+    }
   }
 
   @Test
@@ -124,6 +153,27 @@ class SettlementWorkflowTest {
   }
 
   @Test
+  void durablePreparationFailureReleasesThePoolBeforeOrAfterRestart() {
+    var notPrepared = new SettlementLedger.Excluded("COMMAND_NOT_PREPARED", "No command was sent");
+    store.queued = List.of(swap(1));
+    ledger.failure = notPrepared;
+    assertThat(workflow.run("pool", new RunInput(UUID.randomUUID()), OPERATOR).status())
+        .isEqualTo(Status.REJECTED);
+    assertThat(store.pending()).isEmpty();
+
+    ledger.failure = new IllegalStateException("response lost before preparation result");
+    workflow.run("pool", new RunInput(UUID.randomUUID()), OPERATOR);
+    ledger.recoveryFailure = notPrepared;
+    new SettlementWorkflow(store, ledger, CLOCK).reconcile();
+    assertThat(store.exclusionCode).isEqualTo("COMMAND_NOT_PREPARED");
+    assertThat(store.pending()).isEmpty();
+    ledger.failure = null;
+    ledger.recoveryFailure = null;
+    assertThat(workflow.run("pool", new RunInput(UUID.randomUUID()), OPERATOR).status())
+        .isEqualTo(Status.CONFIRMED);
+  }
+
+  @Test
   void rejectedRecoveryAttemptDoesNotProveTheOriginalUnknownBatchHadNoEffect() {
     store.queued = List.of(swap(1));
     ledger.failure = new IllegalStateException("response lost");
@@ -148,7 +198,8 @@ class SettlementWorkflowTest {
     workflow.automatic();
     assertThat(store.batch.status()).isEqualTo(Status.REJECTED);
     assertThat(ledger.submissions).isEqualTo(1);
-    ledger.snapshot = new Snapshot("pool", "state-v2", RESERVES, "30", "READY", null, NOW, 43);
+    ledger.snapshot =
+        new Snapshot("pool", "state-v2", RESERVES, "30", "READY", null, NOW, 43, "100", "2");
     ledger.failure = null;
     workflow.automatic();
     assertThat(store.batch.status()).isEqualTo(Status.CONFIRMED);
@@ -203,14 +254,14 @@ class SettlementWorkflowTest {
 
   @Test
   void fifoStopsAtUnknownOrWithdrawalEvenAfterTheirDeadline() {
-    Swap ready = swap(1);
+    QueueRequest ready = swap(1);
     for (SwapModels.Status uncertain :
         List.of(
             SwapModels.Status.SUBMITTING,
             SwapModels.Status.UNRESOLVED,
             SwapModels.Status.WITHDRAWING,
             SwapModels.Status.WITHDRAWAL_UNRESOLVED)) {
-      Swap barrier = swap(2, uncertain, NOW.minusSeconds(1));
+      QueueRequest barrier = swap(2, uncertain, NOW.minusSeconds(1));
       assertThat(SettlementStore.prefix(List.of(ready, barrier, swap(3)), 5))
           .containsExactly(ready);
       assertThat(SettlementStore.prefix(List.of(barrier, ready), 5)).isEmpty();
@@ -221,7 +272,8 @@ class SettlementWorkflowTest {
   void preparedBatchAfterRestartUsesFreshSnapshotBeforeAuthorization() {
     store.queued = List.of(swap(1));
     store.claim("pool", UUID.randomUUID(), Trigger.MANUAL, SNAPSHOT, NOW);
-    ledger.snapshot = new Snapshot("pool", "new-state", RESERVES, "30", "READY", null, NOW, 99);
+    ledger.snapshot =
+        new Snapshot("pool", "new-state", RESERVES, "30", "READY", null, NOW, 99, "100", "2");
     workflow.reconcile();
     assertThat(ledger.submitted.stateVersion()).isEqualTo("new-state");
     assertThat(ledger.submitted.beginOffset()).isEqualTo(99);
@@ -237,6 +289,138 @@ class SettlementWorkflowTest {
     assertThat(ledger.submissions).isZero();
   }
 
+  @Test
+  void independentFamiliesRotateAndPreserveTheirOwnFifo() {
+    var firstSwap = swap(1);
+    var secondSwap = swap(2);
+    var deposit = liquidity(1, LiquidityModels.Kind.DEPOSIT, LiquidityModels.Status.READY);
+    var laterDeposit = liquidity(2, LiquidityModels.Kind.DEPOSIT, LiquidityModels.Status.READY);
+    var withdrawal = liquidity(1, LiquidityModels.Kind.WITHDRAW, LiquidityModels.Status.READY);
+    var laterWithdrawal = liquidity(2, LiquidityModels.Kind.WITHDRAW, LiquidityModels.Status.READY);
+    List<QueueRequest> queues =
+        List.of(laterWithdrawal, withdrawal, laterDeposit, secondSwap, deposit, firstSwap);
+    assertThat(SettlementStore.select(queues, 5, null, Set.of(), true))
+        .containsExactly(firstSwap, secondSwap);
+    assertThat(SettlementStore.select(queues, 5, "swap", Set.of(), true))
+        .containsExactly(deposit, laterDeposit);
+    assertThat(SettlementStore.select(queues, 1, "swap", Set.of(), true)).containsExactly(deposit);
+    assertThat(SettlementStore.select(List.of(deposit, laterDeposit), 5, null, Set.of(), true))
+        .containsExactly(deposit, laterDeposit);
+    assertThat(SettlementStore.select(queues, 5, "deposit", Set.of(), true))
+        .containsExactly(withdrawal, laterWithdrawal);
+    assertThat(SettlementStore.select(queues, 1, "deposit", Set.of(), true))
+        .containsExactly(withdrawal);
+    assertThat(
+            SettlementStore.select(List.of(withdrawal, laterWithdrawal), 5, null, Set.of(), true))
+        .containsExactly(withdrawal, laterWithdrawal);
+    assertThat(SettlementStore.select(queues, 5, "withdraw", Set.of(), true))
+        .containsExactly(firstSwap, secondSwap);
+    assertThat(SettlementStore.select(List.of(firstSwap), 5, null, Set.of(), true)).isEmpty();
+  }
+
+  @Test
+  void blockedOrUncertainFamilyDoesNotBlockOtherFamilies() {
+    var swap = swap(1);
+    var recovering =
+        liquidity(1, LiquidityModels.Kind.WITHDRAW, LiquidityModels.Status.RECOVERY_UNRESOLVED);
+    var laterWithdrawal = liquidity(2, LiquidityModels.Kind.WITHDRAW, LiquidityModels.Status.READY);
+    var deposit = liquidity(1, LiquidityModels.Kind.DEPOSIT, LiquidityModels.Status.BLOCKED);
+    List<QueueRequest> queues = List.of(recovering, laterWithdrawal, swap, deposit);
+    assertThat(SettlementStore.select(queues, 1, "swap", Set.of("deposit"), true))
+        .containsExactly(swap);
+    assertThat(
+            SettlementStore.select(
+                List.of(recovering, laterWithdrawal, deposit), 5, "swap", Set.of(), true))
+        .containsExactly(deposit);
+  }
+
+  @Test
+  void initializationRemainsIndividualAndLiquidityBatchesStopAtUnresolvedRequests() {
+    var initial =
+        liquidity(
+            2,
+            LiquidityModels.Kind.DEPOSIT,
+            LiquidityModels.Status.READY,
+            LiquidityModels.Mode.INITIAL);
+    var first = liquidity(1, LiquidityModels.Kind.DEPOSIT, LiquidityModels.Status.READY);
+    var later = liquidity(3, LiquidityModels.Kind.DEPOSIT, LiquidityModels.Status.READY);
+    assertThat(SettlementStore.prefix(List.of(initial, later), 5)).containsExactly(initial);
+    assertThat(SettlementStore.prefix(List.of(first, initial, later), 5)).containsExactly(first);
+    for (var kind : LiquidityModels.Kind.values()) {
+      var ready = liquidity(1, kind, LiquidityModels.Status.READY);
+      var recovering = liquidity(2, kind, LiquidityModels.Status.RECOVERY_UNRESOLVED);
+      var tail = liquidity(3, kind, LiquidityModels.Status.READY);
+      assertThat(SettlementStore.prefix(List.of(ready, recovering, tail), 5))
+          .containsExactly(ready);
+    }
+  }
+
+  private static LiquidityRequest liquidity(
+      long sequence, LiquidityModels.Kind kind, LiquidityModels.Status status) {
+    return liquidity(sequence, kind, status, LiquidityModels.Mode.PROPORTIONAL);
+  }
+
+  private static LiquidityRequest liquidity(
+      long sequence,
+      LiquidityModels.Kind kind,
+      LiquidityModels.Status status,
+      LiquidityModels.Mode mode) {
+    LiquidityModels.Terms terms =
+        new LiquidityModels.WithdrawalTerms(
+            "pool",
+            "Pool",
+            "trader",
+            new Instrument("issuer", "A"),
+            new Instrument("issuer", "B"),
+            new Instrument("dvo", "LP"),
+            "1",
+            "1",
+            "2",
+            "0.99",
+            "1.98",
+            NOW.plusSeconds(60));
+    if (kind == LiquidityModels.Kind.DEPOSIT)
+      terms =
+          new LiquidityModels.DepositTerms(
+              "pool",
+              "Pool",
+              "trader",
+              terms.baseInstrument(),
+              terms.quoteInstrument(),
+              terms.lpInstrument(),
+              mode,
+              "1",
+              "2",
+              "1",
+              "2",
+              "0",
+              "0",
+              "1",
+              "0.99",
+              "1.98",
+              "2.02",
+              null,
+              NOW.plusSeconds(60));
+    return new LiquidityRequest(
+        new LiquidityModels.Request(
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            kind,
+            terms,
+            status,
+            sequence,
+            NOW,
+            NOW,
+            NOW,
+            null,
+            null,
+            List.of("a", "b", "c"),
+            null,
+            null,
+            null,
+            false));
+  }
+
   private static void await(CountDownLatch entered, CountDownLatch released) {
     entered.countDown();
     try {
@@ -247,37 +431,38 @@ class SettlementWorkflowTest {
     }
   }
 
-  static Swap swap(long sequence) {
+  static SwapRequest swap(long sequence) {
     return swap(sequence, SwapModels.Status.READY, NOW.plusSeconds(60));
   }
 
-  static Swap swap(long sequence, SwapModels.Status status, Instant deadline) {
-    return new Swap(
-        UUID.randomUUID(),
-        UUID.randomUUID(),
-        "pool",
-        "Pool",
-        "trader",
-        SwapModels.Direction.BaseToQuote,
-        new Instrument("issuer", "A"),
-        new Instrument("issuer", "B"),
-        "10",
-        "18",
-        "0.03",
-        "15",
-        deadline,
-        status,
-        sequence,
-        NOW,
-        NOW,
-        NOW,
-        null,
-        null,
-        List.of("allocation"),
-        "request-update",
-        null,
-        null,
-        false);
+  static SwapRequest swap(long sequence, SwapModels.Status status, Instant deadline) {
+    return new SwapRequest(
+        new Swap(
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            "pool",
+            "Pool",
+            "trader",
+            SwapModels.Direction.BaseToQuote,
+            new Instrument("issuer", "A"),
+            new Instrument("issuer", "B"),
+            "10",
+            "18",
+            "0.03",
+            "15",
+            deadline,
+            status,
+            sequence,
+            NOW,
+            NOW,
+            NOW,
+            null,
+            null,
+            List.of("allocation"),
+            "request-update",
+            null,
+            null,
+            false));
   }
 
   private static Confirmation confirmation(Pending pending) {
@@ -292,7 +477,7 @@ class SettlementWorkflowTest {
 
   private static final class Ledger implements SettlementLedger {
     Snapshot snapshot = SNAPSHOT;
-    UUID blockedId;
+    RequestRef blockedId;
     int preflights;
     int submissions;
     int recoveries;
@@ -308,14 +493,33 @@ class SettlementWorkflowTest {
       return snapshot;
     }
 
-    public List<Fill> preflight(Snapshot snapshot, List<Swap> swaps) {
+    public List<PreviewStep> preview(Snapshot snapshot, List<QueueRequest> requests) {
+      return List.of();
+    }
+
+    public List<Fill> preflight(Snapshot snapshot, List<QueueRequest> swaps) {
       preflights++;
       beforePreflight.run();
-      if (swaps.stream().anyMatch(swap -> swap.swapId().equals(blockedId)))
+      if (swaps.stream().anyMatch(swap -> swap.reference().equals(blockedId)))
         throw new SettlementLedger.Blocked(blockedId, "MIN_OUT", "Minimum output cannot be met");
       List<Fill> fills =
           swaps.stream()
-              .map(swap -> new Fill(swap.swapId(), "18", swap.outputInstrument()))
+              .map(
+                  request ->
+                      (Fill)
+                          switch (request) {
+                            case SwapRequest swap ->
+                                new SwapFill(
+                                    swap.reference().requestId(),
+                                    "18",
+                                    swap.request().outputInstrument());
+                            case LiquidityRequest liquidity ->
+                                liquidity.request().kind() == LiquidityModels.Kind.DEPOSIT
+                                    ? new DepositFill(
+                                        liquidity.reference().requestId(), "1", "2", "0", "0", "1")
+                                    : new WithdrawalFill(
+                                        liquidity.reference().requestId(), "1", "1", "2");
+                          })
               .toList();
       return reverseFills ? fills.reversed() : fills;
     }
@@ -336,20 +540,26 @@ class SettlementWorkflowTest {
   }
 
   private static final class Progress extends SettlementStore {
-    List<Swap> queued = List.of();
-    List<Swap> claimed = List.of();
+    List<QueueRequest> queued = List.of();
+    List<QueueRequest> claimed = List.of();
     Settlement batch;
     String stateVersion;
     long beginOffset;
     boolean automaticEnabled;
     long policyVersion;
     int batchSize = 3;
-    UUID blocked;
+    RequestRef blocked;
     String blockedVersion;
+    String lastProcessedFamily;
     String exclusionCode;
 
     Progress() {
       super(null, null, null, 10);
+    }
+
+    public synchronized Optional<Settlement> findIntent(
+        String poolId, UUID id, Selection selection) {
+      return find(id);
     }
 
     public synchronized Optional<Settlement> find(UUID id) {
@@ -375,24 +585,32 @@ class SettlementWorkflowTest {
 
     public synchronized Optional<Pending> claim(
         String poolId, UUID id, Trigger trigger, Snapshot snapshot, Instant now) {
-      if (trigger == Trigger.AUTOMATIC
-          && (!automaticEnabled
-              || Objects.equals(blockedVersion, snapshot.version())
-              || queued.size() < batchSize)) return Optional.empty();
-      claimed = SettlementStore.prefix(queued, batchSize);
+      if (trigger == Trigger.AUTOMATIC && !automaticEnabled) return Optional.empty();
+      Set<String> blockedFamilies =
+          Objects.equals(blockedVersion, snapshot.version()) ? Set.of("swap") : Set.of();
+      claimed =
+          SettlementStore.select(
+              queued,
+              batchSize,
+              lastProcessedFamily,
+              trigger == Trigger.AUTOMATIC ? blockedFamilies : Set.of(),
+              trigger == Trigger.AUTOMATIC);
+      if (claimed.isEmpty()) return Optional.empty();
+      lastProcessedFamily = claimed.getFirst().type();
       batch =
           new Settlement(
               id,
               poolId,
               trigger,
               Status.PREPARING,
-              claimed.stream().map(Swap::swapId).toList(),
+              claimed.stream().map(QueueRequest::reference).toList(),
               List.of(),
               snapshot.reserves(),
               null,
               policyVersion,
               now,
               now,
+              null,
               null,
               null,
               null);
@@ -415,15 +633,15 @@ class SettlementWorkflowTest {
 
     public synchronized boolean keepPrefix(
         UUID id,
-        List<UUID> prefix,
-        UUID blockedId,
+        List<RequestRef> prefix,
+        RequestRef blockedId,
         String code,
         String reason,
         String version,
         Instant now) {
       blocked = blockedId;
       blockedVersion = version;
-      claimed = claimed.stream().filter(swap -> prefix.contains(swap.swapId())).toList();
+      claimed = claimed.stream().filter(swap -> prefix.contains(swap.reference())).toList();
       batch =
           new Settlement(
               batch.settlementId(),
@@ -439,12 +657,13 @@ class SettlementWorkflowTest {
               now,
               null,
               code,
-              reason);
+              reason,
+              null);
       return true;
     }
 
     public synchronized void rejectPreparation(
-        UUID id, UUID blockedId, String code, String reason, String version, Instant now) {
+        UUID id, RequestRef blockedId, String code, String reason, String version, Instant now) {
       blocked = blockedId;
       blockedVersion = version;
       phase(Status.REJECTED, List.of());
@@ -505,7 +724,7 @@ class SettlementWorkflowTest {
               batch.poolId(),
               batch.trigger(),
               status,
-              batch.swapIds(),
+              batch.requests(),
               fills,
               batch.before(),
               batch.after(),
@@ -514,7 +733,8 @@ class SettlementWorkflowTest {
               NOW,
               batch.updateId(),
               batch.errorCode(),
-              batch.error());
+              batch.error(),
+              null);
     }
   }
 }

@@ -8,6 +8,8 @@ import java.util.*;
 public interface SwapLedger {
   long offset();
 
+  void requireAccess(Account caller, String poolId);
+
   /** Validate ownership, pool eligibility/backing and exact decimal quote arithmetic. */
   Quote quote(UUID quoteId, Account caller, String accessToken, QuoteInput input);
 

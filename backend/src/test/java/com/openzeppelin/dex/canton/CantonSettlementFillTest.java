@@ -39,11 +39,13 @@ class CantonSettlementFillTest {
             receipt(pending, sellBase, "18.123456", SwapDirection.BASETOQUOTE));
     var result = CantonSettlementLedger.confirm(tx, pending);
     assertThat(result.fills())
-        .extracting(Fill::swapId)
+        .extracting(Fill::requestId)
         .containsExactly(sellBase.swapId(), sellQuote.swapId());
-    assertThat(result.fills()).extracting(Fill::outputInstrument).containsExactly(USDC, BTC);
     assertThat(result.fills())
-        .extracting(Fill::amountOut)
+        .extracting(fill -> ((SwapFill) fill).outputInstrument())
+        .containsExactly(USDC, BTC);
+    assertThat(result.fills())
+        .extracting(fill -> ((SwapFill) fill).amountOut())
         .containsExactly("18.123456", "0.00123456");
   }
 
@@ -57,6 +59,49 @@ class CantonSettlementFillTest {
         .hasMessage("Confirmed receipt direction differs from the request");
   }
 
+  @Test
+  void forecastStopsAtTheBlockerWithoutMovingRemainingRequests() {
+    var requests =
+        List.<QueueRequest>of(
+            new SwapRequest(swap(SwapModels.Direction.BaseToQuote, BTC, USDC)),
+            new SwapRequest(swap(SwapModels.Direction.BaseToQuote, BTC, USDC)),
+            new SwapRequest(swap(SwapModels.Direction.QuoteToBase, USDC, BTC)));
+    var snapshot =
+        new Snapshot(
+            "pool",
+            "state:config",
+            new Reserves("state", "100", "200", "2", "20000"),
+            "30",
+            "READY",
+            null,
+            NOW,
+            1,
+            "10",
+            "2");
+    var initial = CantonSettlementLedger.projected(snapshot);
+    var after = new ProjectedPoolState("101", "198.1", "10", "1.9613861386", "20008.1");
+    var fill = new SwapFill(requests.getFirst().reference().requestId(), "1.9", USDC);
+    var trace = new ArrayList<PreviewStep>();
+    trace.add(CantonSettlementLedger.validStep(requests.getFirst(), fill, trace, initial, after));
+    CantonSettlementLedger.stopPreview(
+        snapshot,
+        requests,
+        trace,
+        new com.openzeppelin.dex.settlements.SettlementLedger.Blocked(
+            requests.get(1).reference(), "MIN_OUT", "Minimum not met"));
+    assertThat(trace)
+        .extracting(PreviewStep::status)
+        .containsExactly(PreviewStatus.VALID, PreviewStatus.BLOCKED, PreviewStatus.NOT_EVALUATED);
+    assertThat(trace.getFirst().after()).isEqualTo(after);
+    assertThat(trace.getFirst().outputs())
+        .containsExactly(new OutputCheck(USDC, "1.9", "0", "10000"));
+    for (var step : trace.subList(1, trace.size())) {
+      assertThat(step.before()).isEqualTo(after);
+      assertThat(step.after()).isNull();
+      assertThat(step.fill()).isNull();
+    }
+  }
+
   private static Pending pending(List<Swap> swaps) {
     UUID id = UUID.randomUUID();
     var settlement =
@@ -65,7 +110,7 @@ class CantonSettlementFillTest {
             "pool",
             Trigger.MANUAL,
             Status.SUBMITTING,
-            swaps.stream().map(Swap::swapId).toList(),
+            swaps.stream().map(swap -> new RequestRef("swap", swap.swapId())).toList(),
             List.of(),
             new Reserves("before-state", "100", "200", "2", "20000"),
             null,
@@ -74,8 +119,14 @@ class CantonSettlementFillTest {
             NOW,
             null,
             null,
+            null,
             null);
-    return new Pending(settlement, swaps, id, 42, "before-state:config");
+    return new Pending(
+        settlement,
+        swaps.stream().map(swap -> (QueueRequest) new SwapRequest(swap)).toList(),
+        id,
+        42,
+        "before-state:config");
   }
 
   private static Swap swap(SwapModels.Direction direction, Instrument input, Instrument output) {
@@ -138,7 +189,8 @@ class CantonSettlementFillTest {
             new BigDecimal("100"),
             new BigDecimal("201"),
             new BigDecimal("1000"),
-            Optional.empty());
+            List.of(),
+            List.of());
     return Transaction.newBuilder()
         .setUpdateId("confirmed-update")
         .setOffset(43)

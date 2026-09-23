@@ -14,7 +14,6 @@ import com.openzeppelin.dex.canton.generated.poolaccess.PoolAccess;
 import com.openzeppelin.dex.canton.generated.poolaccess.PoolAccess_RequestSwap;
 import com.openzeppelin.dex.canton.generated.splice.api.token.allocationv2.Allocation;
 import com.openzeppelin.dex.canton.generated.splice.api.token.allocationv2.AllocationView;
-import com.openzeppelin.dex.canton.generated.splice.api.token.allocationv2.TransferSide;
 import com.openzeppelin.dex.iam.Account;
 import com.openzeppelin.dex.onboarding.Onboarding;
 import com.openzeppelin.dex.pools.PoolModels.Instrument;
@@ -31,14 +30,14 @@ import org.springframework.stereotype.Component;
 @Component
 final class CantonSwapLedger implements SwapLedger {
   private final LedgerConnection ledger;
-  private final CantonSwapPools pools;
+  private final CantonPools pools;
   private final TokenStore tokens;
   private final InteractiveTransactions interactive;
   private final CantonTokenRegistry registries;
 
   CantonSwapLedger(
       LedgerConnection ledger,
-      CantonSwapPools pools,
+      CantonPools pools,
       TokenStore tokens,
       InteractiveTransactions interactive,
       CantonTokenRegistry registries) {
@@ -55,6 +54,13 @@ final class CantonSwapLedger implements SwapLedger {
   }
 
   @Override
+  public void requireAccess(Account caller, String poolId) {
+    var signer = signer(caller);
+    long offset = ledger.ledgerEnd();
+    pools.access(signer.partyId(), pools.pool(poolId, offset), offset);
+  }
+
+  @Override
   public void verify(SigningPayload signing, String signature, Account caller) {
     interactive.verify(prepared(signing), signature, signer(caller));
   }
@@ -66,8 +72,8 @@ final class CantonSwapLedger implements SwapLedger {
     pool.requireReady();
     pools.access(signer.partyId(), pool);
     boolean baseIn = input.direction() == Direction.BaseToQuote;
-    var in = baseIn ? pool.funding().baseToken : pool.funding().quoteToken;
-    var out = baseIn ? pool.funding().quoteToken : pool.funding().baseToken;
+    var in = baseIn ? pool.pool().baseToken : pool.pool().quoteToken;
+    var out = baseIn ? pool.pool().quoteToken : pool.pool().baseToken;
     var amount = SwapMath.amount(input.amountIn(), Math.toIntExact(in.decimals), false);
     pools.inputs(signer.partyId(), in.instrument, amount, pool.offset(), accessToken);
     var expected =
@@ -118,8 +124,8 @@ final class CantonSwapLedger implements SwapLedger {
       throw new IllegalArgumentException(
           "Settlement deadline must be between thirty seconds and thirty minutes away");
     boolean baseIn = terms.direction() == Direction.BaseToQuote;
-    var in = baseIn ? pool.funding().baseToken : pool.funding().quoteToken;
-    var out = baseIn ? pool.funding().quoteToken : pool.funding().baseToken;
+    var in = baseIn ? pool.pool().baseToken : pool.pool().quoteToken;
+    var out = baseIn ? pool.pool().quoteToken : pool.pool().baseToken;
     var amount = SwapMath.amount(terms.amountIn(), Math.toIntExact(in.decimals), false);
     var minimum = SwapMath.amount(terms.minOut(), Math.toIntExact(out.decimals), true);
     var inputs = pools.inputs(signer.partyId(), in.instrument, amount, pool.offset(), accessToken);
@@ -131,20 +137,20 @@ final class CantonSwapLedger implements SwapLedger {
             minimum,
             terms.settlementDeadline());
     var input =
-        CantonSwapPools.requireFactory(
+        CantonPools.requireFactory(
             in.allocationFactory.contractId, registries.inlineAllocation(in.instrument.admin));
     var output =
-        CantonSwapPools.requireFactory(
+        CantonPools.requireFactory(
             out.allocationFactory.contractId, registries.inlineAllocation(out.instrument.admin));
     var disclosures = new ArrayList<DisclosedContract>();
     disclosures.addAll(input.disclosures());
     disclosures.addAll(output.disclosures());
     disclosures.addAll(
-        CantonSwapPools.requireFactory(
+        CantonPools.requireFactory(
                 in.settlementFactory.contractId, registries.inlineSettlement(in.instrument.admin))
             .disclosures());
     disclosures.addAll(
-        CantonSwapPools.requireFactory(
+        CantonPools.requireFactory(
                 out.settlementFactory.contractId, registries.inlineSettlement(out.instrument.admin))
             .disclosures());
     try {
@@ -157,7 +163,7 @@ final class CantonSwapLedger implements SwapLedger {
               new PoolAccess.ContractId(access.getContractId())
                   .exercisePoolAccess_RequestSwap(
                       pool.route(), requested, now, inputs, input.extraArgs(), output.extraArgs()),
-              CantonSwapPools.mergeDisclosures(disclosures),
+              CantonPools.mergeDisclosures(disclosures),
               now.plusSeconds(45)));
     } catch (StatusRuntimeException failure) {
       throw prepareFailure(failure);
@@ -180,6 +186,7 @@ final class CantonSwapLedger implements SwapLedger {
           "WITHDRAWAL_NOT_AVAILABLE", "Withdrawals are available after the settlement deadline");
     long offset = ledger.ledgerEnd();
     var pool = pools.pool(swap.poolId(), offset);
+    var access = pools.access(signer.partyId(), pool, offset);
     var remaining =
         ledger
             .activeInterfaceContracts(ledger.primaryParty(), Allocation.INTERFACE_ID, offset)
@@ -208,8 +215,8 @@ final class CantonSwapLedger implements SwapLedger {
               caller.subject(),
               accessToken,
               signer,
-              new Pool.ContractId(pool.getContractId())
-                  .exercisePool_WithdrawSwap(signer.partyId(), withdrawals),
+              new PoolAccess.ContractId(access.getContractId())
+                  .exercisePoolAccess_RecoverAllocations(withdrawals),
               pools.poolDisclosure(pool, disclosures),
               Instant.now().plusSeconds(45)));
     } catch (StatusRuntimeException failure) {
@@ -280,7 +287,7 @@ final class CantonSwapLedger implements SwapLedger {
     for (var tx : ledger.transactions(pending.beginOffset(), ledger.primaryParty())) {
       for (var event : tx.getEventsList()) {
         if (event.hasCreated()
-            && CantonSwapPools.isAppTemplate(event.getCreated(), SwapReceipt.TEMPLATE_ID)) {
+            && CantonPools.isAppTemplate(event.getCreated(), SwapReceipt.TEMPLATE_ID)) {
           var receipt =
               SwapReceipt.valueDecoder()
                   .decode(DamlRecord.fromProto(event.getCreated().getCreateArguments()));
@@ -430,8 +437,19 @@ final class CantonSwapLedger implements SwapLedger {
             .decode(InterfaceViews.view(event, Allocation.INTERFACE_ID_WITH_PACKAGE_ID));
     boolean baseIn = request.terms.direction == SwapDirection.BASETOQUOTE;
     var token = input == baseIn ? route.baseToken : route.quoteToken;
-    var poolAccount = input == baseIn ? route.baseAccount : route.quoteAccount;
     var spec = allocation.allocation;
+    var funding = spec.nextIterationFunding.orElse(null);
+    boolean fundingMatches =
+        funding != null
+            && (input
+                ? funding.size() == 1
+                    && funding.containsKey(token.instrument.id)
+                    && funding.get(token.instrument.id).compareTo(request.terms.amountIn) == 0
+                : funding.isEmpty());
+    var metadata =
+        input
+            ? Map.of(AllocationMetadata.MIN_OUT, SwapMath.text(request.terms.minOut))
+            : Map.<String, String>of();
     if (!allocation.settlement.executors.equals(List.of(route.dvo, route.venueOperator))
         || !allocation.settlement.id.equals(settlementId(request.terms))
         || !allocation
@@ -445,27 +463,18 @@ final class CantonSwapLedger implements SwapLedger {
         || spec.authorizer.provider.isPresent()
         || !spec.authorizer.id.isEmpty()
         || !spec.committed
-        || !(input
-            ? spec.nextIterationFunding.isEmpty()
-            : spec.nextIterationFunding.map(Map::isEmpty).orElse(false))
-        || spec.transferLegSides.size() != (input || request.terms.minOut.signum() > 0 ? 1 : 0)
+        || !fundingMatches
+        || !spec.transferLegSides.isEmpty()
+        || !spec.meta.values.equals(metadata)
         || !spec.settlementDeadline.equals(Optional.of(request.terms.settlementDeadline)))
       throw new IllegalStateException("Confirmed allocations differ from the signed request");
-    if (spec.transferLegSides.isEmpty()) return;
-    var leg = spec.transferLegSides.getFirst();
-    if (!leg.transferLegId.equals(input ? "input" : "minimum-output")
-        || leg.side != (input ? TransferSide.SENDERSIDE : TransferSide.RECEIVERSIDE)
-        || !leg.otherside.equals(poolAccount)
-        || !leg.instrumentId.equals(token.instrument.id)
-        || leg.amount.compareTo(input ? request.terms.amountIn : request.terms.minOut) != 0)
-      throw new IllegalStateException("Confirmed allocation legs differ from the signed request");
   }
 
   private Onboarding.PartyPreparation signer(Account caller) {
     return tokens.signer(caller).party();
   }
 
-  private static SwapFailure prepareFailure(StatusRuntimeException failure) {
+  static SwapFailure prepareFailure(StatusRuntimeException failure) {
     return switch (failure.getStatus().getCode()) {
       case UNAVAILABLE, DEADLINE_EXCEEDED, CANCELLED, RESOURCE_EXHAUSTED ->
           SwapFailure.unavailable("The participant could not prepare this transaction; try again");

@@ -26,9 +26,8 @@ public class SettlementRoutes {
                           ? queue
                           : queue.stream()
                               .filter(
-                                  swap ->
-                                      swap.status()
-                                          == com.openzeppelin.dex.swaps.SwapModels.Status.READY)
+                                  request ->
+                                      !request.deferred() && request.status().equals("READY"))
                               .toList());
             })
         .GET(
@@ -52,6 +51,41 @@ public class SettlementRoutes {
                         workflow.run(
                             r.pathVariable("poolId"),
                             body.read(r, SettlementModels.RunInput.class),
+                            CurrentAccount.from(r))))
+        .GET(
+            "/v1/admin/pools/{poolId}/settlement-preview",
+            r ->
+                ServerResponse.ok()
+                    .body(
+                        workflow.preview(
+                            r.pathVariable("poolId"),
+                            r.param("type")
+                                .orElseThrow(
+                                    () -> new IllegalArgumentException("type is required")),
+                            r.param("retryOf").map(UUID::fromString).orElse(null),
+                            CurrentAccount.from(r))))
+        .PUT(
+            "/v1/admin/pools/{poolId}/settlement-requests/{type}/{requestId}/deferred",
+            r -> {
+              workflow.setDeferred(
+                  r.pathVariable("poolId"),
+                  new SettlementModels.RequestRef(
+                      r.pathVariable("type"), UUID.fromString(r.pathVariable("requestId"))),
+                  body.read(r, SettlementModels.DeferredInput.class).deferred(),
+                  CurrentAccount.from(r));
+              return ServerResponse.noContent().build();
+            })
+        .GET(
+            "/v1/admin/pools/{poolId}/settlement-history",
+            r ->
+                ServerResponse.ok()
+                    .body(
+                        workflow.history(
+                            r.pathVariable("poolId"),
+                            r.param("type").orElse(null),
+                            r.param("status").map(SettlementModels.Status::valueOf).orElse(null),
+                            r.param("before").orElse(null),
+                            r.param("limit").map(Integer::parseInt).orElse(25),
                             CurrentAccount.from(r))))
         .GET(
             "/v1/admin/pools/{poolId}/settlement-policy",

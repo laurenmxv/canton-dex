@@ -94,6 +94,9 @@ public class TokenWorkflow {
     try {
       store.confirmGrant(
           claim.accountId(), claim.grantCommandId(), ledger.issueGrant(claim, signer));
+    } catch (TokenLedger.GrantNotSubmitted failure) {
+      store.excludeGrant(claim.accountId(), claim.grantCommandId());
+      throw new TokenConflict("The test token grant could not be prepared; retry the request");
     } catch (TokenLedger.Rejected failure) {
       store.rejectedGrant(claim.accountId(), claim.grantCommandId());
       throw new TokenConflict("The participant rejected grant creation; retry the request");
@@ -110,9 +113,13 @@ public class TokenWorkflow {
     if ((claim.grantStatus() == GrantStatus.SUBMITTING
             || claim.grantStatus() == GrantStatus.UNRESOLVED)
         && store.beginGrantRecovery(claim.accountId(), claim.grantCommandId())) {
-      ledger
-          .recoverGrant(claim, signer)
-          .ifPresent(c -> store.confirmGrant(claim.accountId(), claim.grantCommandId(), c));
+      try {
+        ledger
+            .recoverGrant(claim, signer)
+            .ifPresent(c -> store.confirmGrant(claim.accountId(), claim.grantCommandId(), c));
+      } catch (TokenLedger.GrantNotSubmitted notSent) {
+        store.excludeGrant(claim.accountId(), claim.grantCommandId());
+      }
     }
     if (claim.status() == Status.SUBMITTING || claim.status() == Status.UNRESOLVED) {
       try {

@@ -29,9 +29,9 @@ class CantonSwapRequestTest {
           new Pool.ContractId("pool"), "dvo", "operator", token("BTC"), token("USDC"), BASE, QUOTE);
 
   @Test
-  void acceptsSignedNativeLegsAndZeroMinimumWithoutAnyTokenTemplateDependency() {
+  void acceptsIteratedFundingAndCanonicalMinimumMetadata() {
     for (var direction : List.of(SwapDirection.BASETOQUOTE, SwapDirection.QUOTETOBASE)) {
-      for (String minimum : List.of("9", "0")) {
+      for (String minimum : List.of("9", "0", "9.0000000000", "0.00000001")) {
         var request = request(direction, minimum);
         CantonSwapLedger.validateAllocation(
             allocation(request, true, "pool", "10", "trader"), request, ROUTE, true);
@@ -73,7 +73,49 @@ class CantonSwapRequestTest {
     assertThatThrownBy(
             () ->
                 CantonSwapLedger.validateAllocation(
-                    allocation(request, false, "pool", "8", "trader"), request, ROUTE, false))
+                    allocation(
+                        request,
+                        true,
+                        "pool",
+                        "10",
+                        "trader",
+                        Map.of(AllocationMetadata.MIN_OUT, "8")),
+                    request,
+                    ROUTE,
+                    true))
+        .isInstanceOf(IllegalStateException.class);
+  }
+
+  @Test
+  void rejectsMissingNonCanonicalAndUnexpectedMinimumMetadata() {
+    var request = request(SwapDirection.BASETOQUOTE, "0");
+    for (var metadata :
+        List.of(
+            Map.<String, String>of(),
+            Map.of(AllocationMetadata.MIN_OUT, "0.0"),
+            Map.of(AllocationMetadata.MIN_OUT, "0", "extra", "value"))) {
+      assertThatThrownBy(
+              () ->
+                  CantonSwapLedger.validateAllocation(
+                      allocation(request, true, "pool", "10", "trader", metadata),
+                      request,
+                      ROUTE,
+                      true))
+          .isInstanceOf(IllegalStateException.class);
+    }
+    assertThatThrownBy(
+            () ->
+                CantonSwapLedger.validateAllocation(
+                    allocation(
+                        request,
+                        false,
+                        "pool",
+                        "0",
+                        "trader",
+                        Map.of(AllocationMetadata.MIN_OUT, "0")),
+                    request,
+                    ROUTE,
+                    false))
         .isInstanceOf(IllegalStateException.class);
   }
 
@@ -146,27 +188,35 @@ class CantonSwapRequestTest {
 
   private static CreatedEvent allocation(
       SwapRequest<Pool> request, boolean input, String pool, String amount, String trader) {
+    return allocation(
+        request,
+        input,
+        pool,
+        amount,
+        trader,
+        input ? Map.of(AllocationMetadata.MIN_OUT, SwapMath.text(request.terms.minOut)) : Map.of());
+  }
+
+  private static CreatedEvent allocation(
+      SwapRequest<Pool> request,
+      boolean input,
+      String pool,
+      String amount,
+      String trader,
+      Map<String, String> metadata) {
     boolean base = input == (request.terms.direction == SwapDirection.BASETOQUOTE);
-    var sides =
-        !input && request.terms.minOut.signum() == 0
-            ? List.<TransferLegSide>of()
-            : List.of(
-                new TransferLegSide(
-                    input ? "input" : "minimum-output",
-                    input ? TransferSide.SENDERSIDE : TransferSide.RECEIVERSIDE,
-                    base ? BASE : QUOTE,
-                    new BigDecimal(amount),
-                    base ? "BTC" : "USDC",
-                    EMPTY));
     var specification =
         new AllocationSpecification(
             "issuer",
             new Account(Optional.of(trader), Optional.empty(), ""),
-            sides,
+            List.of(),
             Optional.of(DEADLINE),
-            input ? Optional.empty() : Optional.of(Map.of()),
+            Optional.of(
+                input
+                    ? Map.of(base ? "BTC" : "USDC", new BigDecimal(amount).setScale(10))
+                    : Map.of()),
             true,
-            EMPTY);
+            new Metadata(metadata));
     var view =
         new AllocationView(
             Optional.empty(),

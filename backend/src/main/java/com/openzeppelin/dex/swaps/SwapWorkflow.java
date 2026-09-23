@@ -59,6 +59,7 @@ public final class SwapWorkflow {
         throw SwapFailure.conflict(
             "PREPARATION_EXPIRED",
             "The signing window has elapsed. Check the existing request before requesting a new quote");
+      ledger.requireAccess(caller, terms.poolId());
       return preparation(existing.get());
     }
     Instant now = clock.instant();
@@ -97,11 +98,15 @@ public final class SwapWorkflow {
   public Preparation prepareWithdrawal(UUID swapId, Account caller, String accessToken) {
     caller.requireRole(Account.Role.TRADER);
     var swap = store.owned(swapId, caller);
+    if (swap.status() == Status.SETTLED)
+      throw SwapFailure.conflict("WITHDRAWAL_UNAVAILABLE", "The swap has already settled");
     var old = store.latestWithdrawal(swapId, caller);
     if (old.isPresent()
         && (old.get().signature() != null
-            || old.get().signing().expiresAt().isAfter(clock.instant())))
+            || old.get().signing().expiresAt().isAfter(clock.instant()))) {
+      ledger.requireAccess(caller, swap.poolId());
       return preparation(old.get());
+    }
     if (swap.settlementDeadline().isAfter(clock.instant()))
       throw SwapFailure.conflict(
           "DEADLINE_NOT_ELAPSED", "Withdrawal is available after the settlement deadline");
@@ -140,6 +145,7 @@ public final class SwapWorkflow {
       return store.owned(pending.swap().swapId(), caller);
     }
     ledger.verify(pending.signing(), input.signature(), caller);
+    ledger.requireAccess(caller, pending.swap().poolId());
     // Persist one dispatch decision before calling Canton. Unknown outcomes are read/reconciled
     // only.
     if (store.begin(

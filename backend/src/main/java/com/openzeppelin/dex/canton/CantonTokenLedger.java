@@ -56,24 +56,29 @@ public final class CantonTokenLedger implements TokenLedger {
 
   @Override
   public Confirmation issueGrant(Claim claim, Signer signer) {
-    var tx =
-        submit(
-            () ->
-                operatorCommands.submit(
-                    claim.grantCommandId(),
-                    "faucet-grant",
-                    () -> {
-                      var registry = store.registry();
-                      return ledger.storedCommands(
-                          claim.grantCommandId().toString(),
-                          ledger.primaryParty(),
-                          List.of(),
-                          new TestTokenFaucet.ContractId(registry.faucetFactoryId())
-                              .exerciseTestTokenFaucet_IssueGrant(
-                                  signer.party().partyId(), claim.grantId().toString()),
-                          claim.grantBeginOffset(),
-                          List.of());
-                    }));
+    Transaction tx;
+    try {
+      tx =
+          submit(
+              () ->
+                  operatorCommands.submit(
+                      claim.grantCommandId(),
+                      "faucet-grant",
+                      () -> {
+                        var registry = store.registry();
+                        return ledger.storedCommands(
+                            claim.grantCommandId().toString(),
+                            ledger.primaryParty(),
+                            List.of(),
+                            new TestTokenFaucet.ContractId(registry.faucetFactoryId())
+                                .exerciseTestTokenFaucet_IssueGrant(
+                                    signer.party().partyId(), claim.grantId().toString()),
+                            claim.grantBeginOffset(),
+                            List.of());
+                      }));
+    } catch (CantonOperatorCommands.PreparationFailed failure) {
+      throw new TokenLedger.GrantNotSubmitted(failure.getMessage());
+    }
     return grant(tx, claim, signer)
         .orElseThrow(() -> new IllegalStateException("Grant transaction has no matching grant"));
   }
@@ -90,6 +95,8 @@ public final class CantonTokenLedger implements TokenLedger {
     if (confirmed.isPresent()) return confirmed;
     try {
       return Optional.of(issueGrant(claim, signer));
+    } catch (TokenLedger.GrantNotSubmitted notSent) {
+      throw notSent;
     } catch (RuntimeException retryFailure) {
       // A retry's rejection cannot establish the outcome of the original persisted command.
       LOG.debug(

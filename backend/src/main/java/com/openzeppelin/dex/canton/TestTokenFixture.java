@@ -6,17 +6,31 @@ import com.daml.ledger.javaapi.data.DamlRecord;
 import com.daml.ledger.javaapi.data.Identifier;
 import com.daml.ledger.javaapi.data.codegen.ValueDecoder;
 import com.openzeppelin.dex.canton.generated.da.time.types.RelTime;
+import com.openzeppelin.dex.canton.generated.kycattestation.KycAttestation;
+import com.openzeppelin.dex.canton.generated.lib.liquidity.*;
 import com.openzeppelin.dex.canton.generated.lib.tokens.Token;
+import com.openzeppelin.dex.canton.generated.openzeppelin.tokencip112v1.holding.TokenHolding;
 import com.openzeppelin.dex.canton.generated.openzeppelin.tokencip112v1.registry.TokenRules;
 import com.openzeppelin.dex.canton.generated.pool.*;
+import com.openzeppelin.dex.canton.generated.poolaccess.PoolAccess;
 import com.openzeppelin.dex.canton.generated.poolfactory.*;
 import com.openzeppelin.dex.canton.generated.splice.api.token.allocationinstructionv2.AllocationFactory;
+import com.openzeppelin.dex.canton.generated.splice.api.token.allocationv2.Allocation;
+import com.openzeppelin.dex.canton.generated.splice.api.token.allocationv2.AllocationView;
 import com.openzeppelin.dex.canton.generated.splice.api.token.allocationv2.SettlementFactory;
 import com.openzeppelin.dex.canton.generated.splice.api.token.holdingv2.*;
+import com.openzeppelin.dex.canton.generated.splice.api.token.metadatav1.ChoiceContext;
+import com.openzeppelin.dex.canton.generated.splice.api.token.metadatav1.ExtraArgs;
+import com.openzeppelin.dex.canton.generated.splice.api.token.metadatav1.Metadata;
 import com.openzeppelin.dex.canton.generated.testtokenfaucet.*;
+import com.openzeppelin.dex.canton.generated.venuedelegation.DepositSettlementRequest;
 import com.openzeppelin.dex.canton.generated.venuedelegation.VenueDelegation;
+import com.openzeppelin.dex.pools.PoolModels;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.function.Predicate;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -35,6 +49,10 @@ public final class TestTokenFixture {
   private final String operator;
   private CreatedEvent rules;
   private DisclosedContract rulesDisclosure;
+  private CreatedEvent lpRules;
+  private DisclosedContract lpRulesDisclosure;
+  private static final ExtraArgs EMPTY =
+      new ExtraArgs(new ChoiceContext(Map.of()), new Metadata(Map.of()));
 
   public TestTokenFixture(
       JdbcClient sql,
@@ -52,6 +70,7 @@ public final class TestTokenFixture {
 
   public void initialize() {
     registry();
+    lpRegistry();
     pool("BTC", 8L, "5", "300000");
     pool("ETH", 10L, "100", "300000");
   }
@@ -206,29 +225,64 @@ public final class TestTokenFixture {
     }
   }
 
+  private void lpRegistry() {
+    var matches =
+        find(
+            authority,
+            dvo,
+            TokenRules.TEMPLATE_ID,
+            TokenRules.valueDecoder(),
+            r -> r.admin.equals(dvo));
+    if (matches.isEmpty()) {
+      authority.submit(
+          command("lp-rules", dvo),
+          dvo,
+          List.of(),
+          new TokenRules(dvo, new RelTime(3_600_000_000L), new RelTime(300_000_000L)).create());
+      matches =
+          find(
+              authority,
+              dvo,
+              TokenRules.TEMPLATE_ID,
+              TokenRules.valueDecoder(),
+              r -> r.admin.equals(dvo));
+    }
+    lpRules = single(matches, "LP token rules");
+    lpRulesDisclosure = disclosure(lpRules);
+    sql.sql(
+            "INSERT INTO token_registries(admin,allocation_factory_id,settlement_factory_id)"
+                + " VALUES(?,?,?) ON CONFLICT(admin) DO NOTHING")
+        .params(dvo, lpRules.getContractId(), lpRules.getContractId())
+        .update();
+    var template = lpRules.getTemplateId();
+    sql.sql(
+            "INSERT INTO token_registry_contracts(admin,contract_id,template_id,created_event_blob,synchronizer_id)"
+                + " VALUES(?,?,?,?,?) ON CONFLICT(admin,contract_id) DO NOTHING")
+        .params(
+            dvo,
+            lpRules.getContractId(),
+            template.getPackageId()
+                + ":"
+                + template.getModuleName()
+                + ":"
+                + template.getEntityName(),
+            Base64.getEncoder().encodeToString(lpRules.getCreatedEventBlob().toByteArray()),
+            authority.singleSynchronizer())
+        .update();
+  }
+
   private void pool(String base, long decimals, String baseReserve, String quoteReserve) {
     String pair = base + "/USDC";
-    String accountPrefix = "mvp-" + base.toLowerCase(Locale.ROOT) + "-usdc-";
+    String fixtureId = command("fixture-pool", pair);
     var settings =
         new PoolSettings(
             dvo,
-            new InstrumentId(issuer, base),
-            new InstrumentId(issuer, "USDC"),
-            account(accountPrefix + "base"),
-            account(accountPrefix + "quote"),
-            new InstrumentId(dvo, "LP-" + base + "-USDC"),
-            new BigDecimal("30"),
-            new BigDecimal(baseReserve),
-            new BigDecimal(quoteReserve),
-            new BigDecimal("1000"));
-    var mapped =
-        sql
-            .sql("SELECT * FROM test_token_pools WHERE pair=?")
-            .param(pair)
-            .query()
-            .listOfRows()
-            .stream()
-            .findFirst();
+            fixtureId,
+            token(base, decimals),
+            token("USDC", 6L),
+            new AllocationFactory.ContractId(lpRules.getContractId()),
+            new SettlementFactory.ContractId(lpRules.getContractId()),
+            new BigDecimal("30"));
     var matches =
         find(
             authority,
@@ -238,54 +292,55 @@ public final class TestTokenFixture {
             p ->
                 p.dvo.equals(dvo)
                     && p.venueOperator.equals(operator)
-                    && p.baseInstrumentId.equals(settings.baseInstrumentId)
-                    && p.quoteInstrumentId.equals(settings.quoteInstrumentId)
-                    && p.baseAccount.equals(settings.baseAccount)
-                    && p.quoteAccount.equals(settings.quoteAccount));
+                    && p.lpToken.instrument.id.equals("lp:" + fixtureId));
     CreatedEvent pool;
-    if (mapped.isPresent()) {
-      pool =
-          matches.stream()
-              .filter(e -> e.getContractId().equals(mapped.get().get("pool_id")))
-              .findFirst()
-              .orElseThrow(
-                  () -> new IllegalStateException("Configured fixture pool is inactive: " + pair));
-    } else {
-      if (matches.isEmpty()) {
-        var factory = factory();
-        var proposals =
-            find(
-                authority,
-                dvo,
-                PoolProposal.TEMPLATE_ID,
-                PoolProposal.valueDecoder(),
-                p ->
-                    !p.accepted
-                        && p.factoryCid.contractId.equals(factory.getContractId())
-                        && CantonPoolLedger.same(
-                            PoolEncoding.from(p.settings), PoolEncoding.from(settings)));
-        if (proposals.isEmpty()) {
-          var proposed =
-              operatorLedger.submit(
-                  command("propose", accountPrefix),
-                  operator,
-                  List.of(),
-                  new PoolFactory.ContractId(factory.getContractId())
-                      .exercisePoolFactory_ProposePool(settings));
-          proposals = List.of(LedgerConnection.created(proposed, PoolProposal.TEMPLATE_ID));
-        }
-        var accepted =
-            authority.submit(
-                command("accept", accountPrefix),
-                dvo,
+    if (matches.isEmpty()) {
+      var factory = factory();
+      var proposals =
+          find(
+              authority,
+              dvo,
+              PoolProposal.TEMPLATE_ID,
+              PoolProposal.valueDecoder(),
+              p ->
+                  !p.accepted
+                      && p.factoryCid.contractId.equals(factory.getContractId())
+                      && p.settings.poolId.equals(fixtureId));
+      if (proposals.isEmpty()) {
+        var proposed =
+            operatorLedger.submit(
+                command("propose", fixtureId),
+                operator,
                 List.of(),
-                new PoolProposal.ContractId(single(proposals, "fixture proposal").getContractId())
-                    .exercisePoolProposal_Accept());
-        matches = List.of(LedgerConnection.created(accepted, Pool.TEMPLATE_ID));
+                new PoolFactory.ContractId(factory.getContractId())
+                    .exercisePoolFactory_ProposePool(settings));
+        proposals = List.of(LedgerConnection.created(proposed, PoolProposal.TEMPLATE_ID));
       }
-      pool = single(matches, "fixture pool " + pair);
-    }
+      var accepted =
+          authority.submit(
+              command("accept", fixtureId),
+              dvo,
+              List.of(),
+              new PoolProposal.ContractId(single(proposals, "fixture proposal").getContractId())
+                  .exercisePoolProposal_Accept(
+                      new BigDecimal(quoteReserve)
+                          .divide(new BigDecimal(baseReserve), 10, RoundingMode.FLOOR)),
+              List.of(rulesDisclosure, lpRulesDisclosure));
+      String createdPoolId = LedgerConnection.created(accepted, Pool.TEMPLATE_ID).getContractId();
+      pool =
+          single(
+              find(
+                  authority,
+                  dvo,
+                  Pool.TEMPLATE_ID,
+                  Pool.valueDecoder(),
+                  p -> p.lpToken.instrument.id.equals("lp:" + fixtureId)),
+              "created fixture pool");
+      if (!pool.getContractId().equals(createdPoolId))
+        throw new IllegalStateException("Fixture pool identity differs");
+    } else pool = single(matches, "fixture pool " + pair);
     String poolId = pool.getContractId();
+    var poolValue = decode(pool, Pool.valueDecoder());
     var config =
         single(
             find(
@@ -296,6 +351,35 @@ public final class TestTokenFixture {
                 c -> c.poolCid.contractId.equals(poolId)),
             "pool configuration");
     var state = state(poolId);
+    storePool(pool, config, state, pair);
+    sql.sql("INSERT INTO test_token_pools(pair,pool_id) VALUES(?,?) ON CONFLICT(pair) DO NOTHING")
+        .params(pair, poolId)
+        .update();
+    String delegationId = delegation(poolId);
+    if (decode(state, PoolState.valueDecoder()).lpTokenSupply.signum() == 0) {
+      seed(
+          pool,
+          config,
+          state,
+          delegationId,
+          new BigDecimal(baseReserve),
+          new BigDecimal(quoteReserve));
+      state = state(poolId);
+    }
+    var terms = storePool(pool, config, state, pair);
+    sql.sql(
+            "INSERT INTO pool_pair_claims(pair_key,pool_id) VALUES(?,?) ON CONFLICT(pair_key) DO NOTHING")
+        .params(terms.pairKey(), poolId)
+        .update();
+    sql.sql(
+            "INSERT INTO token_instruments(admin,instrument_id,symbol,decimals) VALUES(?,?,?,?)"
+                + " ON CONFLICT(admin,instrument_id) DO NOTHING")
+        .params(dvo, poolValue.lpToken.instrument.id, "LP-" + base + "-USDC", 10)
+        .update();
+  }
+
+  private PoolModels.Terms storePool(
+      CreatedEvent pool, CreatedEvent config, CreatedEvent state, String pair) {
     var terms =
         PoolEncoding.terms(
             decode(pool, Pool.valueDecoder()),
@@ -306,48 +390,219 @@ public final class TestTokenFixture {
                 + " VALUES(?,?,?,?,?,true,CAST(? AS jsonb)) ON CONFLICT(pool_id) DO UPDATE SET"
                 + " config_id=EXCLUDED.config_id,state_id=EXCLUDED.state_id,active=true,settings=EXCLUDED.settings")
         .params(
-            poolId,
+            pool.getContractId(),
             config.getContractId(),
             state.getContractId(),
             pool.getTemplateId().getPackageId(),
             pair + " test pool",
             JsonMapper.builder().build().writeValueAsString(terms))
         .update();
-    sql.sql("INSERT INTO test_token_pools(pair,pool_id) VALUES(?,?) ON CONFLICT(pair) DO NOTHING")
-        .params(pair, poolId)
-        .update();
-    sql.sql(
-            "INSERT INTO pool_pair_claims(pair_key,pool_id) VALUES(?,?) ON CONFLICT(pair_key) DO"
-                + " NOTHING")
-        .params(terms.pairKey(), poolId)
-        .update();
-    if (decode(state, PoolState.valueDecoder()).funding.isEmpty()) {
-      var baseHoldings =
-          claim(
-              "pool:" + poolId + ":base", settings.baseAccount, List.of(amount(base, baseReserve)));
-      var quoteHoldings =
-          claim(
-              "pool:" + poolId + ":quote",
-              settings.quoteAccount,
-              List.of(amount("USDC", quoteReserve)));
-      var funded =
-          authority.submit(
-              command("fund", poolId),
-              dvo,
+    return terms;
+  }
+
+  private void seed(
+      CreatedEvent poolEvent,
+      CreatedEvent configEvent,
+      CreatedEvent stateEvent,
+      String delegationId,
+      BigDecimal baseAmount,
+      BigDecimal quoteAmount) {
+    String poolId = poolEvent.getContractId();
+    var pool = decode(poolEvent, Pool.valueDecoder());
+    var config = decode(configEvent, PoolConfig.valueDecoder());
+    var access = seedAccess(poolId);
+    String requestId = command("initial-liquidity", poolId);
+    var allocations =
+        issuerLedger
+            .activeInterfaceContracts(issuer, Allocation.INTERFACE_ID, issuerLedger.ledgerEnd())
+            .stream()
+            .filter(e -> allocation(e).settlement.id.startsWith("deposit:" + requestId + ":"))
+            .toList();
+    Instant deadline;
+    if (allocations.isEmpty()) {
+      var account = new Account(Optional.of(issuer), Optional.empty(), "");
+      claim(
+          "pool:" + poolId + ":base",
+          account,
+          List.of(new TestTokenAmount(pool.baseToken.instrument.id, baseAmount)));
+      claim(
+          "pool:" + poolId + ":quote",
+          account,
+          List.of(new TestTokenAmount(pool.quoteToken.instrument.id, quoteAmount)));
+      deadline = Instant.now().plusSeconds(1800).truncatedTo(ChronoUnit.MICROS);
+      var terms = seedTerms(requestId, baseAmount, quoteAmount, config.initialRatio, deadline);
+      issuerLedger.submit(
+          command("deposit", requestId),
+          issuer,
+          List.of(),
+          new PoolAccess.ContractId(access.getContractId())
+              .exercisePoolAccess_RequestLiquidityDeposit(
+                  terms,
+                  Instant.now().minusSeconds(1).truncatedTo(ChronoUnit.MICROS),
+                  seedHoldings(pool.baseToken.instrument, baseAmount),
+                  seedHoldings(pool.quoteToken.instrument, quoteAmount),
+                  EMPTY,
+                  EMPTY,
+                  EMPTY),
+          List.of(rulesDisclosure, lpRulesDisclosure, disclosure(poolEvent)));
+      allocations =
+          issuerLedger
+              .activeInterfaceContracts(issuer, Allocation.INTERFACE_ID, issuerLedger.ledgerEnd())
+              .stream()
+              .filter(e -> allocation(e).settlement.id.startsWith("deposit:" + requestId + ":"))
+              .toList();
+    } else
+      deadline = allocation(allocations.getFirst()).allocation.settlementDeadline.orElseThrow();
+    if (allocations.size() != 3 || !Instant.now().isBefore(deadline))
+      throw new IllegalStateException(
+          "Initial liquidity requires three live allocations: " + poolId);
+    var request =
+        new DepositRequest<Pool>(
+            new Pool.ContractId(poolId),
+            issuer,
+            seedTerms(requestId, baseAmount, quoteAmount, config.initialRatio, deadline),
+            seedAllocation(allocations, pool.baseToken.instrument),
+            seedAllocation(allocations, pool.quoteToken.instrument),
+            new Allocation.ContractId(
+                single(
+                        allocations.stream()
+                            .filter(e -> allocation(e).allocation.admin.equals(dvo))
+                            .toList(),
+                        "LP receipt allocation")
+                    .getContractId()));
+    operatorLedger.submit(
+        command("settle-initial-liquidity", requestId),
+        operator,
+        List.of(),
+        new VenueDelegation.ContractId(delegationId)
+            .exerciseVenueDelegation_AddLiquidity(
+                new PoolConfig.ContractId(configEvent.getContractId()),
+                new PoolState.ContractId(stateEvent.getContractId()),
+                List.of(
+                    new DepositSettlementRequest(
+                        new PoolAccess.ContractId(access.getContractId()),
+                        new DepositBatchRequest<>(
+                            request,
+                            new LiquidityTokenArgs(EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY))))),
+        List.of(rulesDisclosure, lpRulesDisclosure));
+  }
+
+  private CreatedEvent seedAccess(String poolId) {
+    var attestations =
+        find(
+            operatorLedger,
+            operator,
+            KycAttestation.TEMPLATE_ID,
+            KycAttestation.valueDecoder(),
+            a ->
+                a.venueOperator.equals(operator)
+                    && a.trader.equals(issuer)
+                    && a.pools.equals(List.of(new Pool.ContractId(poolId))));
+    if (attestations.isEmpty()) {
+      var created =
+          operatorLedger.submit(
+              command("seed-kyc", poolId),
+              operator,
               List.of(),
-              new Pool.ContractId(poolId)
-                  .exercisePool_Fund(
-                      new PoolConfig.ContractId(config.getContractId()),
-                      new PoolState.ContractId(state.getContractId()),
-                      new PoolFunding(
-                          token(base, decimals), token("USDC", 6L), baseHoldings, quoteHoldings)),
-              List.of(rulesDisclosure));
-      state = LedgerConnection.created(funded, PoolState.TEMPLATE_ID);
-      sql.sql("UPDATE pools SET state_id=? WHERE pool_id=?")
-          .params(state.getContractId(), poolId)
-          .update();
+              new KycAttestation(operator, issuer, List.of(new Pool.ContractId(poolId))).create());
+      attestations = List.of(LedgerConnection.created(created, KycAttestation.TEMPLATE_ID));
     }
-    delegation(poolId);
+    var attestationId =
+        new KycAttestation.ContractId(
+            single(attestations, "initial LP attestation").getContractId());
+    var accesses =
+        find(
+            operatorLedger,
+            operator,
+            PoolAccess.TEMPLATE_ID,
+            PoolAccess.valueDecoder(),
+            a ->
+                a.venueOperator.equals(operator)
+                    && a.trader.equals(issuer)
+                    && a.poolCid.contractId.equals(poolId)
+                    && a.attestationCid.equals(attestationId));
+    if (accesses.isEmpty()) {
+      var created =
+          operatorLedger.submit(
+              command("seed-access", poolId),
+              operator,
+              List.of(),
+              new PoolAccess(operator, issuer, new Pool.ContractId(poolId), attestationId)
+                  .create());
+      return LedgerConnection.created(created, PoolAccess.TEMPLATE_ID);
+    }
+    return single(accesses, "initial LP access");
+  }
+
+  private List<Holding.ContractId> seedHoldings(InstrumentId instrument, BigDecimal amount) {
+    var holdings =
+        find(
+            issuerLedger,
+            issuer,
+            TokenHolding.TEMPLATE_ID,
+            TokenHolding.valueDecoder(),
+            h ->
+                h.holding.instrumentId.equals(instrument)
+                    && h.holding.account.equals(
+                        new Account(Optional.of(issuer), Optional.empty(), ""))
+                    && h.holding.lock.isEmpty());
+    var selected = new ArrayList<Holding.ContractId>();
+    BigDecimal total = BigDecimal.ZERO;
+    for (var event : holdings) {
+      selected.add(new Holding.ContractId(event.getContractId()));
+      total = total.add(decode(event, TokenHolding.valueDecoder()).holding.amount);
+      if (total.compareTo(amount) >= 0) return selected;
+      if (selected.size() == 16) break;
+    }
+    throw new IllegalStateException(
+        "Initial LP has insufficient available holdings for " + instrument.id);
+  }
+
+  private static DepositTerms seedTerms(
+      String requestId, BigDecimal base, BigDecimal quote, BigDecimal ratio, Instant deadline) {
+    return new DepositTerms(
+        requestId,
+        DepositMode.INITIALIZEONLY,
+        base,
+        quote,
+        BigDecimal.ZERO,
+        ratio,
+        ratio,
+        deadline);
+  }
+
+  private static AllocationView allocation(CreatedEvent event) {
+    return AllocationView.valueDecoder()
+        .decode(InterfaceViews.view(event, Allocation.INTERFACE_ID_WITH_PACKAGE_ID));
+  }
+
+  private static Allocation.ContractId seedAllocation(
+      List<CreatedEvent> allocations, InstrumentId instrument) {
+    return new Allocation.ContractId(
+        single(
+                allocations.stream()
+                    .filter(
+                        e ->
+                            allocation(e).allocation.admin.equals(instrument.admin)
+                                && allocation(e)
+                                    .allocation
+                                    .nextIterationFunding
+                                    .map(funding -> funding.containsKey(instrument.id))
+                                    .orElse(false))
+                    .toList(),
+                instrument.id + " funding allocation")
+            .getContractId());
+  }
+
+  private DisclosedContract disclosure(CreatedEvent event) {
+    if (event.getCreatedEventBlob().isEmpty())
+      throw new IllegalStateException("Fixture disclosure is missing");
+    return DisclosedContract.newBuilder()
+        .setContractId(event.getContractId())
+        .setTemplateId(event.getTemplateId())
+        .setCreatedEventBlob(event.getCreatedEventBlob())
+        .setSynchronizerId(authority.singleSynchronizer())
+        .build();
   }
 
   private CreatedEvent factory() {
@@ -377,29 +632,28 @@ public final class TestTokenFixture {
         "pool state");
   }
 
-  private List<Holding.ContractId> claim(
-      String grantId, Account account, List<TestTokenAmount> amounts) {
+  private void claim(String grantId, Account account, List<TestTokenAmount> amounts) {
     var receipts =
         find(
-            authority,
-            dvo,
+            issuerLedger,
+            issuer,
             TestTokenReceipt.TEMPLATE_ID,
             TestTokenReceipt.valueDecoder(),
             r -> r.grantId.equals(grantId));
     if (!receipts.isEmpty()) {
       var receipt = decode(single(receipts, "funding receipt"), TestTokenReceipt.valueDecoder());
       if (!receipt.issuer.equals(issuer)
-          || !receipt.recipient.equals(dvo)
+          || !receipt.recipient.equals(issuer)
           || !receipt.account.equals(account)
           || !receipt.rulesCid.contractId.equals(rules.getContractId())
           || !sameAmounts(receipt.amounts, amounts))
         throw new IllegalStateException("Pool funding receipt differs");
-      return receipt.holdingCids;
+      return;
     }
     var grants =
         find(
-            authority,
-            dvo,
+            issuerLedger,
+            issuer,
             TestTokenGrant.TEMPLATE_ID,
             TestTokenGrant.valueDecoder(),
             g -> g.grantId.equals(grantId));
@@ -414,7 +668,7 @@ public final class TestTokenFixture {
                       operator,
                       grantId,
                       new TokenRules.ContractId(rules.getContractId()),
-                      dvo,
+                      issuer,
                       account,
                       amounts)
                   .create());
@@ -423,31 +677,28 @@ public final class TestTokenFixture {
     var grant = single(grants, "pool funding grant");
     var value = decode(grant, TestTokenGrant.valueDecoder());
     if (!value.issuer.equals(issuer)
-        || !value.recipient.equals(dvo)
+        || !value.recipient.equals(issuer)
         || !value.account.equals(account)
         || !value.rulesCid.contractId.equals(rules.getContractId())
         || !sameAmounts(value.amounts, amounts))
       throw new IllegalStateException("Pool funding grant differs");
     var claimed =
-        authority.submit(
+        issuerLedger.submit(
             command("claim", grantId),
-            dvo,
+            issuer,
             List.of(),
             new TestTokenGrant.ContractId(grant.getContractId()).exerciseTestTokenGrant_Claim(),
             List.of(rulesDisclosure));
-    return decode(
-            LedgerConnection.created(claimed, TestTokenReceipt.TEMPLATE_ID),
-            TestTokenReceipt.valueDecoder())
-        .holdingCids;
+    LedgerConnection.created(claimed, TestTokenReceipt.TEMPLATE_ID);
   }
 
-  private void delegation(String poolId) {
+  private String delegation(String poolId) {
     var row =
         sql.sql("SELECT delegation_id FROM test_token_pools WHERE pool_id=?")
             .param(poolId)
             .query()
             .singleRow();
-    if (row.get("delegation_id") != null) return;
+    if (row.get("delegation_id") != null) return row.get("delegation_id").toString();
     var delegates =
         find(
             authority,
@@ -470,10 +721,7 @@ public final class TestTokenFixture {
     sql.sql("UPDATE test_token_pools SET delegation_id=? WHERE pool_id=? AND delegation_id IS NULL")
         .params(single(delegates, "venue delegation").getContractId(), poolId)
         .update();
-  }
-
-  private Account account(String id) {
-    return new Account(Optional.of(dvo), Optional.empty(), id);
+    return single(delegates, "venue delegation").getContractId();
   }
 
   private Token token(String id, long decimals) {

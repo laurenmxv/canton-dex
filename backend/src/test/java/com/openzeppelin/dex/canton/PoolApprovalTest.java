@@ -6,9 +6,15 @@ import com.daml.ledger.api.v2.EventOuterClass.*;
 import com.daml.ledger.api.v2.TransactionOuterClass.Transaction;
 import com.daml.ledger.javaapi.data.Identifier;
 import com.daml.ledger.javaapi.data.Template;
+import com.openzeppelin.dex.canton.generated.lib.tokens.Token;
 import com.openzeppelin.dex.canton.generated.pool.*;
 import com.openzeppelin.dex.canton.generated.poolfactory.*;
+import com.openzeppelin.dex.canton.generated.splice.api.token.allocationinstructionv2.AllocationFactory;
+import com.openzeppelin.dex.canton.generated.splice.api.token.allocationv2.SettlementFactory;
+import com.openzeppelin.dex.canton.generated.splice.api.token.holdingv2.Account;
+import com.openzeppelin.dex.canton.generated.splice.api.token.holdingv2.InstrumentId;
 import com.openzeppelin.dex.pools.PoolModels.*;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.*;
 import org.junit.jupiter.api.Test;
@@ -18,17 +24,11 @@ class PoolApprovalTest {
       new Proposal(
           UUID.randomUUID(),
           "BASE / QUOTE",
-          new Terms(
+          new ProposalTerms(
               "dvo",
               new Instrument("base-admin", "BASE"),
               new Instrument("quote-admin", "QUOTE"),
-              new ReserveAccount("dvo", null, "base"),
-              new ReserveAccount("dvo", null, "quote"),
-              new Instrument("dvo", "LP"),
-              "30",
-              "997",
-              "1000",
-              "1000"),
+              "30"),
           Status.PENDING,
           Instant.EPOCH,
           Instant.EPOCH,
@@ -45,7 +45,7 @@ class PoolApprovalTest {
     assertThat(result.poolId()).isEqualTo("pool");
     assertThat(result.configId()).isEqualTo("config");
     assertThat(result.stateId()).isEqualTo("state");
-    assertThat(CantonPoolLedger.same(result.settings(), PROPOSAL.settings())).isTrue();
+    assertThat(CantonPoolLedger.same(result.settings().proposal(), PROPOSAL.settings())).isTrue();
   }
 
   @Test
@@ -96,14 +96,27 @@ class PoolApprovalTest {
   @Test
   void rejectsApprovalWithDifferentFactoryOrSettingsOrMissingConsent() {
     var original = events();
-    var settings = PoolEncoding.daml(PROPOSAL.settings());
+    var settings = settings();
     for (var approval :
         List.of(
             new PoolProposal(
-                new PoolFactory.ContractId("other-factory"), "operator", settings, true),
+                new PoolFactory.ContractId("other-factory"),
+                "operator",
+                settings,
+                true,
+                Optional.of(BigDecimal.ONE)),
             new PoolProposal(
-                new PoolFactory.ContractId("factory"), "other-operator", settings, true),
-            new PoolProposal(new PoolFactory.ContractId("factory"), "operator", settings, false))) {
+                new PoolFactory.ContractId("factory"),
+                "other-operator",
+                settings,
+                true,
+                Optional.of(BigDecimal.ONE)),
+            new PoolProposal(
+                new PoolFactory.ContractId("factory"),
+                "operator",
+                settings,
+                false,
+                Optional.empty()))) {
       var events = new ArrayList<>(original);
       events.set(
           0,
@@ -129,21 +142,23 @@ class PoolApprovalTest {
     var different =
         new PoolSettings(
             settings.dvo,
-            settings.baseInstrumentId,
-            settings.quoteInstrumentId,
-            settings.baseAccount,
-            settings.quoteAccount,
-            settings.lpTokenInstrumentId,
-            new java.math.BigDecimal("100"),
-            settings.baseReserve,
-            settings.quoteReserve,
-            settings.lpTokenSupply);
+            settings.poolId,
+            settings.baseToken,
+            settings.quoteToken,
+            settings.lpAllocationFactory,
+            settings.lpSettlementFactory,
+            new BigDecimal("100"));
     events.set(
         0,
         created(
             "approval",
             PoolProposal.TEMPLATE_ID_WITH_PACKAGE_ID,
-            new PoolProposal(new PoolFactory.ContractId("factory"), "operator", different, true),
+            new PoolProposal(
+                new PoolFactory.ContractId("factory"),
+                "operator",
+                different,
+                true,
+                Optional.of(BigDecimal.ONE)),
             List.of("operator", "dvo"),
             List.of()));
     assertRejected(events);
@@ -155,12 +170,17 @@ class PoolApprovalTest {
   }
 
   private static List<Event> events() {
-    var s = PoolEncoding.daml(PROPOSAL.settings());
+    var s = settings();
     return List.of(
         created(
             "approval",
             PoolProposal.TEMPLATE_ID_WITH_PACKAGE_ID,
-            new PoolProposal(new PoolFactory.ContractId("factory"), "operator", s, true),
+            new PoolProposal(
+                new PoolFactory.ContractId("factory"),
+                "operator",
+                s,
+                true,
+                Optional.of(BigDecimal.ONE)),
             List.of("operator", "dvo"),
             List.of()),
         created(
@@ -169,17 +189,18 @@ class PoolApprovalTest {
             new Pool(
                 "dvo",
                 "operator",
-                s.baseInstrumentId,
-                s.quoteInstrumentId,
-                s.baseAccount,
-                s.quoteAccount,
-                s.lpTokenInstrumentId),
+                s.baseToken,
+                s.quoteToken,
+                token("dvo", "lp:" + s.poolId),
+                new Account(Optional.of("dvo"), Optional.of("operator"), "base:" + s.poolId),
+                new Account(Optional.of("dvo"), Optional.of("operator"), "quote:" + s.poolId)),
             List.of("dvo"),
             List.of("operator")),
         created(
             "config",
             PoolConfig.TEMPLATE_ID_WITH_PACKAGE_ID,
-            new PoolConfig(new Pool.ContractId("pool"), "dvo", "operator", s.feeBps),
+            new PoolConfig(
+                new Pool.ContractId("pool"), "dvo", "operator", s.feeBps, BigDecimal.ONE),
             List.of("dvo"),
             List.of("operator")),
         created(
@@ -189,10 +210,11 @@ class PoolApprovalTest {
                 new Pool.ContractId("pool"),
                 "dvo",
                 "operator",
-                s.baseReserve,
-                s.quoteReserve,
-                s.lpTokenSupply,
-                Optional.empty()),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                List.of(),
+                List.of()),
             List.of("dvo"),
             List.of("operator")),
         Event.newBuilder()
@@ -219,6 +241,25 @@ class PoolApprovalTest {
                     .addActingParties("dvo")
                     .addActingParties("operator"))
             .build());
+  }
+
+  private static PoolSettings settings() {
+    return new PoolSettings(
+        "dvo",
+        PROPOSAL.proposalId().toString(),
+        token("base-admin", "BASE"),
+        token("quote-admin", "QUOTE"),
+        new AllocationFactory.ContractId("lp-rules"),
+        new SettlementFactory.ContractId("lp-rules"),
+        new BigDecimal("30"));
+  }
+
+  private static Token token(String issuer, String id) {
+    return new Token(
+        new InstrumentId(issuer, id),
+        new AllocationFactory.ContractId(issuer + "-rules"),
+        new SettlementFactory.ContractId(issuer + "-rules"),
+        10L);
   }
 
   private static Event created(

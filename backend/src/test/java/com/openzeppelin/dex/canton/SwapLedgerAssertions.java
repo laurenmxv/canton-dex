@@ -9,7 +9,6 @@ import com.openzeppelin.dex.canton.generated.openzeppelin.tokencip112v1.holding.
 import com.openzeppelin.dex.canton.generated.pool.Pool;
 import com.openzeppelin.dex.canton.generated.pool.PoolState;
 import com.openzeppelin.dex.canton.generated.pool.SwapReceipt;
-import com.openzeppelin.dex.canton.generated.splice.api.token.allocationv2.TransferSide;
 import com.openzeppelin.dex.canton.generated.splice.api.token.holdingv2.Account;
 import com.openzeppelin.dex.canton.generated.splice.api.token.holdingv2.Holding;
 import com.openzeppelin.dex.canton.generated.splice.api.token.holdingv2.InstrumentId;
@@ -95,9 +94,6 @@ public final class SwapLedgerAssertions {
             .findFirst()
             .orElseThrow();
     var pool = Pool.valueDecoder().decode(DamlRecord.fromProto(poolEvent.getCreateArguments()));
-    boolean baseToQuote = swap.path("direction").asString().equals("BaseToQuote");
-    var poolInput = baseToQuote ? pool.baseAccount : pool.quoteAccount;
-    var poolOutput = baseToQuote ? pool.quoteAccount : pool.baseAccount;
     String inputCid = swap.path("allocationCids").get(0).asString();
     Instant deadline = Instant.parse(swap.path("settlementDeadline").asString());
     String settlementId =
@@ -133,18 +129,22 @@ public final class SwapLedgerAssertions {
       assertThat(allocation.settlement.executors)
           .containsExactly(pool.dvo, pool.venueOperator)
           .doesNotContain(party);
-      if (input) assertThat(allocation.allocation.nextIterationFunding).isEmpty();
-      else assertThat(allocation.allocation.nextIterationFunding).contains(Map.of());
-      var sides = allocation.allocation.transferLegSides;
-      assertThat(sides).hasSize(amount.signum() == 0 ? 0 : 1);
-      for (var side : sides) {
-        assertThat(side.transferLegId).isEqualTo(input ? "input" : "minimum-output");
-        assertThat(side.side)
-            .isEqualTo(input ? TransferSide.SENDERSIDE : TransferSide.RECEIVERSIDE);
-        assertThat(side.otherside).isEqualTo(input ? poolInput : poolOutput);
-        assertThat(side.instrumentId).isEqualTo(instrument.path("id").asString());
-        assertThat(side.amount).isEqualByComparingTo(amount);
+      var funding = allocation.allocation.nextIterationFunding.orElseThrow();
+      if (input) {
+        assertThat(funding).containsOnlyKeys(instrument.path("id").asString());
+        assertThat(funding.get(instrument.path("id").asString())).isEqualByComparingTo(amount);
+        assertThat(allocation.allocation.meta.values)
+            .containsExactlyEntriesOf(
+                Map.of(
+                    AllocationMetadata.MIN_OUT,
+                    new BigDecimal(swap.path("minOut").asString())
+                        .stripTrailingZeros()
+                        .toPlainString()));
+      } else {
+        assertThat(funding).isEmpty();
+        assertThat(allocation.allocation.meta.values).isEmpty();
       }
+      assertThat(allocation.allocation.transferLegSides).isEmpty();
     }
   }
 
@@ -165,11 +165,11 @@ public final class SwapLedgerAssertions {
             .toList();
     assertThat(states).hasSize(1);
     var state = states.getFirst();
-    var funding = state.funding.orElseThrow();
     var holdings = ledger.activeContracts(pool.dvo, TokenHolding.TEMPLATE_ID, offset);
-    assertThat(total(holdings, funding.baseHoldingCids, pool.baseAccount, pool.baseInstrumentId))
+    assertThat(total(holdings, state.baseHoldingCids, pool.baseAccount, pool.baseToken.instrument))
         .isEqualByComparingTo(state.baseReserve);
-    assertThat(total(holdings, funding.quoteHoldingCids, pool.quoteAccount, pool.quoteInstrumentId))
+    assertThat(
+            total(holdings, state.quoteHoldingCids, pool.quoteAccount, pool.quoteToken.instrument))
         .isEqualByComparingTo(state.quoteReserve);
   }
 
@@ -206,7 +206,13 @@ public final class SwapLedgerAssertions {
                     SwapReceipt.valueDecoder().decode(DamlRecord.fromProto(e.getCreateArguments())))
             .toList();
     var expected = new ArrayList<String>();
-    batch.path("swapIds").forEach(id -> expected.add(id.asString()));
+    batch
+        .path("requests")
+        .forEach(
+            ref -> {
+              assertThat(ref.path("type").asString()).isEqualTo("swap");
+              expected.add(ref.path("requestId").asString());
+            });
     assertThat(receipts).extracting(r -> r.terms.requestId).containsExactlyElementsOf(expected);
     assertThat(receipts)
         .allSatisfy(

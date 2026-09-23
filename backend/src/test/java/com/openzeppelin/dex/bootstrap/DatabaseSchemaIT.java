@@ -42,10 +42,14 @@ class DatabaseSchemaIT {
                 "venue_configuration",
                 "pool_proposals",
                 "pool_pair_claims",
-                "pool_swap_queues",
+                "pool_queues",
+                "pool_request_queues",
                 "swap_quotes",
                 "swap_requests",
                 "swap_preparations",
+                "liquidity_quotes",
+                "liquidity_requests",
+                "liquidity_preparations",
                 "settlement_batches",
                 "operator_commands",
                 "test_token_configuration",
@@ -75,13 +79,16 @@ class DatabaseSchemaIT {
 
         var onboarding = UUID.randomUUID();
         sql.sql(
-                "INSERT INTO onboardings(id,account_id,application,party_mode,prepared_party_id) VALUES(?,?,'{}','external','david-party')")
+                "INSERT INTO onboardings(id,account_id,application,party_mode,prepared_party_id)"
+                    + " VALUES(?,?,'{}','external','david-party')")
             .params(onboarding, david.id())
             .update();
         assertThatThrownBy(
                 () ->
                     sql.sql(
-                            "INSERT INTO onboardings(id,account_id,application,party_mode,prepared_party_id) VALUES(?,?,'{}','external','david-party')")
+                            "INSERT INTO"
+                                + " onboardings(id,account_id,application,party_mode,prepared_party_id)"
+                                + " VALUES(?,?,'{}','external','david-party')")
                         .params(UUID.randomUUID(), other.id())
                         .update())
             .isInstanceOf(DataIntegrityViolationException.class);
@@ -99,23 +106,30 @@ class DatabaseSchemaIT {
             .isInstanceOf(DataIntegrityViolationException.class);
 
         sql.sql(
-                "INSERT INTO onboarding_steps(onboarding_id,step_key,command_id,status,contract_id,begin_offset,update_id,issuer) VALUES(?,'attestation',?,'CONFIRMED','attestation-cid',7,'ledger-update','operator')")
+                "INSERT INTO"
+                    + " onboarding_steps(onboarding_id,step_key,command_id,status,contract_id,begin_offset,update_id,issuer)"
+                    + " VALUES(?,'attestation',?,'CONFIRMED','attestation-cid',7,'ledger-update','operator')")
             .params(onboarding, UUID.randomUUID())
             .update();
         assertThatThrownBy(
                 () ->
                     sql.sql(
-                            "INSERT INTO onboarding_steps(onboarding_id,step_key,command_id,status) VALUES(?,'permission',?,'CONFIRMED')")
+                            "INSERT INTO onboarding_steps(onboarding_id,step_key,command_id,status)"
+                                + " VALUES(?,'permission',?,'CONFIRMED')")
                         .params(onboarding, UUID.randomUUID())
                         .update())
             .isInstanceOf(DataIntegrityViolationException.class);
 
         sql.sql(
-                "INSERT INTO pools(pool_id,config_id,state_id,package_id,name) VALUES('pool-a','config-a','state-a','package','Shared label'),('pool-b','config-b','state-b','package','Shared label')")
+                "INSERT INTO pools(pool_id,config_id,state_id,package_id,name)"
+                    + " VALUES('pool-a','config-a','state-a','package','Shared"
+                    + " label'),('pool-b','config-b','state-b','package','Shared label')")
             .update();
         var proposal = UUID.randomUUID();
         sql.sql(
-                "INSERT INTO pool_proposals(id,name,settings,factory_id,proposed_by,status,command_id,begin_offset) VALUES(?,'Proposal','{}','factory',?,'FAILED',?,0)")
+                "INSERT INTO"
+                    + " pool_proposals(id,name,settings,factory_id,proposed_by,status,command_id,begin_offset)"
+                    + " VALUES(?,'Proposal','{}','factory',?,'FAILED',?,0)")
             .params(proposal, david.id(), UUID.randomUUID())
             .update();
         assertThatThrownBy(
@@ -160,7 +174,8 @@ class DatabaseSchemaIT {
             .isEqualTo("attestation-cid");
         assertThat(
                 sql.sql(
-                        "SELECT count(*) FROM pools WHERE name='Shared label' AND NOT active AND updated_at IS NOT NULL")
+                        "SELECT count(*) FROM pools WHERE name='Shared label' AND NOT active AND"
+                            + " updated_at IS NOT NULL")
                     .query(Integer.class)
                     .single())
             .isEqualTo(2);

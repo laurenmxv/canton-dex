@@ -16,6 +16,13 @@ public final class PoolModels {
 
   public record ReserveAccount(String owner, String provider, String id) {}
 
+  public record ProposalTerms(
+      String dvo, Instrument baseInstrumentId, Instrument quoteInstrumentId, String feeBps) {
+    public String pairKey() {
+      return PoolModels.pairKey(baseInstrumentId, quoteInstrumentId);
+    }
+  }
+
   public record Terms(
       String dvo,
       Instrument baseInstrumentId,
@@ -26,22 +33,29 @@ public final class PoolModels {
       String feeBps,
       String baseReserve,
       String quoteReserve,
-      String lpTokenSupply) {
+      String lpTokenSupply,
+      String initialRatio) {
     public String pairKey() {
-      var identities =
-          new ArrayList<>(
-              List.of(
-                  baseInstrumentId.admin() + "\n" + baseInstrumentId.id(),
-                  quoteInstrumentId.admin() + "\n" + quoteInstrumentId.id()));
-      Collections.sort(identities);
-      try {
-        return HexFormat.of()
-            .formatHex(
-                MessageDigest.getInstance("SHA-256")
-                    .digest(String.join("\n", identities).getBytes(StandardCharsets.UTF_8)));
-      } catch (java.security.NoSuchAlgorithmException e) {
-        throw new IllegalStateException(e);
-      }
+      return PoolModels.pairKey(baseInstrumentId, quoteInstrumentId);
+    }
+
+    public ProposalTerms proposal() {
+      return new ProposalTerms(dvo, baseInstrumentId, quoteInstrumentId, feeBps);
+    }
+  }
+
+  private static String pairKey(Instrument base, Instrument quote) {
+    var identities =
+        new ArrayList<>(
+            List.of(base.admin() + "\n" + base.id(), quote.admin() + "\n" + quote.id()));
+    Collections.sort(identities);
+    try {
+      return HexFormat.of()
+          .formatHex(
+              MessageDigest.getInstance("SHA-256")
+                  .digest(String.join("\n", identities).getBytes(StandardCharsets.UTF_8)));
+    } catch (java.security.NoSuchAlgorithmException e) {
+      throw new IllegalStateException(e);
     }
   }
 
@@ -49,23 +63,11 @@ public final class PoolModels {
       @NotBlank @Size(max = 120) String name,
       @NotNull @Valid Instrument baseInstrumentId,
       @NotNull @Valid Instrument quoteInstrumentId,
-      @NotBlank @Size(max = 128) String baseAccountId,
-      @NotBlank @Size(max = 128) String quoteAccountId,
-      @NotBlank @Size(max = 128) String lpTokenId,
-      @NotNull String feeBps,
-      @NotNull String baseReserve,
-      @NotNull String quoteReserve,
-      @NotNull String lpTokenSupply) {
-    public Terms terms(Options options) {
-      // Both parts of an instrument are checked here too, and not only against
-      // the catalogue: pairKey joins them with a newline, so a newline inside
-      // either part would let two different pairs key the same claim.
+      @NotNull String feeBps) {
+    public ProposalTerms terms(Options options) {
       for (String value :
           List.of(
               name,
-              baseAccountId,
-              quoteAccountId,
-              lpTokenId,
               baseInstrumentId.admin(),
               baseInstrumentId.id(),
               quoteInstrumentId.admin(),
@@ -74,33 +76,18 @@ public final class PoolModels {
             || value.isBlank()
             || value.chars().anyMatch(Character::isISOControl))
           throw new IllegalArgumentException("Invalid pool identifier");
-      // An instrument is its administrator and that administrator's own
-      // identifier together, so both parts have to name a registered one.
       var registered =
           options.instruments().stream().map(RegisteredInstrument::instrument).toList();
-      if (!registered.contains(baseInstrumentId))
-        throw new IllegalArgumentException("The venue does not register the base instrument");
-      if (!registered.contains(quoteInstrumentId))
-        throw new IllegalArgumentException("The venue does not register the quote instrument");
+      if (!registered.contains(baseInstrumentId) || !registered.contains(quoteInstrumentId))
+        throw new IllegalArgumentException("Both instruments must be registered by the venue");
       if (baseInstrumentId.equals(quoteInstrumentId))
         throw new IllegalArgumentException("Instruments must differ");
       BigDecimal fee = decimal(feeBps);
-      if (fee.signum() < 0 || fee.compareTo(new BigDecimal("10000")) >= 0)
-        throw new IllegalArgumentException("Invalid fee");
-      for (String value : List.of(baseReserve, quoteReserve, lpTokenSupply))
-        if (decimal(value).signum() <= 0)
-          throw new IllegalArgumentException("Initial amounts must be positive");
-      return new Terms(
-          options.dvo(),
-          baseInstrumentId,
-          quoteInstrumentId,
-          new ReserveAccount(options.dvo(), null, baseAccountId),
-          new ReserveAccount(options.dvo(), null, quoteAccountId),
-          new Instrument(options.dvo(), lpTokenId),
-          feeBps,
-          baseReserve,
-          quoteReserve,
-          lpTokenSupply);
+      if (fee.signum() < 0
+          || fee.compareTo(new BigDecimal("10000")) >= 0
+          || fee.stripTrailingZeros().scale() > 0)
+        throw new IllegalArgumentException("Fee must be whole basis points below 10000");
+      return new ProposalTerms(options.dvo(), baseInstrumentId, quoteInstrumentId, feeBps);
     }
   }
 
@@ -138,7 +125,7 @@ public final class PoolModels {
   public record Proposal(
       UUID proposalId,
       String name,
-      Terms settings,
+      ProposalTerms settings,
       Status status,
       Instant createdAt,
       Instant updatedAt,

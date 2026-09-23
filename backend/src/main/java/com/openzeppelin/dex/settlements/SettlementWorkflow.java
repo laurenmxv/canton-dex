@@ -3,9 +3,9 @@ package com.openzeppelin.dex.settlements;
 import static com.openzeppelin.dex.settlements.SettlementModels.*;
 
 import com.openzeppelin.dex.iam.Account;
+import com.openzeppelin.dex.liquidity.LiquidityModels;
 import com.openzeppelin.dex.swaps.LedgerRejected;
 import com.openzeppelin.dex.swaps.SwapFailure;
-import com.openzeppelin.dex.swaps.SwapModels.Swap;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.util.*;
@@ -45,12 +45,21 @@ public final class SettlementWorkflow {
 
   public Settlement run(String poolId, RunInput input, Account caller) {
     caller.requireRole(Account.Role.OPERATOR);
-    Optional<Settlement> existing = store.find(input.idempotencyKey());
+    Optional<Settlement> existing =
+        store.findIntent(poolId, input.idempotencyKey(), input.selection());
     if (existing.isPresent()) return samePool(existing.get(), poolId);
     Snapshot snapshot = ledger.snapshot(poolId);
     requireReady(snapshot);
     Optional<Pending> claimed =
-        store.claim(poolId, input.idempotencyKey(), Trigger.MANUAL, snapshot, clock.instant());
+        input.selection() == null
+            ? store.claim(poolId, input.idempotencyKey(), Trigger.MANUAL, snapshot, clock.instant())
+            : store.claim(
+                poolId,
+                input.idempotencyKey(),
+                Trigger.MANUAL,
+                snapshot,
+                clock.instant(),
+                input.selection());
     if (claimed.isPresent()) prepare(claimed.get(), snapshot);
     return store
         .find(input.idempotencyKey())
@@ -76,9 +85,39 @@ public final class SettlementWorkflow {
     return store.monitoring(poolId, ledger.snapshot(poolId), clock.instant());
   }
 
-  public List<Swap> queue(String poolId, Account caller) {
+  public List<QueueRequest> queue(String poolId, Account caller) {
     caller.requireRole(Account.Role.OPERATOR);
     return store.queue(poolId);
+  }
+
+  public Preview preview(String poolId, String family, UUID retryOf, Account caller) {
+    caller.requireRole(Account.Role.OPERATOR);
+    requireFamily(family);
+    var snapshot = ledger.snapshot(poolId);
+    requireReady(snapshot);
+    var plan = store.plan(poolId, family, retryOf, snapshot, clock.instant());
+    var steps =
+        plan.requests().isEmpty()
+            ? List.<PreviewStep>of()
+            : ledger.preview(snapshot, plan.requests());
+    if (!steps.stream().map(PreviewStep::request).toList().equals(plan.selection().requests()))
+      throw new IllegalStateException("Preview differs from selected requests");
+    boolean executable =
+        plan.activeSettlementId() == null
+            && !steps.isEmpty()
+            && steps.stream().allMatch(step -> step.status() == PreviewStatus.VALID);
+    return new Preview(plan.selection(), snapshot, steps, plan.activeSettlementId(), executable);
+  }
+
+  public void setDeferred(String poolId, RequestRef request, boolean deferred, Account caller) {
+    caller.requireRole(Account.Role.OPERATOR);
+    store.setDeferred(poolId, request, deferred, clock.instant());
+  }
+
+  public History history(
+      String poolId, String type, Status status, String before, int limit, Account caller) {
+    caller.requireRole(Account.Role.OPERATOR);
+    return store.history(poolId, type, status, before, limit);
   }
 
   /** Recovery runs regardless of whether automatic dispatch is enabled. */
@@ -105,7 +144,7 @@ public final class SettlementWorkflow {
     for (String poolId : store.automaticPools()) {
       try {
         Snapshot snapshot = ledger.snapshot(poolId);
-        if (!"READY".equals(snapshot.health())) continue;
+        if (!Set.of("READY", "EMPTY").contains(snapshot.health())) continue;
         requireReady(snapshot);
         store
             .claim(poolId, UUID.randomUUID(), Trigger.AUTOMATIC, snapshot, clock.instant())
@@ -118,39 +157,41 @@ public final class SettlementWorkflow {
 
   private void prepare(Pending pending, Snapshot snapshot) {
     UUID id = pending.settlement().settlementId();
-    if (!"READY".equals(snapshot.health())) {
+    if (!Set.of("READY", "EMPTY").contains(snapshot.health())) {
       store.cancelPreparation(id, "POOL_NOT_READY", snapshot.reason(), clock.instant());
       return;
     }
     try {
       requireReady(snapshot);
-      List<Swap> swaps = pending.swaps();
-      while (!swaps.isEmpty()) {
+      List<QueueRequest> requests = pending.requests();
+      while (!requests.isEmpty()) {
         try {
-          List<Fill> fills = ledger.preflight(snapshot, swaps);
-          validateFills(swaps, fills);
+          List<Fill> fills = ledger.preflight(snapshot, requests);
+          validateFills(requests, fills);
           store.authorizeDispatch(id, fills, snapshot, clock.instant()).ifPresent(this::submit);
           return;
         } catch (SettlementLedger.Blocked blocked) {
-          int index = indexOf(swaps, blocked.swapId());
+          int index = indexOf(requests, blocked.request());
           if (index < 0)
             throw new IllegalStateException(
                 "Preflight blocked a request outside this batch", blocked);
-          if (pending.settlement().trigger() == Trigger.AUTOMATIC) {
+          if (pending.selection() != null
+              || (pending.settlement().trigger() == Trigger.AUTOMATIC
+                  && requests.getFirst() instanceof SwapRequest)) {
             store.rejectPreparation(
                 id,
-                blocked.swapId(),
+                blocked.request(),
                 blocked.code(),
                 blocked.getMessage(),
                 snapshot.version(),
                 clock.instant());
             return;
           }
-          swaps = swaps.subList(0, index);
+          requests = requests.subList(0, index);
           if (!store.keepPrefix(
               id,
-              swaps.stream().map(Swap::swapId).toList(),
-              blocked.swapId(),
+              requests.stream().map(QueueRequest::reference).toList(),
+              blocked.request(),
               blocked.code(),
               blocked.getMessage(),
               snapshot.version(),
@@ -171,6 +212,8 @@ public final class SettlementWorkflow {
     try {
       Confirmation confirmation = ledger.submit(pending);
       store.confirm(id, confirmation);
+    } catch (SettlementLedger.Excluded excluded) {
+      store.excludeSubmission(id, excluded.code(), excluded.getMessage(), clock.instant());
     } catch (LedgerRejected rejected) {
       store.rejectSubmission(id, rejected.code(), rejected.getMessage(), clock.instant());
     } catch (RuntimeException uncertain) {
@@ -182,36 +225,56 @@ public final class SettlementWorkflow {
   private static Settlement samePool(Settlement batch, String poolId) {
     if (!batch.poolId().equals(poolId))
       throw SwapFailure.conflict(
-          "IDEMPOTENCY_CONFLICT", "This settlement key belongs to another pool");
+          IDEMPOTENCY_CONFLICT, "This settlement key belongs to another pool");
     return batch;
   }
 
   private static void requireReady(Snapshot snapshot) {
-    if (!"READY".equals(snapshot.health()))
+    if (!Set.of("READY", "EMPTY").contains(snapshot.health()) || snapshot.reserves() == null)
       throw SwapFailure.conflict(
           "POOL_NOT_READY", "Pool is not ready for settlement: " + snapshot.health());
-    if (snapshot.reserves() == null
-        || new BigDecimal(snapshot.reserves().baseReserve()).signum() <= 0
-        || new BigDecimal(snapshot.reserves().quoteReserve()).signum() <= 0)
-      throw SwapFailure.conflict("POOL_NOT_READY", "Pool reserves must be positive");
   }
 
-  private static int indexOf(List<Swap> swaps, UUID swapId) {
-    for (int i = 0; i < swaps.size(); i++) if (swaps.get(i).swapId().equals(swapId)) return i;
+  private static int indexOf(List<QueueRequest> requests, RequestRef reference) {
+    for (int i = 0; i < requests.size(); i++)
+      if (requests.get(i).reference().equals(reference)) return i;
     return -1;
   }
 
-  private static void validateFills(List<Swap> swaps, List<Fill> fills) {
-    if (!swaps.stream()
-        .map(Swap::swapId)
+  private static void validateFills(List<QueueRequest> requests, List<Fill> fills) {
+    if (!requests.stream()
+        .map(QueueRequest::reference)
         .toList()
-        .equals(fills.stream().map(Fill::swapId).toList()))
-      throw new IllegalStateException("Preflight outputs do not match the FIFO batch");
-    for (int i = 0; i < swaps.size(); i++) {
-      BigDecimal amount = new BigDecimal(fills.get(i).amountOut());
-      if (amount.signum() <= 0 || amount.compareTo(new BigDecimal(swaps.get(i).minOut())) < 0)
-        throw new SettlementLedger.Blocked(
-            swaps.get(i).swapId(), "MIN_OUT", "Minimum output cannot be met");
+        .equals(fills.stream().map(Fill::reference).toList()))
+      throw new IllegalStateException("Preflight outputs do not match the FIFO selection");
+    for (int i = 0; i < requests.size(); i++) {
+      var request = requests.get(i);
+      var fill = fills.get(i);
+      switch (fill) {
+        case SwapFill swap ->
+            requireOutput(
+                swap.amountOut(), ((SwapRequest) request).request().minOut(), request.reference());
+        case DepositFill deposit -> {
+          var terms = (LiquidityModels.DepositTerms) ((LiquidityRequest) request).request().terms();
+          requireOutput(deposit.actualLpOut(), terms.minLpOut(), request.reference());
+        }
+        case WithdrawalFill withdrawal -> {
+          var terms =
+              (LiquidityModels.WithdrawalTerms) ((LiquidityRequest) request).request().terms();
+          requireOutput(withdrawal.actualBaseOut(), terms.minBaseOut(), request.reference());
+          requireOutput(withdrawal.actualQuoteOut(), terms.minQuoteOut(), request.reference());
+          if (new BigDecimal(withdrawal.actualLpBurned())
+                  .compareTo(new BigDecimal(terms.lpAmount()))
+              != 0)
+            throw new IllegalStateException("Preflight burn differs from the signed LP amount");
+        }
+      }
     }
+  }
+
+  private static void requireOutput(String actual, String minimum, RequestRef request) {
+    var amount = new BigDecimal(actual);
+    if (amount.signum() <= 0 || amount.compareTo(new BigDecimal(minimum)) < 0)
+      throw new SettlementLedger.Blocked(request, "MIN_OUT", "Minimum output cannot be met");
   }
 }

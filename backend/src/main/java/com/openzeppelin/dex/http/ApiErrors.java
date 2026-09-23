@@ -42,6 +42,12 @@ public final class ApiErrors implements HandlerFilterFunction<ServerResponse, Se
       return ServerResponse.status(e.status())
           .contentType(MediaType.APPLICATION_PROBLEM_JSON)
           .body(detail);
+    } catch (com.openzeppelin.dex.liquidity.LiquidityFailure e) {
+      var detail = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, e.getMessage());
+      detail.setProperty("code", e.code());
+      return ServerResponse.status(HttpStatus.CONFLICT)
+          .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+          .body(detail);
     } catch (com.openzeppelin.dex.tokens.TokenConflict e) {
       return problem(HttpStatus.CONFLICT, e.getMessage());
     } catch (ConstraintViolationException

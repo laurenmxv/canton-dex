@@ -67,17 +67,16 @@ class CantonTokenRegistryTest {
             Map.of(
                 "alice-allocation", disclosure("alice-allocation", "pkg:Token:Factory", "sync")));
     var allocation = registry.inlineAllocation("alice");
-    assertThat(CantonSwapPools.requireFactory("alice-allocation", allocation)).isSameAs(allocation);
-    assertThatThrownBy(() -> CantonSwapPools.requireFactory("unapproved-factory", allocation))
+    assertThat(CantonPools.requireFactory("alice-allocation", allocation)).isSameAs(allocation);
+    assertThatThrownBy(() -> CantonPools.requireFactory("unapproved-factory", allocation))
         .isInstanceOfSatisfying(
             SwapFailure.class,
             failure -> assertThat(failure.code()).isEqualTo("TOKEN_FACTORY_CHANGED"));
     var original = allocation.disclosures().getFirst();
-    assertThat(CantonSwapPools.mergeDisclosures(List.of(original, original)))
-        .containsExactly(original);
+    assertThat(CantonPools.mergeDisclosures(List.of(original, original))).containsExactly(original);
     assertThatThrownBy(
             () ->
-                CantonSwapPools.mergeDisclosures(
+                CantonPools.mergeDisclosures(
                     List.of(
                         original,
                         original.toBuilder().setSynchronizerId("different-sync").build())))

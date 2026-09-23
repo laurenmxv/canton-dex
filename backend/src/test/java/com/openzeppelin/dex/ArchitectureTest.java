@@ -27,6 +27,7 @@ class ArchitectureTest {
             "..onboarding..",
             "..pools..",
             "..swaps..",
+            "..liquidity..",
             "..settlements..",
             "..operations..",
             "..tokens..",
@@ -56,7 +57,7 @@ class ArchitectureTest {
     // so none of them can also reach the registry's sources and disclosures.
     noClasses()
         .that()
-        .resideOutsideOfPackages("..tokens..", "..canton..")
+        .resideOutsideOfPackages("..tokens..", "..canton..", "..bootstrap..")
         .should()
         .dependOnClassesThat()
         .haveSimpleName("TokenRegistryStore")

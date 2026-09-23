@@ -100,4 +100,5 @@ tasks.register<JavaExec>("poolDecision") {
     classpath = sourceSets.main.get().runtimeClasspath
     mainClass = "com.openzeppelin.dex.bootstrap.PoolDecisionMain"
     args(providers.gradleProperty("decision").getOrElse(""), providers.gradleProperty("proposal").getOrElse(""))
+    providers.gradleProperty("initialRatio").orNull?.let { args(it) }
 }

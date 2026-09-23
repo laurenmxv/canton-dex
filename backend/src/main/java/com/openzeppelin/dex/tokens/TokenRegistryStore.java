@@ -44,6 +44,13 @@ public class TokenRegistryStore implements InstrumentCatalog {
         .list();
   }
 
+  public void registerInstrument(String admin, String id, String symbol, int decimals) {
+    sql.sql(
+            "INSERT INTO token_instruments(admin,instrument_id,symbol,decimals) VALUES(?,?,?,?) ON CONFLICT(admin,instrument_id) DO NOTHING")
+        .params(admin, id, symbol, decimals)
+        .update();
+  }
+
   public record Source(String admin, String allocationFactoryId, String settlementFactoryId) {}
 
   public record Disclosure(

@@ -13,17 +13,7 @@ class PoolWorkflowTest {
   private final Account operator =
       new Account(UUID.randomUUID(), "issuer", "operator", "Operator", Account.Role.OPERATOR);
   private final Create input =
-      new Create(
-          "A/B",
-          new Instrument("admin", "A"),
-          new Instrument("admin", "B"),
-          "a",
-          "b",
-          "LP",
-          "30",
-          "100",
-          "200",
-          "100");
+      new Create("A/B", new Instrument("admin", "A"), new Instrument("admin", "B"), "30");
   private final Progress store = new Progress();
   private final Ledger ledger = new Ledger();
   private final InstrumentCatalog catalog =
@@ -143,7 +133,7 @@ class PoolWorkflowTest {
     }
 
     public Proposal reserve(
-        UUID id, Create input, Terms terms, String factoryId, UUID account, long offset) {
+        UUID id, Create input, ProposalTerms terms, String factoryId, UUID account, long offset) {
       if (claimed) throw new PoolConflict("Pair claimed");
       claimed = true;
       proposal =

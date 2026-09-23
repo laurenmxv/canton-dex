@@ -20,7 +20,7 @@ class PoolTermsTest {
               new RegisteredInstrument("b", "USD", "USD", 8)));
 
   private Create input(Instrument a, Instrument b, String fee) {
-    return new Create("A / B", a, b, "base", "quote", "LP", fee, "100", "200", "100");
+    return new Create("A / B", a, b, fee);
   }
 
   @Test
@@ -32,8 +32,7 @@ class PoolTermsTest {
     assertThat(forward.pairKey()).isEqualTo(reverse.pairKey());
     assertThat(forward.pairKey())
         .isNotEqualTo(input(new Instrument("b", "USD"), b, "30").terms(options).pairKey());
-    assertThat(forward.baseAccount().owner()).isEqualTo("dvo");
-    assertThat(forward.lpTokenInstrumentId().admin()).isEqualTo("dvo");
+    assertThat(forward.dvo()).isEqualTo("dvo");
   }
 
   @Test

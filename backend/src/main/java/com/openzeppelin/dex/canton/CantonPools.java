@@ -24,12 +24,12 @@ import org.springframework.stereotype.Component;
 
 /** A coherent ledger snapshot, using the operator's read-only view of reserve accounts. */
 @Component
-final class CantonSwapPools {
+final class CantonPools {
   private final LedgerConnection ledger;
   private final PoolStore pools;
   private final CantonTokenRegistry registries;
 
-  CantonSwapPools(LedgerConnection ledger, PoolStore pools, CantonTokenRegistry registries) {
+  CantonPools(LedgerConnection ledger, PoolStore pools, CantonTokenRegistry registries) {
     this.ledger = ledger;
     this.pools = pools;
     this.registries = registries;
@@ -46,7 +46,6 @@ final class CantonSwapPools {
       PoolConfig config,
       CreatedEvent stateEvent,
       PoolState state,
-      PoolFunding funding,
       CreatedEvent delegationEvent,
       String health,
       String reason) {
@@ -55,8 +54,8 @@ final class CantonSwapPools {
           new Pool.ContractId(poolId),
           pool.dvo,
           pool.venueOperator,
-          funding.baseToken,
-          funding.quoteToken,
+          pool.baseToken,
+          pool.quoteToken,
           pool.baseAccount,
           pool.quoteAccount);
     }
@@ -70,8 +69,16 @@ final class CantonSwapPools {
           stateEvent.getContractId(),
           SwapMath.text(state.baseReserve),
           SwapMath.text(state.quoteReserve),
-          SwapMath.text(state.quoteReserve.divide(state.baseReserve, 10, RoundingMode.HALF_UP)),
+          state.baseReserve.signum() == 0
+              ? null
+              : SwapMath.text(
+                  state.quoteReserve.divide(state.baseReserve, 10, RoundingMode.HALF_UP)),
           SwapMath.text(state.baseReserve.multiply(state.quoteReserve)));
+    }
+
+    void requireLiquidityReady() {
+      if (!health.equals("READY") && !health.equals("EMPTY"))
+        throw SwapFailure.conflict(health, reason);
     }
 
     void requireReady() {
@@ -80,9 +87,12 @@ final class CantonSwapPools {
   }
 
   Snapshot read(String poolId) {
+    return read(poolId, ledger.ledgerEnd());
+  }
+
+  Snapshot read(String poolId, long offset) {
     var catalog = pools.pool(poolId, Pool.PACKAGE_ID);
     String operator = ledger.primaryParty();
-    long offset = ledger.ledgerEnd();
     var poolEvent =
         single(
             contracts(operator, Pool.TEMPLATE_ID, offset).stream()
@@ -120,7 +130,7 @@ final class CantonSwapPools {
         PoolConfig.valueDecoder().decode(DamlRecord.fromProto(configEvent.getCreateArguments()));
     var state =
         PoolState.valueDecoder().decode(DamlRecord.fromProto(stateEvent.getCreateArguments()));
-    PoolEncoding.terms(pool, config, state);
+    PoolEncoding.validateComponents(pool, config, state);
     var delegation =
         contracts(operator, VenueDelegation.TEMPLATE_ID, offset).stream()
             .filter(
@@ -135,41 +145,36 @@ final class CantonSwapPools {
             .toList();
     if (delegation.size() > 1)
       throw new IllegalStateException("Multiple settlement delegations for pool");
-    PoolFunding funding = state.funding.orElse(null);
-    String health = "READY", reason = null;
-    if (funding == null) {
-      health = "UNFUNDED";
-      reason = "Pool has no token backing";
-    } else {
-      var holdings = ledger.activeInterfaceContracts(pool.dvo, Holding.INTERFACE_ID, offset);
-      boolean backed =
-          backed(
-                  holdings,
-                  funding.baseHoldingCids,
-                  pool.baseAccount,
-                  funding.baseToken.instrument,
-                  state.baseReserve)
-              && backed(
-                  holdings,
-                  funding.quoteHoldingCids,
-                  pool.quoteAccount,
-                  funding.quoteToken.instrument,
-                  state.quoteReserve);
-      if (!backed) {
-        health = "BACKING_MISMATCH";
-        reason = "Pool holdings do not match reserves";
-      } else if (delegation.isEmpty()) {
-        health = "DELEGATION_MISSING";
-        reason = "Settlement authority is unavailable";
-      }
-      if (health.equals("READY")) {
-        try {
-          requireFactories(funding.baseToken);
-          requireFactories(funding.quoteToken);
-        } catch (SwapFailure failure) {
-          health = failure.code();
-          reason = failure.getMessage();
-        }
+    String health = state.lpTokenSupply.signum() == 0 ? "EMPTY" : "READY", reason = null;
+    var holdings = ledger.activeInterfaceContracts(pool.dvo, Holding.INTERFACE_ID, offset);
+    boolean backed =
+        backed(
+                holdings,
+                state.baseHoldingCids,
+                pool.baseAccount,
+                pool.baseToken.instrument,
+                state.baseReserve)
+            && backed(
+                holdings,
+                state.quoteHoldingCids,
+                pool.quoteAccount,
+                pool.quoteToken.instrument,
+                state.quoteReserve);
+    if (!backed) {
+      health = "BACKING_MISMATCH";
+      reason = "Pool holdings do not match reserves";
+    } else if (delegation.isEmpty()) {
+      health = "DELEGATION_MISSING";
+      reason = "Settlement authority is unavailable";
+    }
+    if (health.equals("READY") || health.equals("EMPTY")) {
+      try {
+        requireFactories(pool.baseToken);
+        requireFactories(pool.quoteToken);
+        requireFactories(pool.lpToken);
+      } catch (SwapFailure failure) {
+        health = failure.code();
+        reason = failure.getMessage();
       }
     }
     return new Snapshot(
@@ -183,27 +188,31 @@ final class CantonSwapPools {
         config,
         stateEvent,
         state,
-        funding,
         delegation.isEmpty() ? null : delegation.getFirst(),
         health,
         reason);
   }
 
   CreatedEvent access(String trader, Snapshot snapshot) {
-    String operator = snapshot.pool.venueOperator;
+    return access(trader, snapshot.poolEvent, snapshot.offset);
+  }
+
+  CreatedEvent access(String trader, CreatedEvent poolEvent, long offset) {
+    var pool = Pool.valueDecoder().decode(DamlRecord.fromProto(poolEvent.getCreateArguments()));
+    String operator = pool.venueOperator;
     var candidates =
-        contracts(operator, PoolAccess.TEMPLATE_ID, snapshot.offset).stream()
+        contracts(operator, PoolAccess.TEMPLATE_ID, offset).stream()
             .filter(
                 e -> {
                   var access =
                       PoolAccess.valueDecoder()
                           .decode(DamlRecord.fromProto(e.getCreateArguments()));
                   return access.trader.equals(trader)
-                      && access.poolCid.contractId.equals(snapshot.poolId)
+                      && access.poolCid.contractId.equals(poolEvent.getContractId())
                       && access.venueOperator.equals(operator);
                 })
             .toList();
-    var attestations = contracts(operator, KycAttestation.TEMPLATE_ID, snapshot.offset);
+    var attestations = contracts(operator, KycAttestation.TEMPLATE_ID, offset);
     return candidates.stream()
         .filter(
             e -> {
@@ -219,7 +228,8 @@ final class CantonSwapPools {
                                 .decode(DamlRecord.fromProto(a.getCreateArguments()));
                         return attestation.trader.equals(trader)
                             && attestation.venueOperator.equals(operator)
-                            && attestation.pools.contains(new Pool.ContractId(snapshot.poolId));
+                            && attestation.pools.contains(
+                                new Pool.ContractId(poolEvent.getContractId()));
                       });
             })
         .findFirst()
@@ -314,8 +324,8 @@ final class CantonSwapPools {
     var disclosures = new ArrayList<>(tokenDisclosures);
     String synchronizer = ledger.singleSynchronizer();
     var holdings = new HashSet<String>();
-    pool.funding.baseHoldingCids.forEach(cid -> holdings.add(cid.contractId));
-    pool.funding.quoteHoldingCids.forEach(cid -> holdings.add(cid.contractId));
+    pool.state.baseHoldingCids.forEach(cid -> holdings.add(cid.contractId));
+    pool.state.quoteHoldingCids.forEach(cid -> holdings.add(cid.contractId));
     for (var event :
         ledger.activeInterfaceContracts(pool.pool.dvo, Holding.INTERFACE_ID, pool.offset)) {
       if (holdings.contains(event.getContractId()))
@@ -350,7 +360,7 @@ final class CantonSwapPools {
       InstrumentId instrument,
       BigDecimal reserve) {
     var expected = ids.stream().map(id -> id.contractId).toList();
-    if (expected.isEmpty() || new HashSet<>(expected).size() != expected.size()) return false;
+    if (new HashSet<>(expected).size() != expected.size()) return false;
     BigDecimal total = BigDecimal.ZERO;
     int count = 0;
     for (var event : events) {

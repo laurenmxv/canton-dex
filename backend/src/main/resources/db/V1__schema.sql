@@ -96,15 +96,23 @@ CREATE TABLE IF NOT EXISTS pool_pair_claims (
     CHECK (proposal_id IS NOT NULL OR pool_id IS NOT NULL)
 );
 
-CREATE TABLE IF NOT EXISTS pool_swap_queues (
+CREATE TABLE IF NOT EXISTS pool_queues (
     pool_id TEXT PRIMARY KEY REFERENCES pools(pool_id),
-    next_sequence BIGINT NOT NULL DEFAULT 0,
     automatic_enabled BOOLEAN NOT NULL DEFAULT false,
     batch_size INTEGER NOT NULL DEFAULT 5 CHECK (batch_size>0),
     policy_version BIGINT NOT NULL DEFAULT 0,
     active_settlement_id UUID,
-    blocked_version TEXT,
+    last_processed_family TEXT CHECK (last_processed_family IN ('swap','deposit','withdraw')),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS pool_request_queues (
+    pool_id TEXT NOT NULL REFERENCES pools(pool_id),
+    family TEXT NOT NULL CHECK (family IN ('swap','deposit','withdraw')),
+    next_sequence BIGINT NOT NULL DEFAULT 0,
+    blocked_version TEXT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (pool_id,family)
 );
 
 CREATE TABLE IF NOT EXISTS swap_quotes (
@@ -155,12 +163,14 @@ CREATE TABLE IF NOT EXISTS settlement_batches (
     pool_id TEXT NOT NULL REFERENCES pools(pool_id),
     trigger TEXT NOT NULL CHECK (trigger IN ('MANUAL','AUTOMATIC')),
     status TEXT NOT NULL CHECK (status IN ('PREPARING','SUBMITTING','UNRESOLVED','CONFIRMED','REJECTED','CANCELLED')),
-    swap_ids JSONB NOT NULL,
+    requests JSONB NOT NULL,
     fills JSONB NOT NULL DEFAULT '[]',
     reserves_before JSONB,
     reserves_after JSONB,
     policy_version BIGINT NOT NULL,
     command_id UUID NOT NULL UNIQUE,
+    retry_of UUID REFERENCES settlement_batches(id),
+    selection JSONB,
     begin_offset BIGINT NOT NULL,
     state_version TEXT NOT NULL,
     update_id TEXT,
@@ -175,7 +185,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS one_active_pool_settlement ON settlement_batch
 CREATE TABLE IF NOT EXISTS operator_commands (
     id UUID PRIMARY KEY,
     kind TEXT NOT NULL,
-    payload TEXT NOT NULL
+    payload TEXT,
+    error TEXT,
+    CHECK ((payload IS NOT NULL AND error IS NULL) OR (payload IS NULL AND error IS NOT NULL))
 );
 
 CREATE TABLE IF NOT EXISTS test_token_configuration (
@@ -247,4 +259,58 @@ CREATE TABLE IF NOT EXISTS token_instruments (
     symbol TEXT NOT NULL,
     decimals INTEGER NOT NULL CHECK (decimals BETWEEN 0 AND 10),
     PRIMARY KEY (admin,instrument_id)
+);
+
+CREATE TABLE IF NOT EXISTS liquidity_quotes (
+    id UUID PRIMARY KEY,
+    account_id UUID NOT NULL REFERENCES accounts(id),
+    kind TEXT NOT NULL CHECK (kind IN ('DEPOSIT','WITHDRAW')),
+    payload JSONB NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS liquidity_requests (
+    id UUID PRIMARY KEY,
+    account_id UUID NOT NULL REFERENCES accounts(id),
+    quote_id UUID NOT NULL UNIQUE REFERENCES liquidity_quotes(id),
+    kind TEXT NOT NULL CHECK (kind IN ('DEPOSIT','WITHDRAW')),
+    terms JSONB NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('PREPARED','SUBMITTING','UNRESOLVED','READY','BLOCKED','SETTLING','SETTLED','EXPIRED','RECOVERING','RECOVERY_UNRESOLVED','RECOVERED','FAILED')),
+    arrival_sequence BIGINT,
+    settlement_id UUID,
+    result JSONB,
+    allocation_cids JSONB NOT NULL DEFAULT '[]',
+    update_id TEXT,
+    error_code TEXT,
+    error TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    submitted_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS liquidity_activity ON liquidity_requests(account_id,created_at DESC,id DESC);
+
+CREATE TABLE IF NOT EXISTS liquidity_preparations (
+    id UUID PRIMARY KEY,
+    request_id UUID NOT NULL REFERENCES liquidity_requests(id),
+    command_id UUID NOT NULL UNIQUE,
+    action TEXT NOT NULL CHECK (action IN ('SUBMIT','RECOVER')),
+    signing JSONB NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('PREPARED','SUBMITTING','UNRESOLVED','CONFIRMED','FAILED')),
+    signature TEXT,
+    begin_offset BIGINT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS liquidity_initial_preparation ON liquidity_preparations(request_id) WHERE action='SUBMIT';
+
+CREATE UNIQUE INDEX IF NOT EXISTS liquidity_queue_sequence ON liquidity_requests ((terms->>'poolId'),kind,arrival_sequence) WHERE arrival_sequence IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS settlement_deferred_requests (
+    pool_id TEXT NOT NULL REFERENCES pools(pool_id),
+    family TEXT NOT NULL CHECK (family IN ('swap','deposit','withdraw')),
+    request_id UUID NOT NULL,
+    deferred_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (pool_id,family,request_id)
 );

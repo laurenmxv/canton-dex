@@ -108,7 +108,7 @@ class SwapIT {
             409);
         long singleOffset = ledger.ledgerEnd();
         var single = manual(f, operator, btc);
-        assertThat(single.path("swapIds").size()).isEqualTo(1);
+        assertThat(single.path("requests").size()).isEqualTo(1);
         assertBatch(ledger, singleOffset, single, List.of(first));
         var firstSettled = swapStatus(f, alice, first.path("swapId").asString(), "SETTLED");
         assertAmount(
@@ -337,14 +337,21 @@ class SwapIT {
       LedgerConnection ledger, long offset, JsonNode batch, List<JsonNode> swaps) throws Exception {
     var expectedIds = swaps.stream().map(s -> s.path("swapId").asString()).toList();
     var actualIds = new ArrayList<String>();
-    batch.path("swapIds").forEach(id -> actualIds.add(id.asString()));
+    batch
+        .path("requests")
+        .forEach(
+            ref -> {
+              assertThat(ref.path("type").asString()).isEqualTo("swap");
+              actualIds.add(ref.path("requestId").asString());
+            });
     assertThat(actualIds).containsExactlyElementsOf(expectedIds);
     BigDecimal base = value(batch.path("before"), "baseReserve"),
         quote = value(batch.path("before"), "quoteReserve");
     for (int i = 0; i < swaps.size(); i++) {
       var swap = swaps.get(i);
       var fill = batch.path("fills").get(i);
-      assertThat(fill.path("swapId")).isEqualTo(swap.path("swapId"));
+      assertThat(fill.path("type").asString()).isEqualTo("swap");
+      assertThat(fill.path("requestId")).isEqualTo(swap.path("swapId"));
       BigDecimal input = value(swap, "amountIn"), output = value(fill, "amountOut");
       assertThat(output).isGreaterThanOrEqualTo(value(swap, "minOut"));
       if (swap.path("direction").asString().equals("QuoteToBase")) {

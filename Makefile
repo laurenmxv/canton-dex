@@ -1,6 +1,6 @@
 .PHONY: test docker-run docker-stop docker-reset status logs test-backend prepare-localnet
 
-COMPOSE := docker compose -f docker/compose.yaml
+COMPOSE := docker compose -f docker/compose.dev.yaml
 
 test:
 	@./scripts/test-contracts.sh

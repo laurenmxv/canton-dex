@@ -20,7 +20,7 @@ jobs:
         run: make test-backend
       - name: Show container logs on failure
         if: failure()
-        run: docker compose -f docker/compose.yaml logs --no-color --tail=200
+        run: docker compose -f docker/compose.dev.yaml logs --no-color --tail=200
       - name: Stop containers
         if: always()
-        run: docker compose -f docker/compose.yaml down --volumes --remove-orphans
+        run: docker compose -f docker/compose.dev.yaml down --volumes --remove-orphans

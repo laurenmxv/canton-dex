@@ -25,5 +25,5 @@ owns what they carry. Keycloak follows the system's light/dark preference.
 After changing theme resources, restart Keycloak and refresh the page:
 
 ```sh
-docker compose -f docker/compose.yaml restart keycloak
+docker compose -f docker/compose.dev.yaml restart keycloak
 ```

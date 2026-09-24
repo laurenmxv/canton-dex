@@ -39,7 +39,7 @@ def local_credentials():
 
 
 def compose(*arguments, stdin=None):
-    command = ["docker", "compose", "--project-name", "canton-dex", "-f", str(ROOT / "docker/compose.yaml")]
+    command = ["docker", "compose", "--project-name", "canton-dex", "-f", str(ROOT / "docker/compose.dev.yaml")]
     result = subprocess.run(
         command + list(arguments), cwd=ROOT, input=stdin, text=True,
         capture_output=True, timeout=180,

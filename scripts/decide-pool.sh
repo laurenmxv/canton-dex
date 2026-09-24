@@ -6,4 +6,4 @@ if [[ $# -lt 2 || ! "$1" =~ ^(accept|reject)$ || ! "$2" =~ ^[0-9a-fA-F-]{36}$ ]]
   exit 2
 fi
 make --no-print-directory prepare-localnet
-docker compose -f docker/compose.yaml run --rm --no-deps backend node dist/cli/decide-pool.js "$@"
+docker compose -f docker/compose.dev.yaml run --rm --no-deps backend node dist/cli/decide-pool.js "$@"

@@ -8,5 +8,4 @@ RUN curl -fsSL https://get.digitalasset.com/install/install.sh -o /tmp/install-d
     && TERM=xterm sh /tmp/install-dpm.sh "$DPM_VERSION" \
     && rm /tmp/install-dpm.sh
 ENV PATH="/root/.dpm/bin:${PATH}"
-COPY --chmod=755 scripts/build-contracts.sh /usr/local/bin/build-contracts
 WORKDIR /workspace

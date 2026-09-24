@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
-compose=(docker compose -f docker/compose.yaml)
+compose=(docker compose -f docker/compose.dev.yaml)
 scenario="${1:-all}"
 case "$scenario" in
   schema|environment|iam|onboarding|pools|swaps|liquidity|restart|all) ;;
@@ -9,7 +9,6 @@ case "$scenario" in
 esac
 
 make --no-print-directory prepare-localnet
-"${compose[@]}" build backend-tests
 
 run_scenario() {
   "${compose[@]}" run --rm --no-deps -e "DEX_SCENARIO=$1" backend-tests

@@ -1,13 +1,17 @@
 name: canton-dex
 
-x-backend-build: &backend-build
-  context: ../backend
-
-x-backend-runtime: &backend-runtime
-  image: canton-dex-backend:local
+# Local development: sources are live bind mounts; only tools live in images.
+x-backend-development: &backend-development
+  image: canton-dex-backend-dev:local
   build:
-    <<: *backend-build
-    target: runtime
+    context: ../backend
+    target: development
+  init: true
+  volumes:
+    - &backend-source ../backend:/app
+    - &backend-dependencies /app/node_modules
+    - &backend-dist /app/dist
+    - &backend-generated /app/src/canton/generated
 
 include:
   - path:
@@ -31,26 +35,31 @@ services:
   contract-builder:
     image: canton-dex-daml-tools:3.5.7
     build: ../contracts
-    command: [build-contracts]
+    command: [bash, /contracts/scripts/build-contracts.sh]
     volumes:
       - ../contracts:/contracts:ro
       - contract-dars:/dars
   # The sole schema initializer. It also uploads the built DARs and creates the development
   # identities and fixtures, then exits; the API starts after it succeeds.
   contract-bootstrap:
-    <<: *backend-runtime
+    <<: *backend-development
     command: [node, dist/bootstrap/main.js]
     env_file: [./env/backend.env, ./env/bootstrap.env]
     environment:
       DEX_DAR_DIRECTORY: /dars
     volumes:
+      - *backend-source
+      - *backend-dependencies
+      - *backend-dist
+      - *backend-generated
       - contract-dars:/dars:ro
     depends_on:
       app-db: {condition: service_healthy}
       application-participant: {condition: service_healthy}
       contract-builder: {condition: service_completed_successfully}
   backend:
-    <<: *backend-runtime
+    <<: *backend-development
+    command: [node, dist/main.js]
     env_file: ./env/backend.env
     environment:
       DEX_DEVELOPMENT_TOKENS_ENABLED: "true"
@@ -97,10 +106,10 @@ services:
     depends_on:
       backend: {condition: service_healthy}
   backend-tests:
-    image: canton-dex-backend-tests:local
-    build:
-      <<: *backend-build
-      target: test
+    <<: *backend-development
+    # The restart harness reads host-owned mode-0600 recovery files in /app/build.
+    user: root
+    command: [npm, run, 'test:integration']
     profiles: [test]
     env_file: [./env/backend.env, ./env/bootstrap.env]
     environment:
@@ -109,6 +118,10 @@ services:
       DEX_TOKEN_TEST_DATABASE_URL: postgres://dex:dex-local@app-db:5432/dex
       DEX_RESTART_STATE: ${DEX_RESTART_STATE:-/app/build/restart-unused}
     volumes:
+      - *backend-source
+      - *backend-dependencies
+      - *backend-dist
+      - *backend-generated
       - ../backend/build:/app/build
 volumes:
   contract-dars:

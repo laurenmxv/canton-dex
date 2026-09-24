@@ -1,6 +1,15 @@
 FROM node:24-bookworm-slim@sha256:2fe369e969550cde8e867afc3fe370b260140cab4a23d467074295b42163d553 AS base
 WORKDIR /app
 
+FROM base AS development
+ENV NODE_ENV=development
+# The source and startup script come from the development Compose bind mount.
+# Writable outputs are private volumes for each container.
+RUN mkdir -p node_modules dist src/canton/generated && chown -R node:node /app
+USER node
+EXPOSE 8080
+ENTRYPOINT ["sh", "/app/scripts/dev-entrypoint.sh"]
+
 FROM base AS dependencies
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund

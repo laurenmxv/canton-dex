@@ -43,27 +43,30 @@ requires `dvo` authorization.
 
 | Endpoint | Required role | Backend process | Ledger action |
 | --- | --- | --- | --- |
-| `POST /v1/swaps/quote` | `venue_user` | Check intake, eligibility, and pool -> quote output, fees, and expiry. | - |
-| `POST /v1/swaps/prepare` | `venue_user` | Validate quote, input, `minOut`, and deadline -> prepare input and receipt allocations. | - |
-| `POST /v1/swaps/submit` | `venue_user` | Validate transaction structure and wallet signatures against the prepared request -> store request -> submit unchanged -> mark ready after confirmations and screening. | Lock input and create an unfunded output receipt allocation at token registries. |
-| `GET /v1/swaps/{swapId}` | `venue_user` | Return swap and cancellation status, expected and settled amounts, and deadline. | - |
-| `POST /v1/swaps/{swapId}/cancel/prepare` | `venue_user` | Check ownership, ledger status, and elapsed settlement deadline -> prepare withdrawals for remaining allocations. | - |
-| `POST /v1/swaps/{swapId}/cancel/submit` | `venue_user` | Validate transaction structure and wallet signatures against the prepared request -> submit unchanged -> confirm cancellation once all remaining allocations are withdrawn. | Withdraw unsettled allocations after their deadlines and unlock funds. |
+| `POST /v1/swaps/quote` | `TRADER` | Check pool readiness, current KYC and pool access, and input balance -> quote output, fees, and expiry. | - |
+| `POST /v1/swaps/prepare` | `TRADER` | Validate quote, input, `minOut`, and deadline -> prepare input and receipt allocations -> persist the request and signing payload. | - |
+| `POST /v1/swaps/submit` | `TRADER` | Validate the wallet signature and current access -> execute the stored prepared transaction -> mark `READY` from confirmed allocations. | Lock input and create an unfunded output receipt allocation at token registries. |
+| `GET /v1/swaps/{swapId}` | `TRADER` | Return the caller's swap and cancellation status, expected and settled amounts, deadline, and `canWithdraw`. | - |
+| `POST /v1/swaps/{swapId}/cancel/prepare` | `TRADER` | Check ownership, current KYC and pool access, ledger status, and elapsed settlement deadline -> prepare withdrawals for remaining allocations. | - |
+| `POST /v1/swaps/{swapId}/cancel/submit` | `TRADER` | Validate the wallet signature and current access -> execute the stored withdrawal transaction -> mark `WITHDRAWN` once all remaining allocations are confirmed withdrawn. | Withdraw unsettled allocations after their deadlines and unlock funds. |
 
+Swap and liquidity submission endpoints, including cancellation, accept
+`preparationId` and `signature`; the prepared transaction stays in the backend.
+Uncertain submissions are reconciled from ledger evidence without resubmitting.
 
 ## Settlement
 
 | Endpoint | Required role | Backend process | Ledger action |
 | --- | --- | --- | --- |
-| `GET /v1/admin/settlement-requests` | `venue_operator` | List ready swap and liquidity requests by pool. | - |
-| `GET /v1/admin/settlements` | `venue_operator` | List submitted settlements and results. | - |
-| `POST /v1/admin/pools/{poolId}/settlements` | `venue_operator` | Dispatch the previewed batch or individual request; without a selection, choose a ready FIFO batch. Record outcomes. | Atomically settle transfers and LP minting or burning through `dvo` delegation; update reserves and LP supply and enforce limits and deadlines. |
-| `GET /v1/admin/pools/{poolId}/settlement-policy/{type}` | `venue_operator` | Read one queue's automatic mode, batch size and policy version (`swap`, `deposit`, `withdraw`). | - |
-| `PUT /v1/admin/pools/{poolId}/settlement-policy/{type}` | `venue_operator` | Save that queue's settings using its expected version. Other queue policies remain unchanged. | - |
-| `GET /v1/admin/settlements/{settlementId}` | `venue_operator` | Return settlement status and per-request results or failures. | - |
-| `GET /v1/admin/pools/{poolId}/settlement-preview` | `venue_operator` | Project a queue's next batch, a rejected/cancelled attempt (`retryOf`), or one eligible request (`requestId`) against current reserves. | Read allocations, access and pool state; apply the settlement preflight checks. |
-| `PUT /v1/admin/pools/{poolId}/settlement-requests/{type}/{requestId}/deferred` | `venue_operator` | Defer a ready request or return it to the end of its queue. | No token movement; original allocation deadlines remain. |
-| `GET /v1/admin/pools/{poolId}/settlement-history` | `venue_operator` | Page through attempts, filtered by request type or batch status. | - |
+| `GET /v1/admin/settlement-requests` | `OPERATOR` | Require `poolId`; default `status=READY` lists non-deferred ready requests. `status=active` includes other queue states and deferred requests. | - |
+| `GET /v1/admin/settlements` | `OPERATOR` | List the latest 100 settlement attempts and results, optionally filtered by `poolId`. | - |
+| `POST /v1/admin/pools/{poolId}/settlements` | `OPERATOR` | Dispatch the previewed batch or individual request; without a selection, choose an eligible FIFO batch. Record outcomes. | Atomically settle transfers and LP minting or burning through `dvo` delegation; update reserves and LP supply and enforce limits and deadlines. |
+| `GET /v1/admin/pools/{poolId}/settlement-policy/{type}` | `OPERATOR` | Read one queue's automatic mode, batch size and policy version (`swap`, `deposit`, `withdraw`). | - |
+| `PUT /v1/admin/pools/{poolId}/settlement-policy/{type}` | `OPERATOR` | Save `automaticEnabled` and `batchSize` using `expectedVersion`. Other queue policies remain unchanged. | - |
+| `GET /v1/admin/settlements/{settlementId}` | `OPERATOR` | Return settlement status, request references, fills, and any batch error. | - |
+| `GET /v1/admin/pools/{poolId}/settlement-preview` | `OPERATOR` | Require `type` (`swap`, `deposit`, `withdraw`); project the queue's next batch, a rejected/cancelled attempt (`retryOf`), or one eligible request (`requestId`) against current reserves. | Read allocations, access and pool state; apply the settlement preflight checks. |
+| `PUT /v1/admin/pools/{poolId}/settlement-requests/{type}/{requestId}/deferred` | `OPERATOR` | Set `deferred` for an unexpired `READY` or `BLOCKED` request; returning it places it at the end of its queue. Requires no active settlement for the pool. | No token movement; original allocation deadlines remain. |
+| `GET /v1/admin/pools/{poolId}/settlement-history` | `OPERATOR` | Page through attempts with optional `type` and `status` filters; use `limit` (default 25, 1–100) and pass the returned `nextCursor` as `before`. | - |
 
 
 Each pool has three independent FIFO queues: swaps, deposits and withdrawals.
@@ -79,9 +82,12 @@ The operator preview reports each projected reserve/supply change and output mar
 stopping at the first blocked request. Later requests remain unevaluated. It is an
 estimate from the reported pool state, not confirmation of token movement.
 
-Manual dispatch can carry the exact preview selection: request IDs, pool/config
-version and the selected queue's policy version. Admission and dispatch reject a stale selection.
+Manual dispatch requires a UUID `idempotencyKey` and can carry the exact preview
+`selection`: request references, `type`, `retryOf`, `stateVersion` and `policyVersion`.
+Admission and dispatch reject a stale selection.
 Changing another queue's settings does not invalidate it.
+Explicit selections and automatic swap batches must pass preflight in full;
+manual runs without a selection and automatic liquidity runs can keep a valid FIFO prefix.
 An operator can select one eligible request anywhere in its queue and run it as a
 singleton batch. This preserves the queue policy and leaves other requests pending.
 Deferred requests must first return to the queue. `requestId` and `retryOf` are mutually exclusive.
@@ -99,20 +105,20 @@ scheduler considers only queues with automation enabled, using each queue's poli
 
 | Endpoint | Required role | Backend process | Ledger action |
 | --- | --- | --- | --- |
-| `POST /v1/lp/deposit/quote` | `venue_user` | Check intake, eligibility, balances, and amount limits -> quote proportional base and quote amounts, expected LP tokens, `minLpOut` from slippage tolerance, and expiry. Use the DVO's initial ratio for an empty pool or the current reserve ratio otherwise. | - |
-| `POST /v1/lp/deposit/prepare` | `venue_user` | Validate quote, deposits, minimum LP output, and deadline -> prepare base and quote deposit allocations and an LP receipt allocation. | - |
-| `POST /v1/lp/deposit/submit` | `venue_user` | Validate transaction structure and wallet signatures against the prepared request -> store deposit request -> submit unchanged -> mark ready after confirmations and screening. | Lock base and quote deposits through two registry allocations; create an unfunded LP receipt allocation. |
-| `GET /v1/lp/deposit/{depositId}` | `venue_user` | Return status, expected and minted LP tokens, and deadline. | - |
-| `POST /v1/lp/deposit/{depositId}/cancel/{prepare,submit}` | `venue_user` | Check ownership and elapsed deadline -> prepare and submit recovery of remaining allocations. | Withdraw pending base, quote and LP receipt allocations. |
-| `GET /v1/lp/positions` | `venue_user` | Return user LP balances, pool shares, and redemption values from balances, reserves, and supply. | - |
-| `POST /v1/lp/withdraw/quote` | `venue_user` | Check LP ownership and available balance -> quote both asset payouts and expiry; current KYC and pool access are required. | - |
-| `POST /v1/lp/withdraw/prepare` | `venue_user` | Validate quote, LP amount, payouts, and deadline -> prepare LP and asset receipt allocations. | - |
-| `POST /v1/lp/withdraw/submit` | `venue_user` | Validate transaction structure and wallet signatures against the prepared request -> store withdrawal request -> submit unchanged -> mark ready after confirmations and screening. | Lock LP tokens and authorize asset receipt through registry allocations. |
-| `GET /v1/lp/withdraw/{withdrawalId}` | `venue_user` | Return status, expected and paid amounts, and deadline. | - |
-| `POST /v1/lp/withdraw/{withdrawalId}/cancel/{prepare,submit}` | `venue_user` | Check ownership and elapsed deadline -> prepare and submit recovery of remaining allocations. | Withdraw pending LP and asset receipt allocations. |
+| `POST /v1/lp/deposit/quote` | `TRADER` | Check pool readiness, current KYC and pool access, balances, and amount limits -> quote base and quote amounts, refunds, expected LP tokens, `minLpOut`, ratio bounds from slippage tolerance, and expiry. Use the DVO's initial ratio for an empty pool or the current reserve ratio otherwise. | - |
+| `POST /v1/lp/deposit/prepare` | `TRADER` | Validate quote, deposits, `minLpOut`, `minRatio`, `maxRatio`, and deadline -> prepare base and quote deposit allocations and an LP receipt allocation -> persist the request and signing payload. | - |
+| `POST /v1/lp/deposit/submit` | `TRADER` | Validate the wallet signature and current access -> execute the stored prepared transaction -> mark `READY` from confirmed allocations. | Lock base and quote deposits through two registry allocations; create an unfunded LP receipt allocation. |
+| `GET /v1/lp/deposit/{requestId}` | `TRADER` | Return the caller's request status, expected and minted LP tokens, deadline, and `canRecover`. | - |
+| `POST /v1/lp/deposit/{requestId}/cancel/{prepare,submit}` | `TRADER` | Check ownership, current KYC and pool access, and elapsed deadline -> prepare and submit recovery of remaining allocations. | Withdraw pending base, quote and LP receipt allocations. |
+| `GET /v1/lp/positions` | `TRADER` | Return user LP balances, pool shares, and redemption values from balances, reserves, and supply. | - |
+| `POST /v1/lp/withdraw/quote` | `TRADER` | Check LP ownership and available balance -> quote both asset payouts and expiry; current KYC and pool access are required. | - |
+| `POST /v1/lp/withdraw/prepare` | `TRADER` | Validate quote, LP amount, `minBaseOut`, `minQuoteOut`, and deadline -> prepare LP and asset receipt allocations -> persist the request and signing payload. | - |
+| `POST /v1/lp/withdraw/submit` | `TRADER` | Validate the wallet signature and current access -> execute the stored prepared transaction -> mark `READY` from confirmed allocations. | Lock LP tokens and authorize asset receipt through registry allocations. |
+| `GET /v1/lp/withdraw/{requestId}` | `TRADER` | Return the caller's request status, expected and paid amounts, deadline, and `canRecover`. | - |
+| `POST /v1/lp/withdraw/{requestId}/cancel/{prepare,submit}` | `TRADER` | Check ownership, current KYC and pool access, and elapsed deadline -> prepare and submit recovery of remaining allocations. | Withdraw pending LP and asset receipt allocations. |
 
 Amounts are decimal strings; instrument identity includes admin and ID. One V3
-wallet signature authorizes all three allocations. Quotes distinguish `INITIAL`
+wallet signature authorizes all three allocations. Deposit quotes distinguish `INITIAL`
 from `PROPORTIONAL`, include signed limits, and keep estimates separate from
 confirmed results. `stateId` identifies the quoted state without locking settlement
 to that contract. Initial quotes expose the permanent `initialMinimumLp`.
@@ -151,8 +157,11 @@ support for mixing initial legs with iteration funding.
 
 | Endpoint | Required role | Backend process | Ledger action |
 | --- | --- | --- | --- |
-| `GET /v1/activity` | `venue_user` | Return cached user swaps, deposits, and withdrawals with status and expected and settled amounts; filter by `type=swap`, `deposit`, `withdraw` or `all` and status and paginate with `limit` and `cursor`. | - |
+| `GET /v1/activity` | `TRADER` | Return the caller's stored requests with status and expected and settled amounts; choose `type=swap` (default), `deposit`, `withdraw` or `all`, optionally filter by `status`, and paginate with `limit` (default 50, 1–100) and `cursor`. | - |
 
+Responses contain `items` and `nextCursor`, ordered newest first. Single-type
+items are request records; `type=all` wraps each record as `{ type, request, deferred }`.
+Pass `nextCursor` as `cursor` for the next page.
 
 ## Venue Monitoring and Management
 

@@ -42,7 +42,7 @@ esac
 
 project_filter='label=com.docker.compose.project=canton-dex'
 volumes=()
-# Select only persistent application/ledger state, never Gradle caches.
+# Select only persistent application/ledger state, never dependency caches.
 for name in application-postgres localnet-postgres domain-upgrade-dump; do
   matches="$(docker volume ls --filter "$project_filter" \
     --filter "label=com.docker.compose.volume=$name" --format '{{.Name}}')"

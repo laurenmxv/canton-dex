@@ -5,6 +5,8 @@ import type { DemoState } from './store';
 
 const VENUE_SETTLEMENT_QUEUE = 'a venue settlement queue';
 const VENUE_SETTLEMENTS = 'venue settlements';
+const VENUE_QUEUE_POLICY = 'a settlement queue policy';
+const VENUE_PREVIEWS = 'venue batch previews';
 
 export interface FixtureBackendOptions {
   /** Simulated round trip. Set to 0 in tests. */
@@ -144,13 +146,14 @@ export function createFixtureBackend(options: FixtureBackendOptions = {}): DexBa
           settlements: {
             requests: absent(VENUE_SETTLEMENT_QUEUE),
             setDeferred: absent(VENUE_SETTLEMENT_QUEUE),
-            preview: absent('venue batch previews'),
+            preview: absent(VENUE_PREVIEWS),
+            previewRequest: absent(VENUE_PREVIEWS),
             list: absent(VENUE_SETTLEMENTS),
             history: absent(VENUE_SETTLEMENTS),
             get: absent('a venue settlement'),
             run: absent('venue batches'),
-            policy: absent('a pool settlement policy'),
-            updatePolicy: absent('a pool settlement policy'),
+            policy: absent(VENUE_QUEUE_POLICY),
+            updatePolicy: absent(VENUE_QUEUE_POLICY),
             monitoring: absent('venue monitoring'),
           },
         },

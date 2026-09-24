@@ -1,0 +1,6 @@
+build/
+dist/
+src/canton/generated/
+src/canton/ledger-api/
+test/compatibility/
+package-lock.json

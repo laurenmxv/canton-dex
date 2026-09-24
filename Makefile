@@ -4,7 +4,7 @@ test:
 	@./scripts/test-contracts.sh
 
 docker-run:
-	@docker compose build contract-bootstrap frontend
+	@docker compose build contract-builder backend frontend
 	@docker compose up -d --wait --wait-timeout 1200 frontend
 	@docker compose run --rm --no-deps \
 		-v ./docker/bootstrap.env:/app/keycloak.env:ro \
@@ -22,19 +22,17 @@ status:
 	@docker compose ps
 
 logs:
-	@docker compose logs --tail=100 -f frontend backend contract-bootstrap
+	@docker compose logs --tail=100 -f frontend backend contract-builder
 
 test-backend:
 	@./scripts/test-backend.sh all
 
-LOCALNET_ARCHIVE := docker/artifacts/cn-localnet-v0.1.0.tar.gz
+LOCALNET_VERSION := v0.2.0
+LOCALNET_SHA256 := 1f69385e1fe50eece22e01ee226abd3433b34d329acd4401cd1a32d63c056309
+LOCALNET_ARCHIVE := docker/artifacts/cn-localnet-$(LOCALNET_VERSION).tar.gz
 LOCALNET_DIR := .deps/cn-localnet
 
 docker-run docker-stop status logs: prepare-localnet
 
-prepare-localnet: $(LOCALNET_DIR)/.prepared
-
-$(LOCALNET_DIR)/.prepared: $(LOCALNET_ARCHIVE)
-	@mkdir -p "$(LOCALNET_DIR)"
-	@tar -xzf "$<" -C "$(LOCALNET_DIR)"
-	@touch "$@"
+prepare-localnet:
+	@./scripts/prepare-localnet.sh "$(LOCALNET_ARCHIVE)" "$(LOCALNET_SHA256)" "$(LOCALNET_DIR)"

@@ -20,8 +20,8 @@ export type DraftField = keyof ProposalDraft;
 /** The venue's own bound on a pool's name. */
 const MAX_NAME = 120;
 /**
- * A control character, as the venue's own `Character.isISOControl` reads one:
- * C0 and DEL, and the C1 range above them.
+ * A control character, as the venue reads one: C0 and DEL, and the C1 range
+ * above them.
  */
 const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
 

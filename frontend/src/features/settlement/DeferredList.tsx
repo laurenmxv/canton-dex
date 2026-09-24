@@ -5,7 +5,7 @@ import { shortContract } from '../../lib/labels';
 import { StatusBadge } from '../../ui/Badge';
 import { Card, CardHeader } from '../../ui/Card';
 import { NUMERIC } from '../../ui/table';
-import { canChangeHold, holdLabels, type FamilyInfo, type QueueRow } from './queueRows';
+import { holdLabels, isWaiting, type FamilyInfo, type QueueRow } from './queueRows';
 import { Deadline, DetailsButton, RequestCell } from './RequestCells';
 
 /**
@@ -75,7 +75,7 @@ export function DeferredList({
                   size="sm"
                   variant="secondary"
                   loading={holding === row.requestId}
-                  disabled={holdsLocked || busy || !canChangeHold(row, now)}
+                  disabled={holdsLocked || busy || !isWaiting(row, now)}
                   aria-label={`${holdLabels.back}: request ${shortContract(row.requestId)}`}
                   onClick={() => onReturn({ type: row.family, requestId: row.requestId })}
                 >

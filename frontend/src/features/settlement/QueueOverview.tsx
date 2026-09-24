@@ -1,11 +1,14 @@
 import { Button } from '@openzeppelin/ui-components';
 import { cn } from '@openzeppelin/ui-utils';
+import type { SettlementPolicy } from '../../lib/api/types';
 import { formatCountdown } from '../../lib/labels';
+import { ModeBadge } from './QueueSettings';
 import {
   DEADLINE_ELAPSED,
   deadlineUrgency,
   FAMILIES,
   holdLabels,
+  policyOf,
   type Family,
   type FamilySummary,
 } from './queueRows';
@@ -26,15 +29,18 @@ function Count({ label, value, warn = false }: { label: string; value: number; w
   );
 }
 
-/** The pool's three queues at a glance. Choosing one opens its workspace below. */
+/** The pool's three queues at a glance, each in its saved mode. Choosing one opens its workspace below. */
 export function QueueOverview({
   summaries,
+  policies,
   family,
   onSelect,
   now,
 }: {
   /** Undefined until the queue has been read. */
   summaries: Record<Family, FamilySummary> | undefined;
+  /** Every queue's newest confirmed settings. */
+  policies: readonly SettlementPolicy[];
   family: Family;
   onSelect: (family: Family) => void;
   now: number;
@@ -43,6 +49,7 @@ export function QueueOverview({
     <section aria-label="Queues" className="grid grid-cols-1 gap-3 sm:grid-cols-3">
       {FAMILIES.map(({ type, noun, edge }) => {
         const summary = summaries?.[type];
+        const policy = policyOf(policies, type);
         const deadline = summary?.nearestDeadline ?? null;
         const urgency = deadline ? deadlineUrgency(deadline, now) : null;
         return (
@@ -58,8 +65,11 @@ export function QueueOverview({
             )}
           >
             <span className="flex items-baseline justify-between gap-3">
-              <span className="text-muted-foreground text-xs font-semibold tracking-[0.04em] uppercase">
-                {noun}
+              <span className="flex flex-wrap items-center gap-2">
+                <span className="text-muted-foreground text-xs font-semibold tracking-[0.04em] uppercase">
+                  {noun}
+                </span>
+                {policy ? <ModeBadge automatic={policy.automaticEnabled} /> : null}
               </span>
               <span className="flex items-baseline gap-1.5">
                 <span className="text-foreground text-2xl leading-none font-semibold tabular-nums">

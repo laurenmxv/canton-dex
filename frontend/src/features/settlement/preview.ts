@@ -5,8 +5,9 @@ import type {
 } from '../../lib/api/types';
 import { compareDecimals, formatExact, parseDecimal } from '../../lib/decimal';
 import { trimDecimal, type Tone } from '../../lib/labels';
-import { DEADLINE_ELAPSED } from './queueRows';
+import { DEADLINE_ELAPSED, isExpired, type QueueRow } from './queueRows';
 import type { ReservePair } from './reserves';
+import type { PreviewRead } from './usePreview';
 
 /**
  * At or below this headroom over the signed minimum, a projected output shows
@@ -88,21 +89,26 @@ export const NO_PROJECTED_MOVE = 'No projected move';
 /** The state the venue observed, which every projection starts from. */
 export const OBSERVED = 'Observed';
 
+/** The queued row a step names, where the queue still lists it. */
+export function rowOfStep(
+  step: SettlementPreviewStep,
+  rows: readonly QueueRow[] | undefined,
+): QueueRow | undefined {
+  return rows?.find((row) => row.requestId === step.request.requestId);
+}
+
 export interface RunConditions {
-  preview: SettlementPreview | undefined;
-  loading: boolean;
-  /** The last read of the preview failed, so the one on screen may be out of date. */
-  failed: boolean;
-  /** The pool, its policy or this queue has moved on since the preview, or it has aged. */
-  stale: boolean;
+  /** The preview of the queue on screen, which is the only batch a run may send. */
+  preview: PreviewRead;
+  /** That queue as last read. */
+  rows: readonly QueueRow[] | undefined;
+  now: number;
   /** The pool has a batch in flight, as monitoring reports it. */
   inFlight: boolean;
   /** A run whose outcome the venue has not answered yet. */
   unresolved: boolean;
   /** A change this screen sent is still waiting for its answer. */
   busy: boolean;
-  /** A request in the preview is past its deadline. */
-  expired: boolean;
 }
 
 /**
@@ -111,18 +117,20 @@ export interface RunConditions {
  * This only decides what the button offers. The venue checks the selection
  * again when it is sent, and refuses one that has gone stale.
  */
-export function runBlocker(conditions: RunConditions): string | null {
-  const { preview } = conditions;
-  if (conditions.busy) return 'Waiting for the last change';
-  if (conditions.unresolved) return 'The last run is unresolved';
-  if (conditions.inFlight || preview?.activeSettlementId) return 'A batch is in flight';
-  if (!preview) return conditions.loading ? 'Loading the preview' : 'Projection unavailable';
-  if (conditions.failed && !conditions.loading) return 'Could not refresh the preview';
-  if (conditions.stale || conditions.loading) return 'Refreshing the preview';
+export function runBlocker({ preview: read, rows, now, inFlight, unresolved, busy }: RunConditions): string | null {
+  const preview = read.data;
+  const queued = (preview?.steps ?? []).map((step) => rowOfStep(step, rows));
+  if (busy) return 'Waiting for the last change';
+  if (unresolved) return 'The last run is unresolved';
+  if (inFlight || preview?.activeSettlementId) return 'A batch is in flight';
+  if (!preview) return read.loading ? 'Loading the preview' : 'Projection unavailable';
+  if (read.error !== undefined && !read.loading) return 'Could not refresh the preview';
+  // A step the queue no longer lists means the preview is behind the queue.
+  if (read.stale || read.loading || queued.includes(undefined)) return 'Refreshing the preview';
   if (preview.steps.length === 0) return NOTHING_TO_SETTLE;
   const blocked = preview.steps.findIndex((step) => step.status === 'BLOCKED');
   if (blocked >= 0) return `Step ${blocked + 1} is blocked`;
-  if (conditions.expired) return DEADLINE_ELAPSED;
+  if (queued.some((row) => row !== undefined && isExpired(row, now))) return DEADLINE_ELAPSED;
   if (!preview.executable) return 'The venue would not start this batch';
   return null;
 }

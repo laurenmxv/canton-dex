@@ -505,8 +505,9 @@ export const CONFIRMED_SETTLEMENT: Settlement = {
   retryOf: null,
 };
 
-export const SETTLEMENT_POLICY: SettlementPolicy = {
+export const SWAP_POLICY: SettlementPolicy = {
   poolId: '00pool0001',
+  type: 'swap',
   automaticEnabled: false,
   batchSize: 5,
   maxBatchSize: 10,
@@ -514,9 +515,20 @@ export const SETTLEMENT_POLICY: SettlementPolicy = {
   updatedAt: '2026-09-19T11:30:00Z',
 };
 
+export const DEPOSIT_POLICY: SettlementPolicy = {
+  ...SWAP_POLICY,
+  type: 'deposit',
+  automaticEnabled: true,
+  batchSize: 3,
+  version: 2,
+};
+
+export const WITHDRAW_POLICY: SettlementPolicy = { ...SWAP_POLICY, type: 'withdraw', batchSize: 8, version: 7 };
+
 export const MONITORING: SettlementMonitoring = {
   poolId: '00pool0001',
-  policy: SETTLEMENT_POLICY,
+  // The venue lists the queues by name, which is not the order a screen shows them in.
+  policies: [DEPOSIT_POLICY, SWAP_POLICY, WITHDRAW_POLICY],
   readyCount: 3,
   pendingCount: 4,
   blockedRequest: null,
@@ -560,7 +572,7 @@ export const SETTLEMENT_PREVIEW: SettlementPreview = {
     type: 'swap',
     retryOf: null,
     stateVersion: MONITORING.pool.version,
-    policyVersion: SETTLEMENT_POLICY.version,
+    policyVersion: SWAP_POLICY.version,
     requests: [
       { type: 'swap', requestId: QUEUED_SWAP.swapId },
       { type: 'swap', requestId: 'dd333333-0000-4000-8000-000000000019' },

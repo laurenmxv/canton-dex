@@ -226,6 +226,8 @@ async function walkEveryFlow(calls: Calls) {
         true,
       ),
     () => operator.admin.settlements.preview('pool-usdc-eurc', 'swap'),
+    () =>
+      operator.admin.settlements.previewRequest('pool-usdc-eurc', { type: 'deposit', requestId: 'deposit-0001' }),
     () => operator.admin.settlements.list('pool-usdc-eurc'),
     () => operator.admin.settlements.history('pool-usdc-eurc', { type: 'deposit' }),
     () => operator.admin.settlements.get('settle-0001'),
@@ -233,9 +235,9 @@ async function walkEveryFlow(calls: Calls) {
       operator.admin.settlements.run('pool-usdc-eurc', {
         idempotencyKey: '11111111-0000-4000-8000-000000000099',
       }),
-    () => operator.admin.settlements.policy('pool-usdc-eurc'),
+    () => operator.admin.settlements.policy('pool-usdc-eurc', 'swap'),
     () =>
-      operator.admin.settlements.updatePolicy('pool-usdc-eurc', {
+      operator.admin.settlements.updatePolicy('pool-usdc-eurc', 'deposit', {
         automaticEnabled: true,
         batchSize: 3,
         expectedVersion: 1,

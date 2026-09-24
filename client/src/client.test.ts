@@ -79,6 +79,7 @@ describe('the client surface', () => {
       'monitoring',
       'policy',
       'preview',
+      'previewRequest',
       'requests',
       'run',
       'setDeferred',

@@ -6,7 +6,7 @@ if [[ $# -ne 0 ]]; then
   exit 2
 fi
 
-cd "$(dirname "${BASH_SOURCE[0]}")/../contracts"
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
 unset DAML_PACKAGE
 
 dpm_bin="${DPM_BIN:-}"
@@ -23,6 +23,13 @@ if ! "$java_bin" -version >/dev/null 2>&1; then
   printf 'Java not found. Set JAVA_HOME to a working JDK.\n' >&2
   exit 1
 fi
+
+# Build a copy so the source tree, its vendored DARs and package pins stay unchanged.
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+mkdir "$work/contracts"
+tar -C contracts --exclude=.daml -cf - . | tar -C "$work/contracts" -xf -
+cd "$work/contracts"
 
 printf '\nBuilding contracts and tests...\n'
 "$dpm_bin" build --all

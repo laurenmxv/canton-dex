@@ -15,11 +15,12 @@ import type {
 } from '../../../types/settlement.js';
 
 /**
- * How an operator runs one pool's queue.
+ * How an operator runs one pool's queues.
  *
  * Every operation names a pool. There is no venue-wide batch target, no
  * venue-wide automatic switch and no call here that touches more than the pool
- * it is given.
+ * it is given. Settings name one queue of that pool as well: the swap, deposit
+ * and withdrawal queues each keep their own.
  */
 export interface SettlementsApi {
   requests(
@@ -39,6 +40,11 @@ export interface SettlementsApi {
     retryOf?: string,
     options?: RequestOptions,
   ): Promise<SettlementPreview>;
+  previewRequest(
+    poolId: string,
+    request: SettlementRequestRef,
+    options?: RequestOptions,
+  ): Promise<SettlementPreview>;
   list(poolId?: string, options?: RequestOptions): Promise<Settlement[]>;
   history(
     poolId: string,
@@ -47,9 +53,10 @@ export interface SettlementsApi {
   ): Promise<SettlementHistory>;
   get(settlementId: string, options?: RequestOptions): Promise<Settlement>;
   run(poolId: string, input: RunSettlementInput, options?: RequestOptions): Promise<Settlement>;
-  policy(poolId: string, options?: RequestOptions): Promise<SettlementPolicy>;
+  policy(poolId: string, type: RequestType, options?: RequestOptions): Promise<SettlementPolicy>;
   updatePolicy(
     poolId: string,
+    type: RequestType,
     input: UpdateSettlementPolicy,
     options?: RequestOptions,
   ): Promise<SettlementPolicy>;

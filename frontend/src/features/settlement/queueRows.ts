@@ -1,4 +1,9 @@
-import type { SettlementRequest, SettlementRequestRef } from '../../lib/api/types';
+import type {
+  SettlementPolicy,
+  SettlementRequest,
+  SettlementRequestRef,
+  SettlementSelection,
+} from '../../lib/api/types';
 import { formatExact } from '../../lib/decimal';
 import {
   liquidityStatusLabels,
@@ -41,6 +46,14 @@ export const FAMILIES: readonly FamilyInfo[] = [
 
 export function familyInfo(type: Family): FamilyInfo {
   return FAMILIES.find((family) => family.type === type)!;
+}
+
+/** One queue's own settings. The venue lists them by name, not in the order shown here. */
+export function policyOf(
+  policies: readonly SettlementPolicy[] | undefined,
+  type: Family,
+): SettlementPolicy | undefined {
+  return policies?.find((policy) => policy.type === type);
 }
 
 /** Where an active request stands for the operator. */
@@ -148,6 +161,12 @@ export function sameRequest(row: QueueRow, ref: SettlementRequestRef | null | un
   return ref !== null && ref !== undefined && row.family === ref.type && row.requestId === ref.requestId;
 }
 
+/** A batch of this request alone: no other member, and no retry of an earlier attempt. */
+export function selectsOnly(selection: SettlementSelection, row: QueueRow): boolean {
+  const [only, ...others] = selection.requests;
+  return selection.retryOf === null && others.length === 0 && sameRequest(row, only);
+}
+
 /**
  * One family's queue at a glance. A deferred request counts as deferred and
  * nowhere else, because no batch takes it until it returns.
@@ -190,11 +209,12 @@ export function isExpired(row: QueueRow, now: number): boolean {
 }
 
 /**
- * Whether the venue accepts a hold, or a return, for this request: ready or
- * blocked, and not expired. It also refuses both while the pool has a batch in
- * flight, and it decides.
+ * Ready or blocked, and not expired: the only requests the venue accepts a
+ * hold, a return or a run alone for. A deferred request must also return to
+ * its queue before it can run alone. The venue refuses all of these while the
+ * pool has a batch in flight, and it decides.
  */
-export function canChangeHold(row: QueueRow, now: number): boolean {
+export function isWaiting(row: QueueRow, now: number): boolean {
   return (row.stage === 'ready' || row.stage === 'blocked') && !isExpired(row, now);
 }
 

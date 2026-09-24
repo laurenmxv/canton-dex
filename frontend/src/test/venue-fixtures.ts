@@ -9,6 +9,7 @@ import type {
   PoolDetail,
   Profile,
   ProjectedPoolState,
+  RequestType,
   Settlement,
   SettlementMonitoring,
   SettlementPolicy,
@@ -415,8 +416,9 @@ export function position(overrides: Partial<LpPosition> = {}): LpPosition {
   };
 }
 
-export const POLICY: SettlementPolicy = {
+const SWAP_POLICY: SettlementPolicy = {
   poolId: POOL_ID,
+  type: 'swap',
   automaticEnabled: false,
   batchSize: 5,
   maxBatchSize: 10,
@@ -424,10 +426,18 @@ export const POLICY: SettlementPolicy = {
   updatedAt: '2026-09-19T11:30:00Z',
 };
 
+/** Each queue's own settings, apart in mode, size and version so a screen showing the wrong one is caught. */
+export const POLICIES: Record<RequestType, SettlementPolicy> = {
+  swap: SWAP_POLICY,
+  deposit: { ...SWAP_POLICY, type: 'deposit', automaticEnabled: true, batchSize: 3, version: 2 },
+  withdraw: { ...SWAP_POLICY, type: 'withdraw', batchSize: 8, version: 7 },
+};
+
 export function monitoring(overrides: Partial<SettlementMonitoring> = {}): SettlementMonitoring {
   return {
     poolId: POOL_ID,
-    policy: POLICY,
+    // The venue lists the queues by name, which is not the order the screen shows.
+    policies: [POLICIES.deposit, POLICIES.swap, POLICIES.withdraw],
     readyCount: 2,
     pendingCount: 2,
     blockedRequest: null,
@@ -520,17 +530,19 @@ export function previewStep(overrides: Partial<SettlementPreviewStep> = {}): Set
 
 /**
  * The next batch of one queue. Its selection is the membership of its steps,
- * at the pool and policy versions monitoring reports, unless overridden.
+ * at the pool version and that queue's policy version monitoring reports,
+ * unless overridden.
  */
 export function preview(overrides: Partial<SettlementPreview> = {}): SettlementPreview {
   const steps = overrides.steps ?? [previewStep()];
   const observed = monitoring().pool;
+  const type = steps[0]?.request.type ?? 'swap';
   return {
     selection: {
-      type: steps[0]?.request.type ?? 'swap',
+      type,
       retryOf: null,
       stateVersion: observed.version,
-      policyVersion: POLICY.version,
+      policyVersion: POLICIES[type].version,
       requests: steps.map((step) => step.request),
     },
     pool: observed,

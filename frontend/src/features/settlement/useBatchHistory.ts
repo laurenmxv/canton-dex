@@ -11,7 +11,7 @@ import type {
 const PAGE_SIZE = 25;
 
 /** A batch that can still change: its outcome is not known yet. */
-const MOVING: ReadonlySet<SettlementStatus> = new Set(['PREPARING', 'SUBMITTING', 'UNRESOLVED']);
+export const IN_FLIGHT_STATUSES: ReadonlySet<SettlementStatus> = new Set(['PREPARING', 'SUBMITTING', 'UNRESOLVED']);
 
 export interface HistoryFilter {
   type: RequestType | null;
@@ -57,7 +57,7 @@ export function useBatchHistory(poolId: string): BatchHistoryRead {
     [client, poolId, filter.type, filter.status, before],
     {
       pollWhile: (history) =>
-        before === undefined || history.items.some((batch) => MOVING.has(batch.status)),
+        before === undefined || history.items.some((batch) => IN_FLIGHT_STATUSES.has(batch.status)),
     },
   );
 

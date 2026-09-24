@@ -3,12 +3,13 @@ import { createDexClient } from '../../../client.js';
 import { DexClientError } from '../../../errors.js';
 import {
   CONFIRMED_SETTLEMENT,
+  DEPOSIT_POLICY,
   MONITORING,
   QUEUED_DEPOSIT,
   QUEUED_SWAP,
   SETTLED_WITHDRAWAL,
-  SETTLEMENT_POLICY,
   SETTLEMENT_PREVIEW,
+  SWAP_POLICY,
   jsonResponse,
   recordFetch,
 } from '../../../test-support.js';
@@ -74,6 +75,13 @@ describe('one pool’s queue', () => {
     expect(monitoring.blockedRequest).toEqual(blockedRequest);
     expect(monitoring.pool.health).toBe('READY');
     expect(monitoring.pool.ledgerOffset).toBe(4821);
+    // Every queue carries its own settings and version; there is no pool-wide one.
+    const queues = monitoring.policies.map(({ type, automaticEnabled, version }) => [type, automaticEnabled, version]);
+    expect(queues).toEqual([
+      ['deposit', true, 2],
+      ['swap', false, 4],
+      ['withdraw', false, 7],
+    ]);
   });
 
   it('reads an empty pool as one waiting for its first deposit, with no price', async () => {
@@ -181,6 +189,23 @@ describe('the next batch of one queue', () => {
     expect(preview.selection.retryOf).toBe('batch 0001');
   });
 
+  it('previews one request alone on the same route, by its kind and its id', async () => {
+    const request = { type: 'withdraw', requestId: SETTLED_WITHDRAWAL.requestId } as const;
+    const { client, calls } = clientWith({
+      ...SETTLEMENT_PREVIEW,
+      selection: { ...SETTLEMENT_PREVIEW.selection, type: 'withdraw', requests: [request] },
+    });
+
+    const preview = await client.previewRequest(POOL, request);
+
+    const url = new URL(calls[0]!.url);
+    expect(url.pathname).toBe(`/v1/admin/pools/${POOL}/settlement-preview`);
+    expect(Object.fromEntries(url.searchParams)).toEqual({ type: 'withdraw', requestId: request.requestId });
+    // A batch of one, which is exactly what a run of that request sends.
+    expect(preview.selection.requests).toEqual([request]);
+    expect(preview.selection.retryOf).toBeNull();
+  });
+
   it('runs exactly the membership the preview proposed, under the caller’s key', async () => {
     const key = '11111111-0000-4000-8000-000000000098';
     const { client, calls } = clientWith({ ...CONFIRMED_SETTLEMENT, status: 'PREPARING', settlementId: key });
@@ -247,59 +272,53 @@ describe('every batch a pool ran', () => {
   });
 });
 
-describe('one pool’s settings', () => {
-  it('reads them from the venue, which is what survives a reload', async () => {
-    const { client, calls } = clientWith(SETTLEMENT_POLICY);
+describe('one queue’s settings', () => {
+  it('reads one queue on its own path, which is what survives a reload', async () => {
+    const { client, calls } = clientWith(SWAP_POLICY);
 
-    const policy = await client.policy(POOL);
+    const policy = await client.policy(POOL, 'swap');
 
     expect(calls[0]?.method).toBe('GET');
-    expect(calls[0]?.url).toBe(`${BASE}/v1/admin/pools/${POOL}/settlement-policy`);
-    expect(policy).toEqual(SETTLEMENT_POLICY);
+    expect(calls[0]?.url).toBe(`${BASE}/v1/admin/pools/${POOL}/settlement-policy/swap`);
+    expect(policy).toEqual(SWAP_POLICY);
   });
 
-  it('saves them with the version it last read, on the pool’s own path', async () => {
-    const { client, calls } = clientWith({
-      ...SETTLEMENT_POLICY,
-      automaticEnabled: true,
-      batchSize: 3,
-      version: 5,
-    });
+  it('saves one queue with the version it last read for that queue', async () => {
+    const { client, calls } = clientWith({ ...DEPOSIT_POLICY, automaticEnabled: false, batchSize: 4, version: 3 });
 
-    const saved = await client.updatePolicy(POOL, {
-      automaticEnabled: true,
-      batchSize: 3,
-      expectedVersion: 4,
+    const saved = await client.updatePolicy(POOL, 'deposit', {
+      automaticEnabled: false,
+      batchSize: 4,
+      expectedVersion: DEPOSIT_POLICY.version,
     });
 
     expect(calls[0]?.method).toBe('PUT');
-    expect(calls[0]?.url).toBe(`${BASE}/v1/admin/pools/${POOL}/settlement-policy`);
+    expect(calls[0]?.url).toBe(`${BASE}/v1/admin/pools/${POOL}/settlement-policy/deposit`);
     expect(JSON.parse(calls[0]!.body!)).toEqual({
-      automaticEnabled: true,
-      batchSize: 3,
-      expectedVersion: 4,
+      automaticEnabled: false,
+      batchSize: 4,
+      expectedVersion: DEPOSIT_POLICY.version,
     });
-    // What the venue committed, not what the form hoped for.
-    expect(saved.version).toBe(5);
-    expect(saved.batchSize).toBe(3);
+    // What the venue committed for that queue, not what the form hoped for.
+    expect(saved).toMatchObject({ type: 'deposit', batchSize: 4, version: 3 });
   });
 
   it('reports a stale save as the conflict it is, leaving the caller to re-read', async () => {
     const { client } = clientWith({ status: 409, detail: 'Settings changed elsewhere' }, 409);
 
     const failure = (await client
-      .updatePolicy(POOL, { automaticEnabled: false, batchSize: 9, expectedVersion: 1 })
+      .updatePolicy(POOL, 'withdraw', { automaticEnabled: false, batchSize: 9, expectedVersion: 1 })
       .catch((error: unknown) => error)) as DexClientError;
 
     expect(failure.status).toBe(409);
   });
 
   it('encodes a pool identifier rather than letting it change the path', async () => {
-    const { client, calls } = clientWith(SETTLEMENT_POLICY);
+    const { client, calls } = clientWith(SWAP_POLICY);
 
-    await client.policy('a b/c');
+    await client.policy('a b/c', 'withdraw');
 
-    expect(calls[0]?.url).toBe(`${BASE}/v1/admin/pools/a%20b%2Fc/settlement-policy`);
+    expect(calls[0]?.url).toBe(`${BASE}/v1/admin/pools/a%20b%2Fc/settlement-policy/withdraw`);
   });
 });
 

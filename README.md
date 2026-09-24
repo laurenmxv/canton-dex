@@ -1,6 +1,6 @@
 # Canton DEX
 
-**Daml contracts · Java backend · TypeScript client · React app**
+**Daml contracts · TypeScript backend · TypeScript client · React app**
 
 [Quickstart](#quickstart) · [Onboarding](#onboarding-and-creating-users) · [Pool creation](#pool-creation) · [Swaps](#swaps) · [Liquidity](#liquidity) · [Development](#development)
 
@@ -10,7 +10,7 @@
 
 - **Docker** with Compose 2.27+.
 - **CLI tools:** Make and tar.
-- **DPM and Java** installed locally to run Daml tests with `make test`.
+- **DPM and Java** installed locally to run Daml tests with `make test`; DPM needs a JDK.
 - **[MetaMask Flask](https://docs.metamask.io/snaps/get-started/install-flask/)** for signing in this local development setup.
 
 ## Quickstart
@@ -66,9 +66,11 @@ After onboarding, exchange local test tokens: the trader signs a request and the
 
 1. **Trader:** Open **Liquidity**, select a pool, enter maximum amounts of both tokens, and click **Get a quote**.
 2. Review the accepted amounts, refunds and minimum LP, then sign the request in MetaMask.
-3. **Operator:** Open **Settlement** for that pool and run settlement. Swaps, deposits and withdrawals have separate queues.
+3. **Operator:** Open **Settlement** for that pool, select the deposit queue, and run its batch. Each queue has its own automatic mode and batch size.
 4. **Trader:** Check the confirmed amounts and LP balance. Select a position to quote and sign a withdrawal.
 5. After an unsettled request expires, use **Recover funds** to release its remaining allocations.
+
+To settle just one swap, deposit or withdrawal, open its **Details** and click **Run request**.
 
 Withdrawals and recovery require current pool access and KYC. The initial `0.0000001 LP` stays permanently in the supply without a redeemable holding.
 
@@ -76,6 +78,6 @@ Withdrawals and recovery require current pool access and KYC. The initial `0.000
 
 | Task | Command |
 | --- | --- |
-| Refresh frontend and backend | `docker compose restart frontend backend` |
+| Rebuild the backend and refresh the frontend | `docker compose up -d --build backend && docker compose restart frontend` |
 | Backend integration tests (Docker stack running) | `make test-backend` |
 | Daml tests (local DPM and Java required) | `make test` |

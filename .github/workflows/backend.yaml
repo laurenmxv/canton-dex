@@ -6,12 +6,25 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  node:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
     steps:
       - uses: actions/checkout@v7
-      - name: Build Java and Daml tools
-        run: docker build -t dex-tools docker/tools
-      - name: Build and run unit tests
-        run: docker run --rm -v "$PWD:/workspace" dex-tools ./gradlew --console=plain test
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm run build
+      - run: npm test
+      - name: Build runtime and test images
+        run: |
+          docker build --target runtime .
+          docker build --target test .

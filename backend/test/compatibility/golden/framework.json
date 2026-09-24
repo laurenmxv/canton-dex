@@ -1,0 +1,6732 @@
+{
+  "description": "Framework, health and HTTP-edge behavior; replay with check.mjs.",
+  "capturedFrom": {
+    "project": "canton-dex-ts-baseline",
+    "dexHead": "be96cf72c47631b09af372bf449655fe83d91dcf plus the uncommitted working tree in management/dex-baseline.json",
+    "backend": "Java 21 / Spring Boot baseline backend"
+  },
+  "exchanges": [
+    {
+      "name": "health",
+      "request": {
+        "method": "GET",
+        "path": "/actuator/health",
+        "auth": "none",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/vnd.spring-boot.actuator.v3+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "groups": [
+              "liveness",
+              "readiness"
+            ],
+            "status": "UP"
+          }
+        }
+      },
+      "route": "GET /actuator/health"
+    },
+    {
+      "name": "health-readiness",
+      "request": {
+        "method": "GET",
+        "path": "/actuator/health/readiness",
+        "auth": "none",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/vnd.spring-boot.actuator.v3+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "status": "UP"
+          }
+        }
+      },
+      "route": "GET /actuator/health/readiness"
+    },
+    {
+      "name": "health-liveness",
+      "request": {
+        "method": "GET",
+        "path": "/actuator/health/liveness",
+        "auth": "none",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/vnd.spring-boot.actuator.v3+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "status": "UP"
+          }
+        }
+      },
+      "route": "GET /actuator/health/liveness"
+    },
+    {
+      "name": "health-readiness-head",
+      "request": {
+        "method": "HEAD",
+        "path": "/actuator/health/readiness",
+        "auth": "none",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/vnd.spring-boot.actuator.v3+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "route": null
+    },
+    {
+      "name": "health-readiness-with-token",
+      "request": {
+        "method": "GET",
+        "path": "/actuator/health/readiness",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/vnd.spring-boot.actuator.v3+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "status": "UP"
+          }
+        }
+      },
+      "route": "GET /actuator/health/readiness"
+    },
+    {
+      "name": "health-component-db",
+      "request": {
+        "method": "GET",
+        "path": "/actuator/health/db",
+        "auth": "none",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "route": null
+    },
+    {
+      "name": "health-component-canton",
+      "request": {
+        "method": "GET",
+        "path": "/actuator/health/canton",
+        "auth": "none",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "route": null
+    },
+    {
+      "name": "health-unknown-group",
+      "request": {
+        "method": "GET",
+        "path": "/actuator/health/unknown",
+        "auth": "none",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "route": null
+    },
+    {
+      "name": "actuator-root",
+      "request": {
+        "method": "GET",
+        "path": "/actuator",
+        "auth": "none",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "A valid access token is required",
+            "status": 401,
+            "title": "Unauthorized"
+          }
+        }
+      },
+      "route": null
+    },
+    {
+      "name": "actuator-root-operator",
+      "request": {
+        "method": "GET",
+        "path": "/actuator",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "This account cannot perform that operation",
+            "status": 403,
+            "title": "Forbidden"
+          }
+        }
+      },
+      "route": null
+    },
+    {
+      "name": "actuator-info",
+      "request": {
+        "method": "GET",
+        "path": "/actuator/info",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "This account cannot perform that operation",
+            "status": 403,
+            "title": "Forbidden"
+          }
+        }
+      },
+      "route": null
+    },
+    {
+      "name": "actuator-env",
+      "request": {
+        "method": "GET",
+        "path": "/actuator/env",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "This account cannot perform that operation",
+            "status": 403,
+            "title": "Forbidden"
+          }
+        }
+      },
+      "route": null
+    },
+    {
+      "name": "health-post",
+      "request": {
+        "method": "POST",
+        "path": "/actuator/health",
+        "auth": "none",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "allow": "GET",
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "A valid access token is required",
+            "status": 401,
+            "title": "Unauthorized"
+          }
+        }
+      },
+      "route": null
+    },
+    {
+      "name": "me-no-token",
+      "request": {
+        "method": "GET",
+        "path": "/v1/me",
+        "auth": "none",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "A valid access token is required",
+            "status": 401,
+            "title": "Unauthorized"
+          }
+        }
+      },
+      "route": "GET /v1/me"
+    },
+    {
+      "name": "me-invalid-token",
+      "request": {
+        "method": "GET",
+        "path": "/v1/me",
+        "auth": "invalid",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "A valid access token is required",
+            "status": 401,
+            "title": "Unauthorized"
+          }
+        }
+      },
+      "route": "GET /v1/me"
+    },
+    {
+      "name": "me-forged-token",
+      "request": {
+        "method": "GET",
+        "path": "/v1/me",
+        "auth": "forged",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "A valid access token is required",
+            "status": 401,
+            "title": "Unauthorized"
+          }
+        }
+      },
+      "route": "GET /v1/me"
+    },
+    {
+      "name": "me-basic-scheme",
+      "request": {
+        "method": "GET",
+        "path": "/v1/me",
+        "auth": "basic",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "A valid access token is required",
+            "status": 401,
+            "title": "Unauthorized"
+          }
+        }
+      },
+      "route": "GET /v1/me"
+    },
+    {
+      "name": "me-trader-first-login",
+      "request": {
+        "method": "GET",
+        "path": "/v1/me",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "accountId": "<uuid:1>",
+            "displayName": "framework-<run> Fixture",
+            "role": "TRADER",
+            "partyId": null
+          }
+        }
+      },
+      "route": "GET /v1/me"
+    },
+    {
+      "name": "me-operator",
+      "request": {
+        "method": "GET",
+        "path": "/v1/me",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "accountId": "<uuid:2>",
+            "displayName": "operator",
+            "role": "OPERATOR",
+            "partyId": null
+          }
+        }
+      },
+      "route": "GET /v1/me"
+    },
+    {
+      "name": "pools-no-token",
+      "request": {
+        "method": "GET",
+        "path": "/v1/pools",
+        "auth": "none",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "A valid access token is required",
+            "status": 401,
+            "title": "Unauthorized"
+          }
+        }
+      },
+      "route": "GET /v1/pools"
+    },
+    {
+      "name": "admin-no-token",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/onboardings",
+        "auth": "none",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "A valid access token is required",
+            "status": 401,
+            "title": "Unauthorized"
+          }
+        }
+      },
+      "route": "GET /v1/admin/onboardings"
+    },
+    {
+      "name": "admin-trader",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/onboardings",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "This account cannot perform that operation",
+            "status": 403,
+            "title": "Forbidden"
+          }
+        }
+      },
+      "route": "GET /v1/admin/onboardings"
+    },
+    {
+      "name": "trader-route-operator",
+      "request": {
+        "method": "GET",
+        "path": "/v1/balances",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "This account cannot perform that operation",
+            "status": 403,
+            "title": "Forbidden"
+          }
+        }
+      },
+      "route": "GET /v1/balances"
+    },
+    {
+      "name": "onboarding-route-operator",
+      "request": {
+        "method": "GET",
+        "path": "/v1/onboardings/mine",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "This account cannot perform that operation",
+            "status": 403,
+            "title": "Forbidden"
+          }
+        }
+      },
+      "route": "GET /v1/onboardings/mine"
+    },
+    {
+      "name": "activity-operator",
+      "request": {
+        "method": "GET",
+        "path": "/v1/activity",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "This account cannot perform that operation",
+            "status": 403,
+            "title": "Forbidden"
+          }
+        }
+      },
+      "route": "GET /v1/activity"
+    },
+    {
+      "name": "invalid-body-no-token",
+      "request": {
+        "method": "POST",
+        "path": "/v1/onboardings",
+        "auth": "none",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "text": "{"
+        }
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "A valid access token is required",
+            "status": 401,
+            "title": "Unauthorized"
+          }
+        }
+      },
+      "route": "POST /v1/onboardings"
+    },
+    {
+      "name": "invalid-body-wrong-role",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/pool-proposals",
+        "auth": "trader",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "text": "{"
+        }
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "This account cannot perform that operation",
+            "status": 403,
+            "title": "Forbidden"
+          }
+        }
+      },
+      "route": "POST /v1/admin/pool-proposals"
+    },
+    {
+      "name": "invalid-path-no-token",
+      "request": {
+        "method": "GET",
+        "path": "/v1/swaps/not-a-uuid",
+        "auth": "none",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "A valid access token is required",
+            "status": 401,
+            "title": "Unauthorized"
+          }
+        }
+      },
+      "route": "GET /v1/swaps/{swapId}"
+    },
+    {
+      "name": "invalid-path-wrong-role",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settlements/not-a-uuid",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "This account cannot perform that operation",
+            "status": 403,
+            "title": "Forbidden"
+          }
+        }
+      },
+      "route": "GET /v1/admin/settlements/{settlementId}"
+    },
+    {
+      "name": "root-no-token",
+      "request": {
+        "method": "GET",
+        "path": "/",
+        "auth": "none",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "A valid access token is required",
+            "status": 401,
+            "title": "Unauthorized"
+          }
+        }
+      },
+      "route": null
+    },
+    {
+      "name": "unknown-no-token",
+      "request": {
+        "method": "GET",
+        "path": "/v1/unknown",
+        "auth": "none",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "A valid access token is required",
+            "status": 401,
+            "title": "Unauthorized"
+          }
+        }
+      },
+      "route": null
+    },
+    {
+      "name": "unknown-trader",
+      "request": {
+        "method": "GET",
+        "path": "/v1/unknown",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "This account cannot perform that operation",
+            "status": 403,
+            "title": "Forbidden"
+          }
+        }
+      },
+      "route": null
+    },
+    {
+      "name": "unknown-under-trader-prefix",
+      "request": {
+        "method": "GET",
+        "path": "/v1/swaps/quote/extra",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "This account cannot perform that operation",
+            "status": 403,
+            "title": "Forbidden"
+          }
+        }
+      },
+      "route": null
+    },
+    {
+      "name": "unknown-under-admin-prefix",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/unknown",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "This account cannot perform that operation",
+            "status": 403,
+            "title": "Forbidden"
+          }
+        }
+      },
+      "route": null
+    },
+    {
+      "name": "documented-unimplemented-treasury",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/treasury",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "This account cannot perform that operation",
+            "status": 403,
+            "title": "Forbidden"
+          }
+        }
+      },
+      "route": null
+    },
+    {
+      "name": "documented-unimplemented-authority",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/authority",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "This account cannot perform that operation",
+            "status": 403,
+            "title": "Forbidden"
+          }
+        }
+      },
+      "route": null
+    },
+    {
+      "name": "documented-unimplemented-create-pool",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/pools",
+        "auth": "operator",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": {}
+        }
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "This account cannot perform that operation",
+            "status": 403,
+            "title": "Forbidden"
+          }
+        }
+      },
+      "route": null
+    },
+    {
+      "name": "me-trailing-slash",
+      "request": {
+        "method": "GET",
+        "path": "/v1/me/",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "This account cannot perform that operation",
+            "status": 403,
+            "title": "Forbidden"
+          }
+        }
+      },
+      "route": null
+    },
+    {
+      "name": "pools-trailing-slash",
+      "request": {
+        "method": "GET",
+        "path": "/v1/pools/",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "This account cannot perform that operation",
+            "status": 403,
+            "title": "Forbidden"
+          }
+        }
+      },
+      "route": null
+    },
+    {
+      "name": "admin-trailing-slash",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/onboardings/",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "This account cannot perform that operation",
+            "status": 403,
+            "title": "Forbidden"
+          }
+        }
+      },
+      "route": null
+    },
+    {
+      "name": "me-put",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/me",
+        "auth": "trader",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": {}
+        }
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "This account cannot perform that operation",
+            "status": 403,
+            "title": "Forbidden"
+          }
+        }
+      },
+      "route": null
+    },
+    {
+      "name": "me-delete",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/me",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "This account cannot perform that operation",
+            "status": 403,
+            "title": "Forbidden"
+          }
+        }
+      },
+      "route": null
+    },
+    {
+      "name": "me-patch",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/me",
+        "auth": "trader",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": {}
+        }
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "This account cannot perform that operation",
+            "status": 403,
+            "title": "Forbidden"
+          }
+        }
+      },
+      "route": null
+    },
+    {
+      "name": "quote-get",
+      "request": {
+        "method": "GET",
+        "path": "/v1/swaps/quote",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "GET /v1/swaps/{swapId}"
+    },
+    {
+      "name": "pools-post",
+      "request": {
+        "method": "POST",
+        "path": "/v1/pools",
+        "auth": "trader",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": {}
+        }
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "This account cannot perform that operation",
+            "status": 403,
+            "title": "Forbidden"
+          }
+        }
+      },
+      "route": null
+    },
+    {
+      "name": "admin-pools-put",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/pools",
+        "auth": "operator",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": {}
+        }
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "This account cannot perform that operation",
+            "status": 403,
+            "title": "Forbidden"
+          }
+        }
+      },
+      "route": null
+    },
+    {
+      "name": "me-head",
+      "request": {
+        "method": "HEAD",
+        "path": "/v1/me",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "route": null
+    },
+    {
+      "name": "me-options",
+      "request": {
+        "method": "OPTIONS",
+        "path": "/v1/me",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "This account cannot perform that operation",
+            "status": 403,
+            "title": "Forbidden"
+          }
+        }
+      },
+      "route": null
+    },
+    {
+      "name": "me-options-no-token",
+      "request": {
+        "method": "OPTIONS",
+        "path": "/v1/me",
+        "auth": "none",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "A valid access token is required",
+            "status": 401,
+            "title": "Unauthorized"
+          }
+        }
+      },
+      "route": null
+    },
+    {
+      "name": "cors-preflight",
+      "request": {
+        "method": "OPTIONS",
+        "path": "/v1/me",
+        "auth": "none",
+        "headers": {
+          "accept": "*/*",
+          "origin": "http://localhost:6180",
+          "access-control-request-method": "GET",
+          "access-control-request-headers": "authorization"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "A valid access token is required",
+            "status": 401,
+            "title": "Unauthorized"
+          }
+        }
+      },
+      "route": null
+    },
+    {
+      "name": "cors-simple",
+      "request": {
+        "method": "GET",
+        "path": "/v1/me",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*",
+          "origin": "http://localhost:6180"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "accountId": "<uuid:1>",
+            "displayName": "framework-<run> Fixture",
+            "role": "TRADER",
+            "partyId": null
+          }
+        }
+      },
+      "route": "GET /v1/me"
+    },
+    {
+      "name": "forwarded-headers",
+      "request": {
+        "method": "GET",
+        "path": "/v1/me",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*",
+          "x-forwarded-for": "203.0.113.7",
+          "x-forwarded-proto": "https",
+          "x-forwarded-host": "dex.example.test",
+          "x-forwarded-prefix": "/api",
+          "forwarded": "for=203.0.113.7;proto=https;host=dex.example.test"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "accountId": "<uuid:1>",
+            "displayName": "framework-<run> Fixture",
+            "role": "TRADER",
+            "partyId": null
+          }
+        }
+      },
+      "route": "GET /v1/me"
+    },
+    {
+      "name": "accept-xml",
+      "request": {
+        "method": "GET",
+        "path": "/v1/me",
+        "auth": "trader",
+        "headers": {
+          "accept": "application/xml"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "accountId": "<uuid:1>",
+            "displayName": "framework-<run> Fixture",
+            "role": "TRADER",
+            "partyId": null
+          }
+        }
+      },
+      "route": "GET /v1/me"
+    },
+    {
+      "name": "accept-problem",
+      "request": {
+        "method": "GET",
+        "path": "/v1/onboardings/00000000-0000-0000-0000-000000000000",
+        "auth": "trader",
+        "headers": {
+          "accept": "application/json, application/problem+json"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Resource not found",
+            "status": 404,
+            "title": "Not Found"
+          }
+        }
+      },
+      "route": "GET /v1/onboardings/{onboardingId}"
+    },
+    {
+      "name": "onboarding-not-uuid",
+      "request": {
+        "method": "GET",
+        "path": "/v1/onboardings/not-a-uuid",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "GET /v1/onboardings/{onboardingId}"
+    },
+    {
+      "name": "onboarding-missing",
+      "request": {
+        "method": "GET",
+        "path": "/v1/onboardings/00000000-0000-0000-0000-000000000000",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Resource not found",
+            "status": 404,
+            "title": "Not Found"
+          }
+        }
+      },
+      "route": "GET /v1/onboardings/{onboardingId}"
+    },
+    {
+      "name": "onboarding-missing-operator",
+      "request": {
+        "method": "GET",
+        "path": "/v1/onboardings/00000000-0000-0000-0000-000000000000",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "This account cannot perform that operation",
+            "status": 403,
+            "title": "Forbidden"
+          }
+        }
+      },
+      "route": "GET /v1/onboardings/{onboardingId}"
+    },
+    {
+      "name": "swap-not-uuid",
+      "request": {
+        "method": "GET",
+        "path": "/v1/swaps/not-a-uuid",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "GET /v1/swaps/{swapId}"
+    },
+    {
+      "name": "swap-missing",
+      "request": {
+        "method": "GET",
+        "path": "/v1/swaps/00000000-0000-0000-0000-000000000000",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Resource not found",
+            "status": 404,
+            "title": "Not Found"
+          }
+        }
+      },
+      "route": "GET /v1/swaps/{swapId}"
+    },
+    {
+      "name": "deposit-not-uuid",
+      "request": {
+        "method": "GET",
+        "path": "/v1/lp/deposit/not-a-uuid",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "GET /v1/lp/deposit/{depositId}"
+    },
+    {
+      "name": "deposit-missing",
+      "request": {
+        "method": "GET",
+        "path": "/v1/lp/deposit/00000000-0000-0000-0000-000000000000",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Resource not found",
+            "status": 404,
+            "title": "Not Found"
+          }
+        }
+      },
+      "route": "GET /v1/lp/deposit/{depositId}"
+    },
+    {
+      "name": "withdrawal-missing",
+      "request": {
+        "method": "GET",
+        "path": "/v1/lp/withdraw/00000000-0000-0000-0000-000000000000",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Resource not found",
+            "status": 404,
+            "title": "Not Found"
+          }
+        }
+      },
+      "route": "GET /v1/lp/withdraw/{withdrawalId}"
+    },
+    {
+      "name": "proposal-not-uuid",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/pool-proposals/not-a-uuid",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "GET /v1/admin/pool-proposals/{proposalId}"
+    },
+    {
+      "name": "proposal-missing",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/pool-proposals/00000000-0000-0000-0000-000000000000",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Resource not found",
+            "status": 404,
+            "title": "Not Found"
+          }
+        }
+      },
+      "route": "GET /v1/admin/pool-proposals/{proposalId}"
+    },
+    {
+      "name": "settlement-not-uuid",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settlements/not-a-uuid",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "GET /v1/admin/settlements/{settlementId}"
+    },
+    {
+      "name": "settlement-missing",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settlements/00000000-0000-0000-0000-000000000000",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Resource not found",
+            "status": 404,
+            "title": "Not Found"
+          }
+        }
+      },
+      "route": "GET /v1/admin/settlements/{settlementId}"
+    },
+    {
+      "name": "pool-unknown-id",
+      "request": {
+        "method": "GET",
+        "path": "/v1/pools/unknown-pool",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Resource not found",
+            "status": 404,
+            "title": "Not Found"
+          }
+        }
+      },
+      "route": "GET /v1/pools/{poolId}"
+    },
+    {
+      "name": "pool-unknown-id-trader",
+      "request": {
+        "method": "GET",
+        "path": "/v1/pools/unknown-pool",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Resource not found",
+            "status": 404,
+            "title": "Not Found"
+          }
+        }
+      },
+      "route": "GET /v1/pools/{poolId}"
+    },
+    {
+      "name": "policy-unknown-type",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/pools/<cid:1>/settlement-policy/bogus",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "GET /v1/admin/pools/{poolId}/settlement-policy/{type}"
+    },
+    {
+      "name": "policy-uppercase-type",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/pools/<cid:1>/settlement-policy/SWAP",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "GET /v1/admin/pools/{poolId}/settlement-policy/{type}"
+    },
+    {
+      "name": "policy-unknown-pool",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/pools/unknown-pool/settlement-policy/swap",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Resource not found",
+            "status": 404,
+            "title": "Not Found"
+          }
+        }
+      },
+      "route": "GET /v1/admin/pools/{poolId}/settlement-policy/{type}"
+    },
+    {
+      "name": "monitoring-unknown-pool",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/monitoring?poolId=unknown-pool",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Resource not found",
+            "status": 404,
+            "title": "Not Found"
+          }
+        }
+      },
+      "route": "GET /v1/admin/monitoring"
+    },
+    {
+      "name": "activity-default",
+      "request": {
+        "method": "GET",
+        "path": "/v1/activity",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "items": [],
+            "nextCursor": null
+          }
+        }
+      },
+      "route": "GET /v1/activity"
+    },
+    {
+      "name": "activity-all-default",
+      "request": {
+        "method": "GET",
+        "path": "/v1/activity?type=all",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "items": [],
+            "nextCursor": null
+          }
+        }
+      },
+      "route": "GET /v1/activity"
+    },
+    {
+      "name": "activity-type-bogus",
+      "request": {
+        "method": "GET",
+        "path": "/v1/activity?type=bogus",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "GET /v1/activity"
+    },
+    {
+      "name": "activity-type-uppercase",
+      "request": {
+        "method": "GET",
+        "path": "/v1/activity?type=SWAP",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "GET /v1/activity"
+    },
+    {
+      "name": "activity-limit-zero",
+      "request": {
+        "method": "GET",
+        "path": "/v1/activity?limit=0",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "GET /v1/activity"
+    },
+    {
+      "name": "activity-limit-101",
+      "request": {
+        "method": "GET",
+        "path": "/v1/activity?limit=101",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "GET /v1/activity"
+    },
+    {
+      "name": "activity-limit-100",
+      "request": {
+        "method": "GET",
+        "path": "/v1/activity?limit=100",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "items": [],
+            "nextCursor": null
+          }
+        }
+      },
+      "route": "GET /v1/activity"
+    },
+    {
+      "name": "activity-limit-text",
+      "request": {
+        "method": "GET",
+        "path": "/v1/activity?limit=abc",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "GET /v1/activity"
+    },
+    {
+      "name": "activity-limit-fraction",
+      "request": {
+        "method": "GET",
+        "path": "/v1/activity?limit=1.5",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "GET /v1/activity"
+    },
+    {
+      "name": "activity-cursor-bad",
+      "request": {
+        "method": "GET",
+        "path": "/v1/activity?cursor=bad",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "GET /v1/activity"
+    },
+    {
+      "name": "activity-all-cursor-bad",
+      "request": {
+        "method": "GET",
+        "path": "/v1/activity?type=all&cursor=bad",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "GET /v1/activity"
+    },
+    {
+      "name": "activity-all-cursor-unknown",
+      "request": {
+        "method": "GET",
+        "path": "/v1/activity?type=all&cursor=swap:00000000-0000-0000-0000-000000000000",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Resource not found",
+            "status": 404,
+            "title": "Not Found"
+          }
+        }
+      },
+      "route": "GET /v1/activity"
+    },
+    {
+      "name": "activity-status-bogus",
+      "request": {
+        "method": "GET",
+        "path": "/v1/activity?status=bogus",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "GET /v1/activity"
+    },
+    {
+      "name": "activity-all-status-bogus",
+      "request": {
+        "method": "GET",
+        "path": "/v1/activity?type=all&status=bogus",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "GET /v1/activity"
+    },
+    {
+      "name": "activity-deposit-status-settled",
+      "request": {
+        "method": "GET",
+        "path": "/v1/activity?type=deposit&status=SETTLED",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "items": [],
+            "nextCursor": null
+          }
+        }
+      },
+      "route": "GET /v1/activity"
+    },
+    {
+      "name": "activity-duplicate-limit",
+      "request": {
+        "method": "GET",
+        "path": "/v1/activity?limit=5&limit=6",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "items": [],
+            "nextCursor": null
+          }
+        }
+      },
+      "route": "GET /v1/activity"
+    },
+    {
+      "name": "queue-no-pool",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settlement-requests",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "GET /v1/admin/settlement-requests"
+    },
+    {
+      "name": "queue-blank-pool",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settlement-requests?poolId=",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "GET /v1/admin/settlement-requests"
+    },
+    {
+      "name": "queue-status-bogus",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settlement-requests?poolId=<cid:1>&status=bogus",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "GET /v1/admin/settlement-requests"
+    },
+    {
+      "name": "queue-default-ready",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settlement-requests?poolId=<cid:1>",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": []
+        }
+      },
+      "route": "GET /v1/admin/settlement-requests"
+    },
+    {
+      "name": "queue-active",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settlement-requests?poolId=<cid:1>&status=active",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": []
+        }
+      },
+      "route": "GET /v1/admin/settlement-requests"
+    },
+    {
+      "name": "monitoring-no-pool",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/monitoring",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "GET /v1/admin/monitoring"
+    },
+    {
+      "name": "settlements-list-all",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settlements",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": []
+        }
+      },
+      "route": "GET /v1/admin/settlements"
+    },
+    {
+      "name": "settlements-list-pool",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settlements?poolId=<cid:1>",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": []
+        }
+      },
+      "route": "GET /v1/admin/settlements"
+    },
+    {
+      "name": "preview-no-type",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/pools/<cid:1>/settlement-preview",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "GET /v1/admin/pools/{poolId}/settlement-preview"
+    },
+    {
+      "name": "preview-bogus-type",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/pools/<cid:1>/settlement-preview?type=bogus",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "GET /v1/admin/pools/{poolId}/settlement-preview"
+    },
+    {
+      "name": "preview-empty-swap",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/pools/<cid:1>/settlement-preview?type=swap",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "selection": {
+              "type": "swap",
+              "retryOf": null,
+              "stateVersion": "<cid:2>:<cid:3>",
+              "policyVersion": 0,
+              "requests": []
+            },
+            "pool": {
+              "poolId": "<cid:1>",
+              "version": "<cid:2>:<cid:3>",
+              "reserves": {
+                "stateId": "<cid:2>",
+                "baseReserve": "5",
+                "quoteReserve": "300000",
+                "spotPrice": "60000",
+                "invariant": "1500000"
+              },
+              "feeBps": "30",
+              "health": "READY",
+              "reason": null,
+              "observedAt": "<instant>",
+              "ledgerOffset": 103,
+              "lpTokenSupply": "1224.7448713915",
+              "initialRatio": "60000"
+            },
+            "steps": [],
+            "activeSettlementId": null,
+            "executable": false
+          }
+        }
+      },
+      "route": "GET /v1/admin/pools/{poolId}/settlement-preview"
+    },
+    {
+      "name": "preview-empty-deposit",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/pools/<cid:1>/settlement-preview?type=deposit",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "selection": {
+              "type": "deposit",
+              "retryOf": null,
+              "stateVersion": "<cid:2>:<cid:3>",
+              "policyVersion": 0,
+              "requests": []
+            },
+            "pool": {
+              "poolId": "<cid:1>",
+              "version": "<cid:2>:<cid:3>",
+              "reserves": {
+                "stateId": "<cid:2>",
+                "baseReserve": "5",
+                "quoteReserve": "300000",
+                "spotPrice": "60000",
+                "invariant": "1500000"
+              },
+              "feeBps": "30",
+              "health": "READY",
+              "reason": null,
+              "observedAt": "<instant>",
+              "ledgerOffset": 103,
+              "lpTokenSupply": "1224.7448713915",
+              "initialRatio": "60000"
+            },
+            "steps": [],
+            "activeSettlementId": null,
+            "executable": false
+          }
+        }
+      },
+      "route": "GET /v1/admin/pools/{poolId}/settlement-preview"
+    },
+    {
+      "name": "preview-empty-withdraw",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/pools/<cid:1>/settlement-preview?type=withdraw",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "selection": {
+              "type": "withdraw",
+              "retryOf": null,
+              "stateVersion": "<cid:2>:<cid:3>",
+              "policyVersion": 0,
+              "requests": []
+            },
+            "pool": {
+              "poolId": "<cid:1>",
+              "version": "<cid:2>:<cid:3>",
+              "reserves": {
+                "stateId": "<cid:2>",
+                "baseReserve": "5",
+                "quoteReserve": "300000",
+                "spotPrice": "60000",
+                "invariant": "1500000"
+              },
+              "feeBps": "30",
+              "health": "READY",
+              "reason": null,
+              "observedAt": "<instant>",
+              "ledgerOffset": 103,
+              "lpTokenSupply": "1224.7448713915",
+              "initialRatio": "60000"
+            },
+            "steps": [],
+            "activeSettlementId": null,
+            "executable": false
+          }
+        }
+      },
+      "route": "GET /v1/admin/pools/{poolId}/settlement-preview"
+    },
+    {
+      "name": "preview-retry-and-request",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/pools/<cid:1>/settlement-preview?type=swap&retryOf=00000000-0000-0000-0000-000000000000&requestId=00000000-0000-0000-0000-000000000000",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "GET /v1/admin/pools/{poolId}/settlement-preview"
+    },
+    {
+      "name": "preview-bad-request-id",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/pools/<cid:1>/settlement-preview?type=swap&requestId=bad",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "GET /v1/admin/pools/{poolId}/settlement-preview"
+    },
+    {
+      "name": "preview-unknown-request",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/pools/<cid:1>/settlement-preview?type=swap&requestId=00000000-0000-0000-0000-000000000000",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 409,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Request is no longer eligible. Refresh the preview.",
+            "status": 409,
+            "title": "Conflict",
+            "code": "QUEUE_CHANGED"
+          }
+        }
+      },
+      "route": "GET /v1/admin/pools/{poolId}/settlement-preview"
+    },
+    {
+      "name": "preview-unknown-retry",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/pools/<cid:1>/settlement-preview?type=swap&retryOf=00000000-0000-0000-0000-000000000000",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Resource not found",
+            "status": 404,
+            "title": "Not Found"
+          }
+        }
+      },
+      "route": "GET /v1/admin/pools/{poolId}/settlement-preview"
+    },
+    {
+      "name": "history-default",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/pools/<cid:1>/settlement-history",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "items": [],
+            "nextCursor": null
+          }
+        }
+      },
+      "route": "GET /v1/admin/pools/{poolId}/settlement-history"
+    },
+    {
+      "name": "history-limit-text",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/pools/<cid:1>/settlement-history?limit=abc",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "GET /v1/admin/pools/{poolId}/settlement-history"
+    },
+    {
+      "name": "history-limit-zero",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/pools/<cid:1>/settlement-history?limit=0",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "GET /v1/admin/pools/{poolId}/settlement-history"
+    },
+    {
+      "name": "history-status-bogus",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/pools/<cid:1>/settlement-history?status=bogus",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "GET /v1/admin/pools/{poolId}/settlement-history"
+    },
+    {
+      "name": "history-type-bogus",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/pools/<cid:1>/settlement-history?type=bogus",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "GET /v1/admin/pools/{poolId}/settlement-history"
+    },
+    {
+      "name": "history-before-bad",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/pools/<cid:1>/settlement-history?before=bad",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "GET /v1/admin/pools/{poolId}/settlement-history"
+    },
+    {
+      "name": "deferred-unknown-request",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/pools/<cid:1>/settlement-requests/swap/00000000-0000-0000-0000-000000000000/deferred",
+        "auth": "operator",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": {
+            "deferred": true
+          }
+        }
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Resource not found",
+            "status": 404,
+            "title": "Not Found"
+          }
+        }
+      },
+      "route": "PUT /v1/admin/pools/{poolId}/settlement-requests/{type}/{requestId}/deferred"
+    },
+    {
+      "name": "deferred-bad-type",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/pools/<cid:1>/settlement-requests/bogus/00000000-0000-0000-0000-000000000000/deferred",
+        "auth": "operator",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": {
+            "deferred": true
+          }
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "PUT /v1/admin/pools/{poolId}/settlement-requests/{type}/{requestId}/deferred"
+    },
+    {
+      "name": "deferred-missing-body",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/pools/<cid:1>/settlement-requests/swap/00000000-0000-0000-0000-000000000000/deferred",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 500,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "The request could not be completed",
+            "status": 500,
+            "title": "Internal Server Error"
+          }
+        }
+      },
+      "route": "PUT /v1/admin/pools/{poolId}/settlement-requests/{type}/{requestId}/deferred"
+    },
+    {
+      "name": "run-empty-queue",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/pools/<cid:1>/settlements",
+        "auth": "operator",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": {
+            "idempotencyKey": "<uuid:3>"
+          }
+        }
+      },
+      "response": {
+        "status": 409,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "There is no eligible FIFO prefix to settle",
+            "status": 409,
+            "title": "Conflict",
+            "code": "QUEUE_NOT_READY"
+          }
+        }
+      },
+      "route": "POST /v1/admin/pools/{poolId}/settlements"
+    },
+    {
+      "name": "run-missing-key",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/pools/<cid:1>/settlements",
+        "auth": "operator",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": {}
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "POST /v1/admin/pools/{poolId}/settlements"
+    },
+    {
+      "name": "run-unknown-pool",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/pools/unknown-pool/settlements",
+        "auth": "operator",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": {
+            "idempotencyKey": "<uuid:4>"
+          }
+        }
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Resource not found",
+            "status": 404,
+            "title": "Not Found"
+          }
+        }
+      },
+      "route": "POST /v1/admin/pools/{poolId}/settlements"
+    },
+    {
+      "name": "policy-put-stale",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/pools/<cid:1>/settlement-policy/deposit",
+        "auth": "operator",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": {
+            "automaticEnabled": false,
+            "batchSize": 1,
+            "expectedVersion": 999
+          }
+        }
+      },
+      "response": {
+        "status": 409,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "The settlement policy changed. Refresh it before saving.",
+            "status": 409,
+            "title": "Conflict",
+            "code": "POLICY_CHANGED"
+          }
+        }
+      },
+      "route": "PUT /v1/admin/pools/{poolId}/settlement-policy/{type}"
+    },
+    {
+      "name": "policy-put-zero-batch",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/pools/<cid:1>/settlement-policy/deposit",
+        "auth": "operator",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": {
+            "automaticEnabled": false,
+            "batchSize": 0,
+            "expectedVersion": 0
+          }
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "PUT /v1/admin/pools/{poolId}/settlement-policy/{type}"
+    },
+    {
+      "name": "policy-put-fractional-batch",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/pools/<cid:1>/settlement-policy/deposit",
+        "auth": "operator",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": {
+            "automaticEnabled": false,
+            "batchSize": 1.5,
+            "expectedVersion": 0
+          }
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "PUT /v1/admin/pools/{poolId}/settlement-policy/{type}"
+    },
+    {
+      "name": "policy-put-missing-fields",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/pools/<cid:1>/settlement-policy/deposit",
+        "auth": "operator",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": {}
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "PUT /v1/admin/pools/{poolId}/settlement-policy/{type}"
+    },
+    {
+      "name": "onboarding-missing-body",
+      "request": {
+        "method": "POST",
+        "path": "/v1/onboardings",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 500,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "The request could not be completed",
+            "status": 500,
+            "title": "Internal Server Error"
+          }
+        }
+      },
+      "route": "POST /v1/onboardings"
+    },
+    {
+      "name": "onboarding-malformed-json",
+      "request": {
+        "method": "POST",
+        "path": "/v1/onboardings",
+        "auth": "trader",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "text": "{\"legalName\":"
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "POST /v1/onboardings"
+    },
+    {
+      "name": "onboarding-json-array",
+      "request": {
+        "method": "POST",
+        "path": "/v1/onboardings",
+        "auth": "trader",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": []
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "POST /v1/onboardings"
+    },
+    {
+      "name": "onboarding-json-null",
+      "request": {
+        "method": "POST",
+        "path": "/v1/onboardings",
+        "auth": "trader",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": null
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "POST /v1/onboardings"
+    },
+    {
+      "name": "onboarding-text-plain",
+      "request": {
+        "method": "POST",
+        "path": "/v1/onboardings",
+        "auth": "trader",
+        "headers": {
+          "content-type": "text/plain",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": {
+            "legalName": "Probe Trader",
+            "countryCode": "AR",
+            "documents": [
+              {
+                "id": "<uuid:5>",
+                "category": "IDENTITY",
+                "fileName": "probe.pdf",
+                "mediaType": "application/pdf",
+                "sizeBytes": 1234,
+                "simulated": true
+              }
+            ]
+          }
+        }
+      },
+      "response": {
+        "status": 500,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "The request could not be completed",
+            "status": 500,
+            "title": "Internal Server Error"
+          }
+        }
+      },
+      "route": "POST /v1/onboardings"
+    },
+    {
+      "name": "onboarding-form-urlencoded",
+      "request": {
+        "method": "POST",
+        "path": "/v1/onboardings",
+        "auth": "trader",
+        "headers": {
+          "content-type": "application/x-www-form-urlencoded",
+          "accept": "*/*"
+        },
+        "body": {
+          "text": "legalName=x"
+        }
+      },
+      "response": {
+        "status": 500,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "The request could not be completed",
+            "status": 500,
+            "title": "Internal Server Error"
+          }
+        }
+      },
+      "route": "POST /v1/onboardings"
+    },
+    {
+      "name": "onboarding-no-content-type",
+      "request": {
+        "method": "POST",
+        "path": "/v1/onboardings",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "json": {
+            "legalName": "Probe Trader",
+            "countryCode": "AR",
+            "documents": [
+              {
+                "id": "<uuid:5>",
+                "category": "IDENTITY",
+                "fileName": "probe.pdf",
+                "mediaType": "application/pdf",
+                "sizeBytes": 1234,
+                "simulated": true
+              }
+            ]
+          }
+        }
+      },
+      "response": {
+        "status": 500,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "The request could not be completed",
+            "status": 500,
+            "title": "Internal Server Error"
+          }
+        }
+      },
+      "route": "POST /v1/onboardings"
+    },
+    {
+      "name": "onboarding-json-charset",
+      "request": {
+        "method": "POST",
+        "path": "/v1/onboardings",
+        "auth": "other",
+        "headers": {
+          "content-type": "application/json; charset=utf-8",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": {
+            "legalName": "Probe Trader",
+            "countryCode": "AR",
+            "documents": [
+              {
+                "id": "<uuid:6>",
+                "category": "IDENTITY",
+                "fileName": "probe.pdf",
+                "mediaType": "application/pdf",
+                "sizeBytes": 1234,
+                "simulated": true
+              }
+            ]
+          }
+        }
+      },
+      "response": {
+        "status": 201,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/json",
+          "expires": "0",
+          "location": "/v1/onboardings/<uuid:7>",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "id": "<uuid:7>",
+            "accountId": "<uuid:8>",
+            "application": {
+              "legalName": "Probe Trader",
+              "countryCode": "AR",
+              "documentReferences": [],
+              "documents": [
+                {
+                  "id": "<uuid:6>",
+                  "category": "IDENTITY",
+                  "fileName": "probe.pdf",
+                  "mediaType": "application/pdf",
+                  "sizeBytes": 1234,
+                  "simulated": true
+                }
+              ]
+            },
+            "status": "AWAITING_REVIEW_AND_PARTY",
+            "partyMode": "external",
+            "createdAt": "<instant>",
+            "review": null,
+            "party": null,
+            "ledgerSteps": [],
+            "suggestedPartyHint": "dex_probe_trader"
+          }
+        }
+      },
+      "route": "POST /v1/onboardings"
+    },
+    {
+      "name": "onboarding-oversized-body",
+      "request": {
+        "method": "POST",
+        "path": "/v1/onboardings",
+        "auth": "trader",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "omitted": {
+            "characters": 3145932,
+            "sha256": "e725c71b7e21361a589ce7c80995bd706a6aa985ca5dbdcc309b61d000e4bc03"
+          }
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "POST /v1/onboardings"
+    },
+    {
+      "name": "onboarding-blank-name",
+      "request": {
+        "method": "POST",
+        "path": "/v1/onboardings",
+        "auth": "trader",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": {
+            "legalName": "",
+            "countryCode": "AR",
+            "documents": [
+              {
+                "id": "<uuid:5>",
+                "category": "IDENTITY",
+                "fileName": "probe.pdf",
+                "mediaType": "application/pdf",
+                "sizeBytes": 1234,
+                "simulated": true
+              }
+            ]
+          }
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "POST /v1/onboardings"
+    },
+    {
+      "name": "onboarding-null-name",
+      "request": {
+        "method": "POST",
+        "path": "/v1/onboardings",
+        "auth": "trader",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": {
+            "legalName": null,
+            "countryCode": "AR",
+            "documents": [
+              {
+                "id": "<uuid:5>",
+                "category": "IDENTITY",
+                "fileName": "probe.pdf",
+                "mediaType": "application/pdf",
+                "sizeBytes": 1234,
+                "simulated": true
+              }
+            ]
+          }
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "POST /v1/onboardings"
+    },
+    {
+      "name": "onboarding-bad-country",
+      "request": {
+        "method": "POST",
+        "path": "/v1/onboardings",
+        "auth": "trader",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": {
+            "legalName": "Probe Trader",
+            "countryCode": "Argentina",
+            "documents": [
+              {
+                "id": "<uuid:5>",
+                "category": "IDENTITY",
+                "fileName": "probe.pdf",
+                "mediaType": "application/pdf",
+                "sizeBytes": 1234,
+                "simulated": true
+              }
+            ]
+          }
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "POST /v1/onboardings"
+    },
+    {
+      "name": "onboarding-bad-category",
+      "request": {
+        "method": "POST",
+        "path": "/v1/onboardings",
+        "auth": "trader",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": {
+            "legalName": "Probe Trader",
+            "countryCode": "AR",
+            "documents": [
+              {
+                "id": "<uuid:5>",
+                "category": "PASSPORT",
+                "fileName": "probe.pdf",
+                "mediaType": "application/pdf",
+                "sizeBytes": 1234,
+                "simulated": true
+              }
+            ]
+          }
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "POST /v1/onboardings"
+    },
+    {
+      "name": "onboarding-string-size",
+      "request": {
+        "method": "POST",
+        "path": "/v1/onboardings",
+        "auth": "coerced",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": {
+            "legalName": "Probe Trader",
+            "countryCode": "AR",
+            "documents": [
+              {
+                "id": "<uuid:9>",
+                "category": "IDENTITY",
+                "fileName": "probe.pdf",
+                "mediaType": "application/pdf",
+                "sizeBytes": "1234",
+                "simulated": true
+              }
+            ]
+          }
+        }
+      },
+      "response": {
+        "status": 201,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/json",
+          "expires": "0",
+          "location": "/v1/onboardings/<uuid:10>",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "id": "<uuid:10>",
+            "accountId": "<uuid:11>",
+            "application": {
+              "legalName": "Probe Trader",
+              "countryCode": "AR",
+              "documentReferences": [],
+              "documents": [
+                {
+                  "id": "<uuid:9>",
+                  "category": "IDENTITY",
+                  "fileName": "probe.pdf",
+                  "mediaType": "application/pdf",
+                  "sizeBytes": 1234,
+                  "simulated": true
+                }
+              ]
+            },
+            "status": "AWAITING_REVIEW_AND_PARTY",
+            "partyMode": "external",
+            "createdAt": "<instant>",
+            "review": null,
+            "party": null,
+            "ledgerSteps": [],
+            "suggestedPartyHint": "dex_probe_trader"
+          }
+        }
+      },
+      "route": "POST /v1/onboardings"
+    },
+    {
+      "name": "onboarding-unknown-field",
+      "request": {
+        "method": "POST",
+        "path": "/v1/onboardings",
+        "auth": "extra",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": {
+            "legalName": "Probe Trader",
+            "countryCode": "AR",
+            "documents": [
+              {
+                "id": "<uuid:12>",
+                "category": "IDENTITY",
+                "fileName": "probe.pdf",
+                "mediaType": "application/pdf",
+                "sizeBytes": 1234,
+                "simulated": true
+              }
+            ],
+            "unknownField": "ignored?"
+          }
+        }
+      },
+      "response": {
+        "status": 201,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/json",
+          "expires": "0",
+          "location": "/v1/onboardings/<uuid:13>",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "id": "<uuid:13>",
+            "accountId": "<uuid:14>",
+            "application": {
+              "legalName": "Probe Trader",
+              "countryCode": "AR",
+              "documentReferences": [],
+              "documents": [
+                {
+                  "id": "<uuid:12>",
+                  "category": "IDENTITY",
+                  "fileName": "probe.pdf",
+                  "mediaType": "application/pdf",
+                  "sizeBytes": 1234,
+                  "simulated": true
+                }
+              ]
+            },
+            "status": "AWAITING_REVIEW_AND_PARTY",
+            "partyMode": "external",
+            "createdAt": "<instant>",
+            "review": null,
+            "party": null,
+            "ledgerSteps": [],
+            "suggestedPartyHint": "dex_probe_trader"
+          }
+        }
+      },
+      "route": "POST /v1/onboardings"
+    },
+    {
+      "name": "onboarding-mine-after-create",
+      "request": {
+        "method": "GET",
+        "path": "/v1/onboardings/mine",
+        "auth": "extra",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "id": "<uuid:13>",
+            "accountId": "<uuid:14>",
+            "application": {
+              "legalName": "Probe Trader",
+              "countryCode": "AR",
+              "documentReferences": [],
+              "documents": [
+                {
+                  "id": "<uuid:12>",
+                  "category": "IDENTITY",
+                  "fileName": "probe.pdf",
+                  "mediaType": "application/pdf",
+                  "sizeBytes": 1234,
+                  "simulated": true
+                }
+              ]
+            },
+            "status": "AWAITING_REVIEW_AND_PARTY",
+            "partyMode": "external",
+            "createdAt": "<instant>",
+            "review": null,
+            "party": null,
+            "ledgerSteps": [],
+            "suggestedPartyHint": "dex_probe_trader"
+          }
+        }
+      },
+      "route": "GET /v1/onboardings/mine"
+    },
+    {
+      "name": "onboarding-mine-none",
+      "request": {
+        "method": "GET",
+        "path": "/v1/onboardings/mine",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": null
+        }
+      },
+      "route": "GET /v1/onboardings/mine"
+    },
+    {
+      "name": "onboarding-foreign",
+      "request": {
+        "method": "GET",
+        "path": "/v1/onboardings/<uuid:13>",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Resource not found",
+            "status": 404,
+            "title": "Not Found"
+          }
+        }
+      },
+      "route": "GET /v1/onboardings/{onboardingId}"
+    },
+    {
+      "name": "onboarding-own-by-id",
+      "request": {
+        "method": "GET",
+        "path": "/v1/onboardings/<uuid:13>",
+        "auth": "extra",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "id": "<uuid:13>",
+            "accountId": "<uuid:14>",
+            "application": {
+              "legalName": "Probe Trader",
+              "countryCode": "AR",
+              "documentReferences": [],
+              "documents": [
+                {
+                  "id": "<uuid:12>",
+                  "category": "IDENTITY",
+                  "fileName": "probe.pdf",
+                  "mediaType": "application/pdf",
+                  "sizeBytes": 1234,
+                  "simulated": true
+                }
+              ]
+            },
+            "status": "AWAITING_REVIEW_AND_PARTY",
+            "partyMode": "external",
+            "createdAt": "<instant>",
+            "review": null,
+            "party": null,
+            "ledgerSteps": [],
+            "suggestedPartyHint": "dex_probe_trader"
+          }
+        }
+      },
+      "route": "GET /v1/onboardings/{onboardingId}"
+    },
+    {
+      "name": "onboarding-by-id-operator",
+      "request": {
+        "method": "GET",
+        "path": "/v1/onboardings/<uuid:13>",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "This account cannot perform that operation",
+            "status": 403,
+            "title": "Forbidden"
+          }
+        }
+      },
+      "route": "GET /v1/onboardings/{onboardingId}"
+    },
+    {
+      "name": "review-not-uuid",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/onboardings/not-a-uuid/review",
+        "auth": "operator",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": {
+            "decision": "REJECTED",
+            "approvedPoolIds": []
+          }
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "POST /v1/admin/onboardings/{onboardingId}/review"
+    },
+    {
+      "name": "review-missing",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/onboardings/00000000-0000-0000-0000-000000000000/review",
+        "auth": "operator",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": {
+            "decision": "REJECTED",
+            "approvedPoolIds": []
+          }
+        }
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Resource not found",
+            "status": 404,
+            "title": "Not Found"
+          }
+        }
+      },
+      "route": "POST /v1/admin/onboardings/{onboardingId}/review"
+    },
+    {
+      "name": "review-bad-decision",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/onboardings/<uuid:13>/review",
+        "auth": "operator",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": {
+            "decision": "MAYBE",
+            "approvedPoolIds": []
+          }
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "POST /v1/admin/onboardings/{onboardingId}/review"
+    },
+    {
+      "name": "review-lowercase-decision",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/onboardings/<uuid:13>/review",
+        "auth": "operator",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": {
+            "decision": "rejected",
+            "approvedPoolIds": []
+          }
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "POST /v1/admin/onboardings/{onboardingId}/review"
+    },
+    {
+      "name": "review-approve-no-pools",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/onboardings/<uuid:13>/review",
+        "auth": "operator",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": {
+            "decision": "APPROVED",
+            "approvedPoolIds": [],
+            "partyHint": "dex_probe"
+          }
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "POST /v1/admin/onboardings/{onboardingId}/review"
+    },
+    {
+      "name": "review-approve-no-hint",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/onboardings/<uuid:13>/review",
+        "auth": "operator",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": {
+            "decision": "APPROVED",
+            "approvedPoolIds": [
+              "<cid:1>"
+            ]
+          }
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "POST /v1/admin/onboardings/{onboardingId}/review"
+    },
+    {
+      "name": "review-reject-with-pools",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/onboardings/<uuid:13>/review",
+        "auth": "operator",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": {
+            "decision": "REJECTED",
+            "approvedPoolIds": [
+              "<cid:1>"
+            ]
+          }
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "POST /v1/admin/onboardings/{onboardingId}/review"
+    },
+    {
+      "name": "prepare-before-review",
+      "request": {
+        "method": "POST",
+        "path": "/v1/onboardings/<uuid:13>/party/prepare",
+        "auth": "extra",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": {
+            "publicKey": "<base64:44B>"
+          }
+        }
+      },
+      "response": {
+        "status": 409,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Approval is required before external party registration",
+            "status": 409,
+            "title": "Conflict"
+          }
+        }
+      },
+      "route": "POST /v1/onboardings/{onboardingId}/party/prepare"
+    },
+    {
+      "name": "prepare-bad-key",
+      "request": {
+        "method": "POST",
+        "path": "/v1/onboardings/<uuid:13>/party/prepare",
+        "auth": "extra",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": {
+            "publicKey": "not-base64!"
+          }
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "POST /v1/onboardings/{onboardingId}/party/prepare"
+    },
+    {
+      "name": "submit-missing-fields",
+      "request": {
+        "method": "POST",
+        "path": "/v1/onboardings/<uuid:13>/party/submit",
+        "auth": "extra",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": {}
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "POST /v1/onboardings/{onboardingId}/party/submit"
+    },
+    {
+      "name": "admin-onboardings-list",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/onboardings",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": [
+            {
+              "id": "<uuid:7>",
+              "accountId": "<uuid:8>",
+              "application": {
+                "legalName": "Probe Trader",
+                "countryCode": "AR",
+                "documentReferences": [],
+                "documents": [
+                  {
+                    "id": "<uuid:6>",
+                    "category": "IDENTITY",
+                    "fileName": "probe.pdf",
+                    "mediaType": "application/pdf",
+                    "sizeBytes": 1234,
+                    "simulated": true
+                  }
+                ]
+              },
+              "status": "AWAITING_REVIEW_AND_PARTY",
+              "partyMode": "external",
+              "createdAt": "<instant>",
+              "review": null,
+              "party": null,
+              "ledgerSteps": [],
+              "suggestedPartyHint": "dex_probe_trader"
+            },
+            {
+              "id": "<uuid:10>",
+              "accountId": "<uuid:11>",
+              "application": {
+                "legalName": "Probe Trader",
+                "countryCode": "AR",
+                "documentReferences": [],
+                "documents": [
+                  {
+                    "id": "<uuid:9>",
+                    "category": "IDENTITY",
+                    "fileName": "probe.pdf",
+                    "mediaType": "application/pdf",
+                    "sizeBytes": 1234,
+                    "simulated": true
+                  }
+                ]
+              },
+              "status": "AWAITING_REVIEW_AND_PARTY",
+              "partyMode": "external",
+              "createdAt": "<instant>",
+              "review": null,
+              "party": null,
+              "ledgerSteps": [],
+              "suggestedPartyHint": "dex_probe_trader"
+            },
+            {
+              "id": "<uuid:13>",
+              "accountId": "<uuid:14>",
+              "application": {
+                "legalName": "Probe Trader",
+                "countryCode": "AR",
+                "documentReferences": [],
+                "documents": [
+                  {
+                    "id": "<uuid:12>",
+                    "category": "IDENTITY",
+                    "fileName": "probe.pdf",
+                    "mediaType": "application/pdf",
+                    "sizeBytes": 1234,
+                    "simulated": true
+                  }
+                ]
+              },
+              "status": "AWAITING_REVIEW_AND_PARTY",
+              "partyMode": "external",
+              "createdAt": "<instant>",
+              "review": null,
+              "party": null,
+              "ledgerSteps": [],
+              "suggestedPartyHint": "dex_probe_trader"
+            }
+          ]
+        }
+      },
+      "route": "GET /v1/admin/onboardings"
+    },
+    {
+      "name": "swap-quote-not-onboarded",
+      "request": {
+        "method": "POST",
+        "path": "/v1/swaps/quote",
+        "auth": "trader",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": {
+            "poolId": "<cid:1>",
+            "direction": "QuoteToBase",
+            "amountIn": "1",
+            "slippageBps": 100
+          }
+        }
+      },
+      "response": {
+        "status": 409,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Complete onboarding before using test tokens",
+            "status": 409,
+            "title": "Conflict"
+          }
+        }
+      },
+      "route": "POST /v1/swaps/quote"
+    },
+    {
+      "name": "swap-quote-invalid-direction",
+      "request": {
+        "method": "POST",
+        "path": "/v1/swaps/quote",
+        "auth": "trader",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": {
+            "poolId": "<cid:1>",
+            "direction": "Sideways",
+            "amountIn": "1",
+            "slippageBps": 100
+          }
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "POST /v1/swaps/quote"
+    },
+    {
+      "name": "swap-quote-numeric-amount",
+      "request": {
+        "method": "POST",
+        "path": "/v1/swaps/quote",
+        "auth": "trader",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": {
+            "poolId": "<cid:1>",
+            "direction": "QuoteToBase",
+            "amountIn": 1,
+            "slippageBps": 100
+          }
+        }
+      },
+      "response": {
+        "status": 409,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Complete onboarding before using test tokens",
+            "status": 409,
+            "title": "Conflict"
+          }
+        }
+      },
+      "route": "POST /v1/swaps/quote"
+    },
+    {
+      "name": "swap-quote-missing-fields",
+      "request": {
+        "method": "POST",
+        "path": "/v1/swaps/quote",
+        "auth": "trader",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": {}
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "POST /v1/swaps/quote"
+    },
+    {
+      "name": "balances-not-onboarded",
+      "request": {
+        "method": "GET",
+        "path": "/v1/balances",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 409,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Complete onboarding before using test tokens",
+            "status": 409,
+            "title": "Conflict"
+          }
+        }
+      },
+      "route": "GET /v1/balances"
+    },
+    {
+      "name": "positions-not-onboarded",
+      "request": {
+        "method": "GET",
+        "path": "/v1/lp/positions",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 409,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Complete onboarding before using test tokens",
+            "status": 409,
+            "title": "Conflict"
+          }
+        }
+      },
+      "route": "GET /v1/lp/positions"
+    },
+    {
+      "name": "faucet-status-not-onboarded",
+      "request": {
+        "method": "GET",
+        "path": "/v1/dev/faucet",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 409,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Complete onboarding before using test tokens",
+            "status": 409,
+            "title": "Conflict"
+          }
+        }
+      },
+      "route": "GET /v1/dev/faucet"
+    },
+    {
+      "name": "faucet-prepare-not-onboarded",
+      "request": {
+        "method": "POST",
+        "path": "/v1/dev/faucet/prepare",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 409,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Complete onboarding before using test tokens",
+            "status": 409,
+            "title": "Conflict"
+          }
+        }
+      },
+      "route": "POST /v1/dev/faucet/prepare"
+    },
+    {
+      "name": "faucet-submit-missing-body",
+      "request": {
+        "method": "POST",
+        "path": "/v1/dev/faucet/submit",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 500,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "The request could not be completed",
+            "status": 500,
+            "title": "Internal Server Error"
+          }
+        }
+      },
+      "route": "POST /v1/dev/faucet/submit"
+    },
+    {
+      "name": "deposit-quote-not-onboarded",
+      "request": {
+        "method": "POST",
+        "path": "/v1/lp/deposit/quote",
+        "auth": "trader",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": {
+            "poolId": "<cid:1>",
+            "maxBaseAmount": "0.005",
+            "maxQuoteAmount": "1000",
+            "slippageBps": 100
+          }
+        }
+      },
+      "response": {
+        "status": 409,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Complete onboarding before using test tokens",
+            "status": 409,
+            "title": "Conflict"
+          }
+        }
+      },
+      "route": "POST /v1/lp/deposit/quote"
+    },
+    {
+      "name": "withdraw-quote-not-onboarded",
+      "request": {
+        "method": "POST",
+        "path": "/v1/lp/withdraw/quote",
+        "auth": "trader",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": {
+            "poolId": "<cid:1>",
+            "lpAmount": "1",
+            "slippageBps": 100
+          }
+        }
+      },
+      "response": {
+        "status": 409,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Complete onboarding before using test tokens",
+            "status": 409,
+            "title": "Conflict"
+          }
+        }
+      },
+      "route": "POST /v1/lp/withdraw/quote"
+    },
+    {
+      "name": "swap-prepare-unknown-quote",
+      "request": {
+        "method": "POST",
+        "path": "/v1/swaps/prepare",
+        "auth": "trader",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": {
+            "quoteId": "00000000-0000-0000-0000-000000000000",
+            "minOut": "1",
+            "settlementDeadline": "<instant>"
+          }
+        }
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Resource not found",
+            "status": 404,
+            "title": "Not Found"
+          }
+        }
+      },
+      "route": "POST /v1/swaps/prepare"
+    },
+    {
+      "name": "swap-submit-unknown-preparation",
+      "request": {
+        "method": "POST",
+        "path": "/v1/swaps/submit",
+        "auth": "trader",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": {
+            "preparationId": "00000000-0000-0000-0000-000000000000",
+            "signature": "<base64:64B>"
+          }
+        }
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Resource not found",
+            "status": 404,
+            "title": "Not Found"
+          }
+        }
+      },
+      "route": "POST /v1/swaps/submit"
+    },
+    {
+      "name": "swap-cancel-prepare-missing",
+      "request": {
+        "method": "POST",
+        "path": "/v1/swaps/00000000-0000-0000-0000-000000000000/cancel/prepare",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Resource not found",
+            "status": 404,
+            "title": "Not Found"
+          }
+        }
+      },
+      "route": "POST /v1/swaps/{swapId}/cancel/prepare"
+    },
+    {
+      "name": "deposit-cancel-prepare-missing",
+      "request": {
+        "method": "POST",
+        "path": "/v1/lp/deposit/00000000-0000-0000-0000-000000000000/cancel/prepare",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Resource not found",
+            "status": 404,
+            "title": "Not Found"
+          }
+        }
+      },
+      "route": "POST /v1/lp/deposit/{depositId}/cancel/prepare"
+    },
+    {
+      "name": "withdraw-cancel-prepare-missing",
+      "request": {
+        "method": "POST",
+        "path": "/v1/lp/withdraw/00000000-0000-0000-0000-000000000000/cancel/prepare",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Resource not found",
+            "status": 404,
+            "title": "Not Found"
+          }
+        }
+      },
+      "route": "POST /v1/lp/withdraw/{withdrawalId}/cancel/prepare"
+    },
+    {
+      "name": "proposal-create-invalid",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/pool-proposals",
+        "auth": "operator",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": {
+            "name": "",
+            "feeBps": "30"
+          }
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "POST /v1/admin/pool-proposals"
+    },
+    {
+      "name": "proposal-create-unregistered",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/pool-proposals",
+        "auth": "operator",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": {
+            "name": "Probe",
+            "baseInstrumentId": {
+              "admin": "nobody::1220",
+              "id": "X"
+            },
+            "quoteInstrumentId": {
+              "admin": "nobody::1220",
+              "id": "Y"
+            },
+            "feeBps": "30"
+          }
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Invalid request fields or request body",
+            "status": 400,
+            "title": "Bad Request"
+          }
+        }
+      },
+      "route": "POST /v1/admin/pool-proposals"
+    },
+    {
+      "name": "proposal-withdraw-missing",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/pool-proposals/00000000-0000-0000-0000-000000000000/withdraw",
+        "auth": "operator",
+        "headers": {
+          "content-type": "application/json",
+          "accept": "*/*"
+        },
+        "body": {
+          "json": {}
+        }
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/problem+json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "detail": "Resource not found",
+            "status": 404,
+            "title": "Not Found"
+          }
+        }
+      },
+      "route": "POST /v1/admin/pool-proposals/{proposalId}/withdraw"
+    },
+    {
+      "name": "proposal-list",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/pool-proposals",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": []
+        }
+      },
+      "route": "GET /v1/admin/pool-proposals"
+    },
+    {
+      "name": "proposal-options",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/pool-proposals/options",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "factoryId": "<cid:4>",
+            "dvo": "dex-dvo::<hash:1>",
+            "venueOperator": "dex-operator::<hash:1>",
+            "instruments": [
+              {
+                "admin": "dex-test-token-issuer-cip112::<hash:1>",
+                "id": "BTC",
+                "symbol": "BTC",
+                "decimals": 8
+              },
+              {
+                "admin": "dex-test-token-issuer-cip112::<hash:1>",
+                "id": "ETH",
+                "symbol": "ETH",
+                "decimals": 10
+              },
+              {
+                "admin": "dex-dvo::<hash:1>",
+                "id": "lp:<uuid:15>",
+                "symbol": "LP-BTC-USDC",
+                "decimals": 10
+              },
+              {
+                "admin": "dex-dvo::<hash:1>",
+                "id": "lp:<uuid:16>",
+                "symbol": "LP-ETH-USDC",
+                "decimals": 10
+              },
+              {
+                "admin": "dex-test-token-issuer-cip112::<hash:1>",
+                "id": "USDC",
+                "symbol": "USDC",
+                "decimals": 6
+              }
+            ]
+          }
+        }
+      },
+      "route": "GET /v1/admin/pool-proposals/options"
+    },
+    {
+      "name": "admin-pools-list",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/pools",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": [
+            {
+              "poolId": "<cid:1>",
+              "name": "BTC/USDC test pool",
+              "settings": {
+                "dvo": "dex-dvo::<hash:1>",
+                "baseInstrumentId": {
+                  "admin": "dex-test-token-issuer-cip112::<hash:1>",
+                  "id": "BTC"
+                },
+                "quoteInstrumentId": {
+                  "admin": "dex-test-token-issuer-cip112::<hash:1>",
+                  "id": "USDC"
+                },
+                "baseAccount": {
+                  "owner": "dex-dvo::<hash:1>",
+                  "provider": "dex-operator::<hash:1>",
+                  "id": "base:<uuid:15>"
+                },
+                "quoteAccount": {
+                  "owner": "dex-dvo::<hash:1>",
+                  "provider": "dex-operator::<hash:1>",
+                  "id": "quote:<uuid:15>"
+                },
+                "lpTokenInstrumentId": {
+                  "admin": "dex-dvo::<hash:1>",
+                  "id": "lp:<uuid:15>"
+                },
+                "feeBps": "30.0000000000",
+                "baseReserve": "5.0000000000",
+                "quoteReserve": "300000.0000000000",
+                "lpTokenSupply": "1224.7448713915",
+                "initialRatio": "60000.0000000000"
+              },
+              "configId": "<cid:3>",
+              "stateId": "<cid:2>",
+              "packageId": "38a7290bce72ede1d747ede7790a58e8c32fab1fa2db844de0b6dda13052a674",
+              "createdAt": "<instant>",
+              "updatedAt": "<instant>"
+            },
+            {
+              "poolId": "<cid:5>",
+              "name": "ETH/USDC test pool",
+              "settings": {
+                "dvo": "dex-dvo::<hash:1>",
+                "baseInstrumentId": {
+                  "admin": "dex-test-token-issuer-cip112::<hash:1>",
+                  "id": "ETH"
+                },
+                "quoteInstrumentId": {
+                  "admin": "dex-test-token-issuer-cip112::<hash:1>",
+                  "id": "USDC"
+                },
+                "baseAccount": {
+                  "owner": "dex-dvo::<hash:1>",
+                  "provider": "dex-operator::<hash:1>",
+                  "id": "base:<uuid:16>"
+                },
+                "quoteAccount": {
+                  "owner": "dex-dvo::<hash:1>",
+                  "provider": "dex-operator::<hash:1>",
+                  "id": "quote:<uuid:16>"
+                },
+                "lpTokenInstrumentId": {
+                  "admin": "dex-dvo::<hash:1>",
+                  "id": "lp:<uuid:16>"
+                },
+                "feeBps": "30.0000000000",
+                "baseReserve": "100.0000000000",
+                "quoteReserve": "300000.0000000000",
+                "lpTokenSupply": "5477.2255750516",
+                "initialRatio": "3000.0000000000"
+              },
+              "configId": "<cid:6>",
+              "stateId": "<cid:7>",
+              "packageId": "38a7290bce72ede1d747ede7790a58e8c32fab1fa2db844de0b6dda13052a674",
+              "createdAt": "<instant>",
+              "updatedAt": "<instant>"
+            }
+          ]
+        }
+      },
+      "route": "GET /v1/admin/pools"
+    },
+    {
+      "name": "pool-detail-operator",
+      "request": {
+        "method": "GET",
+        "path": "/v1/pools/<cid:1>",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "poolId": "<cid:1>",
+            "name": "BTC/USDC test pool",
+            "settings": {
+              "dvo": "dex-dvo::<hash:1>",
+              "baseInstrumentId": {
+                "admin": "dex-test-token-issuer-cip112::<hash:1>",
+                "id": "BTC"
+              },
+              "quoteInstrumentId": {
+                "admin": "dex-test-token-issuer-cip112::<hash:1>",
+                "id": "USDC"
+              },
+              "baseAccount": {
+                "owner": "dex-dvo::<hash:1>",
+                "provider": "dex-operator::<hash:1>",
+                "id": "base:<uuid:15>"
+              },
+              "quoteAccount": {
+                "owner": "dex-dvo::<hash:1>",
+                "provider": "dex-operator::<hash:1>",
+                "id": "quote:<uuid:15>"
+              },
+              "lpTokenInstrumentId": {
+                "admin": "dex-dvo::<hash:1>",
+                "id": "lp:<uuid:15>"
+              },
+              "feeBps": "30.0000000000",
+              "baseReserve": "5.0000000000",
+              "quoteReserve": "300000.0000000000",
+              "lpTokenSupply": "1224.7448713915",
+              "initialRatio": "60000.0000000000"
+            },
+            "configId": "<cid:3>",
+            "stateId": "<cid:2>",
+            "packageId": "38a7290bce72ede1d747ede7790a58e8c32fab1fa2db844de0b6dda13052a674",
+            "createdAt": "<instant>",
+            "updatedAt": "<instant>"
+          }
+        }
+      },
+      "route": "GET /v1/pools/{poolId}"
+    },
+    {
+      "name": "pool-detail-trader",
+      "request": {
+        "method": "GET",
+        "path": "/v1/pools/<cid:1>",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": {
+            "poolId": "<cid:1>",
+            "name": "BTC/USDC test pool",
+            "settings": {
+              "dvo": "dex-dvo::<hash:1>",
+              "baseInstrumentId": {
+                "admin": "dex-test-token-issuer-cip112::<hash:1>",
+                "id": "BTC"
+              },
+              "quoteInstrumentId": {
+                "admin": "dex-test-token-issuer-cip112::<hash:1>",
+                "id": "USDC"
+              },
+              "baseAccount": {
+                "owner": "dex-dvo::<hash:1>",
+                "provider": "dex-operator::<hash:1>",
+                "id": "base:<uuid:15>"
+              },
+              "quoteAccount": {
+                "owner": "dex-dvo::<hash:1>",
+                "provider": "dex-operator::<hash:1>",
+                "id": "quote:<uuid:15>"
+              },
+              "lpTokenInstrumentId": {
+                "admin": "dex-dvo::<hash:1>",
+                "id": "lp:<uuid:15>"
+              },
+              "feeBps": "30.0000000000",
+              "baseReserve": "5.0000000000",
+              "quoteReserve": "300000.0000000000",
+              "lpTokenSupply": "1224.7448713915",
+              "initialRatio": "60000.0000000000"
+            },
+            "configId": "<cid:3>",
+            "stateId": "<cid:2>",
+            "packageId": "38a7290bce72ede1d747ede7790a58e8c32fab1fa2db844de0b6dda13052a674",
+            "createdAt": "<instant>",
+            "updatedAt": "<instant>"
+          }
+        }
+      },
+      "route": "GET /v1/pools/{poolId}"
+    },
+    {
+      "name": "pools-trader",
+      "request": {
+        "method": "GET",
+        "path": "/v1/pools",
+        "auth": "trader",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": [
+            {
+              "poolId": "<cid:1>",
+              "name": "BTC/USDC test pool"
+            },
+            {
+              "poolId": "<cid:5>",
+              "name": "ETH/USDC test pool"
+            }
+          ]
+        }
+      },
+      "route": "GET /v1/pools"
+    },
+    {
+      "name": "pools-operator",
+      "request": {
+        "method": "GET",
+        "path": "/v1/pools",
+        "auth": "operator",
+        "headers": {
+          "accept": "*/*"
+        },
+        "body": {
+          "empty": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "content-type": "application/json",
+          "expires": "0",
+          "pragma": "no-cache",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "0"
+        },
+        "body": {
+          "json": [
+            {
+              "poolId": "<cid:1>",
+              "name": "BTC/USDC test pool"
+            },
+            {
+              "poolId": "<cid:5>",
+              "name": "ETH/USDC test pool"
+            }
+          ]
+        }
+      },
+      "route": "GET /v1/pools"
+    }
+  ]
+}

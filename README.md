@@ -76,8 +76,10 @@ Withdrawals and recovery require current pool access and KYC. The initial `0.000
 
 ## Development
 
+Each buildable layer owns its Dockerfile; `docker/` assembles the local stack. See [Docker structure](docker/README.md).
+
 | Task | Command |
 | --- | --- |
-| Rebuild the backend and refresh the frontend | `docker compose up -d --build backend && docker compose restart frontend` |
+| Rebuild the backend and refresh the frontend | `docker compose -f docker/compose.yaml up -d --build backend && docker compose -f docker/compose.yaml restart frontend` |
 | Backend integration tests (Docker stack running) | `make test-backend` |
 | Daml tests (local DPM and Java required) | `make test` |

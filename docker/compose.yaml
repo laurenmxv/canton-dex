@@ -1,8 +1,18 @@
 name: canton-dex
+
+x-backend-build: &backend-build
+  context: ../backend
+
+x-backend-runtime: &backend-runtime
+  image: canton-dex-backend:local
+  build:
+    <<: *backend-build
+    target: runtime
+
 include:
   - path:
-      - ./.deps/cn-localnet/infra/compose.yaml
-      - ./docker/participant-onboarding.yaml
+      - ../.deps/cn-localnet/infra/compose.yaml
+      - ./localnet/compose.override.yaml
 
 services:
   app-db:
@@ -20,20 +30,17 @@ services:
       retries: 30
   contract-builder:
     image: canton-dex-daml-tools:3.5.7
-    build: ./docker/tools
+    build: ../contracts
     command: [build-contracts]
     volumes:
-      - ./contracts:/contracts:ro
+      - ../contracts:/contracts:ro
       - contract-dars:/dars
   # The sole schema initializer. It also uploads the built DARs and creates the development
   # identities and fixtures, then exits; the API starts after it succeeds.
   contract-bootstrap:
-    image: canton-dex-backend:local
-    build:
-      context: ./backend
-      target: runtime
+    <<: *backend-runtime
     command: [node, dist/bootstrap/main.js]
-    env_file: [./docker/backend.env, ./docker/bootstrap.env]
+    env_file: [./env/backend.env, ./env/bootstrap.env]
     environment:
       DEX_DAR_DIRECTORY: /dars
     volumes:
@@ -43,11 +50,8 @@ services:
       application-participant: {condition: service_healthy}
       contract-builder: {condition: service_completed_successfully}
   backend:
-    image: canton-dex-backend:local
-    build:
-      context: ./backend
-      target: runtime
-    env_file: ./docker/backend.env
+    <<: *backend-runtime
+    env_file: ./env/backend.env
     environment:
       DEX_DEVELOPMENT_TOKENS_ENABLED: "true"
     ports: ['127.0.0.1:18080:8080']
@@ -65,12 +69,11 @@ services:
   frontend:
     image: canton-dex-frontend:local
     build:
-      context: .
-      dockerfile: docker/frontend.Dockerfile
+      context: ../frontend
     init: true
     volumes:
-      - ./frontend:/app/frontend
-      - ./client:/app/client
+      - ../frontend:/app/frontend
+      - ../client:/app/client
       - frontend-node-modules:/app/frontend/node_modules
       - client-node-modules:/app/client/node_modules
     environment:
@@ -96,17 +99,17 @@ services:
   backend-tests:
     image: canton-dex-backend-tests:local
     build:
-      context: ./backend
+      <<: *backend-build
       target: test
     profiles: [test]
-    env_file: [./docker/backend.env, ./docker/bootstrap.env]
+    env_file: [./env/backend.env, ./env/bootstrap.env]
     environment:
       DEX_TEST_BASE_URL: http://backend:8080
       DEX_SETTLEMENT_TEST_DATABASE_URL: postgres://dex:dex-local@app-db:5432/dex
       DEX_TOKEN_TEST_DATABASE_URL: postgres://dex:dex-local@app-db:5432/dex
       DEX_RESTART_STATE: ${DEX_RESTART_STATE:-/app/build/restart-unused}
     volumes:
-      - ./backend/build:/app/build
+      - ../backend/build:/app/build
 volumes:
   contract-dars:
   application-postgres:

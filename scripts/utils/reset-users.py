@@ -15,6 +15,7 @@ from urllib.request import Request, urlopen
 from uuid import UUID
 
 ROOT = Path(__file__).resolve().parents[2]
+BOOTSTRAP_ENV = ROOT / "docker/env/bootstrap.env"
 KEYCLOAK_URL = "http://localhost:18082"
 REALM = "Dex"
 ISSUER = f"{KEYCLOAK_URL}/realms/{REALM}"
@@ -25,23 +26,20 @@ JWT_CLOCK_SKEW_SECONDS = 60
 
 def local_credentials():
     values = {}
-    for line in (ROOT / "docker/bootstrap.env").read_text().splitlines():
+    for line in BOOTSTRAP_ENV.read_text().splitlines():
         if not line.strip() or line.lstrip().startswith("#"):
             continue
         key, value = line.split("=", 1)
         parts = shlex.split(value, comments=True)
         if len(parts) != 1:
-            raise ValueError(f"Invalid value for {key.strip()} in docker/bootstrap.env")
+            raise ValueError(f"Invalid value for {key.strip()} in {BOOTSTRAP_ENV.relative_to(ROOT)}")
         values[key.strip()] = parts[0]
     keys = ("DEX_BOOTSTRAP_KEYCLOAK_USERNAME", "DEX_BOOTSTRAP_KEYCLOAK_PASSWORD")
     return tuple(os.environ.get(key) or values[key] for key in keys)
 
 
 def compose(*arguments, stdin=None):
-    command = ["docker", "compose", "--project-name", "canton-dex", "-f", str(ROOT / "compose.yaml")]
-    override = ROOT / "compose.override.yaml"
-    if override.exists():
-        command += ["-f", str(override)]
+    command = ["docker", "compose", "--project-name", "canton-dex", "-f", str(ROOT / "docker/compose.yaml")]
     result = subprocess.run(
         command + list(arguments), cwd=ROOT, input=stdin, text=True,
         capture_output=True, timeout=180,

@@ -12,6 +12,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Build Daml tools
-        run: docker build -t dex-tools docker/tools
+        run: docker build -t dex-tools contracts
       - name: Build and test contracts
         run: docker run --rm -v "$PWD:/workspace" -w /workspace dex-tools make test

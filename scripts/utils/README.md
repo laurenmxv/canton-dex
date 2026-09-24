@@ -1,7 +1,7 @@
 # Local user reset
 
 Requires Python 3 and the running local Keycloak and application Postgres services.
-Credentials are read from `docker/bootstrap.env` or the corresponding
+Credentials are read from `docker/env/bootstrap.env` or the corresponding
 `DEX_BOOTSTRAP_KEYCLOAK_USERNAME` / `DEX_BOOTSTRAP_KEYCLOAK_PASSWORD` environment variables.
 
 Preview from the repository root:

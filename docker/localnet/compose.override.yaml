@@ -1,0 +1,26 @@
+services:
+  application-participant:
+    volumes:
+      # Include overrides resolve paths from .deps/cn-localnet/infra/compose.yaml.
+      - ../../../docker/localnet/participant-bootstrap.sc:/app/bootstrap.sc:ro
+    environment:
+      # Canton defaults to zero. This limit applies to ordinary users of this PN,
+      # across identity providers; the DEX also enforces one onboarding per account.
+      ADDITIONAL_CONFIG_DEX_ONBOARDING: >-
+        canton.participants.application.ledger-api.party-management-service.max-self-allocated-parties = 1
+      ADDITIONAL_CONFIG_DEX_TRAFFIC: >-
+        canton.remote-sequencers.dexSequencer {
+          admin-api { address = canton, port = 5009 }
+          public-api { address = canton, port = 5008 }
+        }
+  keycloak:
+    ports: ['127.0.0.1:18082:8082']
+    volumes:
+      - ../../../docker/keycloak/Dex-realm.json:/opt/keycloak/data/import/Dex-realm.json:ro
+      - ../../../docker/keycloak/canton-dex:/opt/keycloak/themes/canton-dex:ro
+      # Both of these mount a directory, never a single file. An editor or a
+      # build writes a new file and renames it over the old one, which gives
+      # the path a new inode. A file mount still points at the old one, so
+      # Keycloak answers 500 for a stylesheet that is there on the host.
+      - ../../../frontend/src/styles:/opt/keycloak/themes/canton-dex/login/resources/shared:ro
+      - ../../../frontend/src/assets:/opt/keycloak/themes/canton-dex/login/resources/img:ro

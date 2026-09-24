@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
+compose=(docker compose -f docker/compose.yaml)
 scenario="${1:-all}"
 case "$scenario" in
   schema|environment|iam|onboarding|pools|swaps|liquidity|restart|all) ;;
@@ -8,10 +9,10 @@ case "$scenario" in
 esac
 
 make --no-print-directory prepare-localnet
-docker compose build backend-tests
+"${compose[@]}" build backend-tests
 
 run_scenario() {
-  docker compose run --rm --no-deps -e "DEX_SCENARIO=$1" backend-tests
+  "${compose[@]}" run --rm --no-deps -e "DEX_SCENARIO=$1" backend-tests
 }
 
 if [[ "$scenario" != restart ]]; then
@@ -26,7 +27,7 @@ if [[ "$scenario" == restart || "$scenario" == all ]]; then
     local result=$?
     trap - EXIT
     if [[ "$result" != 0 && -s "$restart_state" ]]; then
-      if docker compose start backend && run_scenario restart-restore; then
+      if "${compose[@]}" start backend && run_scenario restart-restore; then
         rm -f "$restart_state"
       else
         printf 'Restart cleanup incomplete; wallet recovery state retained at %s\n' "$restart_state" >&2
@@ -38,9 +39,9 @@ if [[ "$scenario" == restart || "$scenario" == all ]]; then
   }
   trap cleanup_restart EXIT
   run_scenario restart-prepare
-  docker compose stop backend
+  "${compose[@]}" stop backend
   run_scenario restart-mark-uncertain
-  docker compose start backend
+  "${compose[@]}" start backend
   # The verification harness polls authenticated readiness with a bounded deadline.
   run_scenario restart-verify
 fi

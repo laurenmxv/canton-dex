@@ -22,7 +22,7 @@ const ADMIN_PASSWORD =
 if (!ADMIN_USER || !ADMIN_PASSWORD) {
   console.error(
     'Set DEX_KEYCLOAK_ADMIN_USERNAME and DEX_KEYCLOAK_ADMIN_PASSWORD, then run this again.\n' +
-      'The local cn-quickstart values live in docker/bootstrap.env.',
+      'The local cn-quickstart values live in docker/env/bootstrap.env.',
   );
   process.exit(1);
 }

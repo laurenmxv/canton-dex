@@ -175,7 +175,7 @@ describe('real sign-in', () => {
 
     const nav = await screen.findByRole('navigation', { name: 'Sections' });
     const sections = Array.from(nav.querySelectorAll('button')).map((button) => button.textContent);
-    expect(sections).toEqual(['Dashboard', 'Swap', 'Liquidity', 'Onboarding']);
+    expect(sections).toEqual(['Dashboard', 'Swap', 'Liquidity', 'Onboarding', 'Faucet']);
   });
 
   it('shows an operator the sections the venue serves, and no trader screen', async () => {

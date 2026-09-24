@@ -98,12 +98,7 @@ async function main() {
     console.log(`Created public client ${CLIENT_ID} in realm ${REALM}.`);
   } else {
     await admin(token, 'PUT', `/clients/${existing[0].id}`, { ...existing[0], ...desired });
-    console.log(`Updated public client ${CLIENT_ID} in realm ${REALM}.`);
   }
-
-  console.log(`  redirect: ${APP_ORIGIN}/*`);
-  console.log('  flow:     authorization code with PKCE S256');
-  console.log('  audience: backend');
 }
 
 main().catch((error) => {

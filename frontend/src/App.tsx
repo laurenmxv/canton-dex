@@ -14,6 +14,8 @@ import { OperatorPools } from './features/pools/OperatorPools';
 import { VenuePools } from './features/pools/VenuePools';
 import { ProposalDetail } from './features/pools/ProposalDetail';
 import { OperatorSettlement } from './features/settlement/OperatorSettlement';
+import { Faucet } from './features/tokens/Faucet';
+import { FAUCET_SECTION } from './features/tokens/navigation';
 import { SwapDesk } from './features/swap/SwapDesk';
 import { SwapRequestFlow } from './features/swap/SwapRequestFlow';
 import type { Role } from './lib/api/types';
@@ -28,6 +30,7 @@ type View =
   | { name: 'trader-swap'; poolId?: string }
   | { name: 'trader-liquidity' }
   | { name: 'trader-onboarding' }
+  | { name: typeof FAUCET_SECTION }
   | { name: 'operator-onboardings' }
   | { name: 'operator-onboarding'; onboardingId: string }
   | { name: 'operator-pools' }
@@ -58,6 +61,7 @@ function navFor(role: Role, simulated: boolean): readonly NavItem[] {
     { id: 'trader-swap', label: 'Swap' },
     ...(simulated ? [] : [{ id: 'trader-liquidity' as const, label: 'Liquidity' }]),
     { id: 'trader-onboarding', label: 'Onboarding' },
+    ...(simulated ? [] : [{ id: FAUCET_SECTION, label: 'Faucet' } as const]),
   ];
 }
 
@@ -75,6 +79,7 @@ function sectionOf(view: View): Section {
 
 /** The one place a sidebar id becomes a view, so neither side needs a cast. */
 const sectionViews: Record<Section, View> = {
+  [FAUCET_SECTION]: { name: FAUCET_SECTION },
   'trader-dashboard': { name: 'trader-dashboard' },
   'trader-swap': { name: 'trader-swap' },
   'trader-liquidity': { name: 'trader-liquidity' },
@@ -341,6 +346,8 @@ function ViewContent({
       return <TraderDashboard onGo={goTrader} />;
     case 'trader-onboarding':
       return <TraderOnboarding />;
+    case FAUCET_SECTION:
+      return <Faucet />;
     case 'trader-swap':
       // The demo runs its own simulated flow; the venue's is the real one.
       return demo ? (

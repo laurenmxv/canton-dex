@@ -7,7 +7,7 @@ import { PageHeader } from '../../ui/PageHeader';
 import { EmptyState, ErrorState, Loading, RefreshFailure } from '../../ui/States';
 import { confirmedPoolIds } from '../onboarding/progress';
 import { eligiblePools } from '../swap/terms';
-import { TestTokens } from '../tokens/TestTokens';
+import { Balances } from '../tokens/Balances';
 import { useWalletSigner } from '../wallet/signing';
 import { SigningKey } from '../wallet/SigningKey';
 import { DepositTicket } from './DepositTicket';
@@ -115,7 +115,7 @@ export function LiquidityDesk({ onGoToOnboarding }: { onGoToOnboarding: () => vo
             />
           </Card>
         )}
-        <TestTokens balances={balances} signer={signer} />
+        <Balances balances={balances} />
       </div>
 
       <Positions

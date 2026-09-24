@@ -7,7 +7,7 @@ import { Card } from '../../ui/Card';
 import { EmptyState, ErrorState, Loading, RefreshFailure } from '../../ui/States';
 import { PageHeader } from '../../ui/PageHeader';
 import { confirmedPoolIds } from '../onboarding/progress';
-import { TestTokens } from '../tokens/TestTokens';
+import { Balances } from '../tokens/Balances';
 import { useWalletSigner } from '../wallet/signing';
 import { SigningKey } from '../wallet/SigningKey';
 import { hasOutstanding, SwapActivity } from './SwapActivity';
@@ -161,7 +161,7 @@ export function SwapDesk({
             />
           </Card>
         )}
-        <TestTokens balances={balances} signer={signer} />
+        <Balances balances={balances} />
       </div>
 
       <SwapActivity

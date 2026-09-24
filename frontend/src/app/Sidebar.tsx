@@ -6,6 +6,7 @@ import {
   DialogTrigger,
 } from '@openzeppelin/ui-components';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { FAUCET_SECTION } from '../features/tokens/navigation';
 import { Mark } from './Mark';
 import { useIsCompact } from './useMediaQuery';
 
@@ -41,6 +42,12 @@ function SectionIcon({ id }: { id: string }) {
       <>
         <path d="M12 3c3.5 4.2 6 7.6 6 10.5a6 6 0 0 1-12 0C6 10.6 8.5 7.2 12 3z" />
         <path d="M9 14.5a3 3 0 0 0 3 3" />
+      </>
+    ),
+    [FAUCET_SECTION]: (
+      <>
+        <path d="M4 10h11a4 4 0 0 1 4 4v1h-5v-1H4M9 10V6M6 6h6" />
+        <path d="M17 18c-2 2-2 3 0 3s2-1 0-3" />
       </>
     ),
     'trader-onboarding': (

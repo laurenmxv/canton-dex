@@ -27,8 +27,8 @@ logs:
 test-backend:
 	@./scripts/test-backend.sh all
 
-LOCALNET_VERSION := v0.2.0
-LOCALNET_SHA256 := 1f69385e1fe50eece22e01ee226abd3433b34d329acd4401cd1a32d63c056309
+LOCALNET_VERSION := v0.3.0
+LOCALNET_SHA256 := 5fcc0f5f55aaa298fa29d6571abe5038a1ad0c84d771c5d0274621d5e91897cf
 LOCALNET_ARCHIVE := docker/artifacts/cn-localnet-$(LOCALNET_VERSION).tar.gz
 LOCALNET_DIR := .deps/cn-localnet
 

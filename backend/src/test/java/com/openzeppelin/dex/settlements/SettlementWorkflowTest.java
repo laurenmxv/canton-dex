@@ -218,7 +218,10 @@ class SettlementWorkflowTest {
       assertThat(entered.await(2, TimeUnit.SECONDS)).isTrue();
       var policy =
           executor
-              .submit(() -> workflow.updatePolicy("pool", new UpdatePolicy(false, 3, 0), OPERATOR))
+              .submit(
+                  () ->
+                      workflow.updatePolicy(
+                          "pool", "swap", new UpdatePolicy(false, 3, 0), OPERATOR))
               .get(2, TimeUnit.SECONDS);
       assertThat(policy.automaticEnabled()).isFalse();
       released.countDown();
@@ -241,7 +244,8 @@ class SettlementWorkflowTest {
       Future<?> operation = executor.submit(workflow::automatic);
       assertThat(entered.await(2, TimeUnit.SECONDS)).isTrue();
       executor
-          .submit(() -> workflow.updatePolicy("pool", new UpdatePolicy(false, 3, 0), OPERATOR))
+          .submit(
+              () -> workflow.updatePolicy("pool", "swap", new UpdatePolicy(false, 3, 0), OPERATOR))
           .get(2, TimeUnit.SECONDS);
       released.countDown();
       operation.get(2, TimeUnit.SECONDS);
@@ -299,23 +303,28 @@ class SettlementWorkflowTest {
     var laterWithdrawal = liquidity(2, LiquidityModels.Kind.WITHDRAW, LiquidityModels.Status.READY);
     List<QueueRequest> queues =
         List.of(laterWithdrawal, withdrawal, laterDeposit, secondSwap, deposit, firstSwap);
-    assertThat(SettlementStore.select(queues, 5, null, Set.of(), true))
+    assertThat(SettlementStore.select(queues, policies(2), null, Set.of(), true))
         .containsExactly(firstSwap, secondSwap);
-    assertThat(SettlementStore.select(queues, 5, "swap", Set.of(), true))
+    assertThat(SettlementStore.select(queues, policies(5), "swap", Set.of(), true))
         .containsExactly(deposit, laterDeposit);
-    assertThat(SettlementStore.select(queues, 1, "swap", Set.of(), true)).containsExactly(deposit);
-    assertThat(SettlementStore.select(List.of(deposit, laterDeposit), 5, null, Set.of(), true))
+    assertThat(SettlementStore.select(queues, policies(1), "swap", Set.of(), true))
+        .containsExactly(deposit);
+    assertThat(
+            SettlementStore.select(
+                List.of(deposit, laterDeposit), policies(5), null, Set.of(), true))
         .containsExactly(deposit, laterDeposit);
-    assertThat(SettlementStore.select(queues, 5, "deposit", Set.of(), true))
+    assertThat(SettlementStore.select(queues, policies(5), "deposit", Set.of(), true))
         .containsExactly(withdrawal, laterWithdrawal);
-    assertThat(SettlementStore.select(queues, 1, "deposit", Set.of(), true))
+    assertThat(SettlementStore.select(queues, policies(1), "deposit", Set.of(), true))
         .containsExactly(withdrawal);
     assertThat(
-            SettlementStore.select(List.of(withdrawal, laterWithdrawal), 5, null, Set.of(), true))
+            SettlementStore.select(
+                List.of(withdrawal, laterWithdrawal), policies(5), null, Set.of(), true))
         .containsExactly(withdrawal, laterWithdrawal);
-    assertThat(SettlementStore.select(queues, 5, "withdraw", Set.of(), true))
+    assertThat(SettlementStore.select(queues, policies(2), "withdraw", Set.of(), true))
         .containsExactly(firstSwap, secondSwap);
-    assertThat(SettlementStore.select(List.of(firstSwap), 5, null, Set.of(), true)).isEmpty();
+    assertThat(SettlementStore.select(List.of(firstSwap), policies(5), null, Set.of(), true))
+        .isEmpty();
   }
 
   @Test
@@ -326,11 +335,11 @@ class SettlementWorkflowTest {
     var laterWithdrawal = liquidity(2, LiquidityModels.Kind.WITHDRAW, LiquidityModels.Status.READY);
     var deposit = liquidity(1, LiquidityModels.Kind.DEPOSIT, LiquidityModels.Status.BLOCKED);
     List<QueueRequest> queues = List.of(recovering, laterWithdrawal, swap, deposit);
-    assertThat(SettlementStore.select(queues, 1, "swap", Set.of("deposit"), true))
+    assertThat(SettlementStore.select(queues, policies(1), "swap", Set.of("deposit"), true))
         .containsExactly(swap);
     assertThat(
             SettlementStore.select(
-                List.of(recovering, laterWithdrawal, deposit), 5, "swap", Set.of(), true))
+                List.of(recovering, laterWithdrawal, deposit), policies(5), "swap", Set.of(), true))
         .containsExactly(deposit);
   }
 
@@ -539,6 +548,12 @@ class SettlementWorkflowTest {
     }
   }
 
+  private static List<Policy> policies(int batchSize) {
+    return FAMILIES.stream()
+        .map(family -> new Policy("pool", family, true, batchSize, 10, 0, Instant.EPOCH))
+        .toList();
+  }
+
   private static final class Progress extends SettlementStore {
     List<QueueRequest> queued = List.of();
     List<QueueRequest> claimed = List.of();
@@ -572,11 +587,12 @@ class SettlementWorkflowTest {
       return batch;
     }
 
-    public synchronized Policy updatePolicy(String poolId, UpdatePolicy input, Instant now) {
+    public synchronized Policy updatePolicy(
+        String poolId, String family, UpdatePolicy input, Instant now) {
       automaticEnabled = input.automaticEnabled();
       batchSize = input.batchSize();
       policyVersion++;
-      return new Policy(poolId, automaticEnabled, batchSize, 10, policyVersion, now);
+      return new Policy(poolId, family, automaticEnabled, batchSize, 10, policyVersion, now);
     }
 
     public synchronized List<String> automaticPools() {
@@ -591,7 +607,7 @@ class SettlementWorkflowTest {
       claimed =
           SettlementStore.select(
               queued,
-              batchSize,
+              policies(batchSize),
               lastProcessedFamily,
               trigger == Trigger.AUTOMATIC ? blockedFamilies : Set.of(),
               trigger == Trigger.AUTOMATIC);

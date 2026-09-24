@@ -57,9 +57,11 @@ requires `dvo` authorization.
 | --- | --- | --- | --- |
 | `GET /v1/admin/settlement-requests` | `venue_operator` | List ready swap and liquidity requests by pool. | - |
 | `GET /v1/admin/settlements` | `venue_operator` | List submitted settlements and results. | - |
-| `POST /v1/admin/pools/{poolId}/settlements` | `venue_operator` | Select a ready family in turn, preserving its FIFO order -> submit a swap, deposit or withdrawal batch -> record outcomes. | Atomically settle transfers and LP minting or burning through `dvo` delegation; update reserves and LP supply and enforce limits and deadlines. |
+| `POST /v1/admin/pools/{poolId}/settlements` | `venue_operator` | Dispatch the previewed batch or individual request; without a selection, choose a ready FIFO batch. Record outcomes. | Atomically settle transfers and LP minting or burning through `dvo` delegation; update reserves and LP supply and enforce limits and deadlines. |
+| `GET /v1/admin/pools/{poolId}/settlement-policy/{type}` | `venue_operator` | Read one queue's automatic mode, batch size and policy version (`swap`, `deposit`, `withdraw`). | - |
+| `PUT /v1/admin/pools/{poolId}/settlement-policy/{type}` | `venue_operator` | Save that queue's settings using its expected version. Other queue policies remain unchanged. | - |
 | `GET /v1/admin/settlements/{settlementId}` | `venue_operator` | Return settlement status and per-request results or failures. | - |
-| `GET /v1/admin/pools/{poolId}/settlement-preview` | `venue_operator` | Project one queue's next batch, or a rejected/cancelled attempt selected with `retryOf`, against current reserves. | Read allocations, access and pool state; apply the settlement preflight checks. |
+| `GET /v1/admin/pools/{poolId}/settlement-preview` | `venue_operator` | Project a queue's next batch, a rejected/cancelled attempt (`retryOf`), or one eligible request (`requestId`) against current reserves. | Read allocations, access and pool state; apply the settlement preflight checks. |
 | `PUT /v1/admin/pools/{poolId}/settlement-requests/{type}/{requestId}/deferred` | `venue_operator` | Defer a ready request or return it to the end of its queue. | No token movement; original allocation deadlines remain. |
 | `GET /v1/admin/pools/{poolId}/settlement-history` | `venue_operator` | Page through attempts, filtered by request type or batch status. | - |
 
@@ -67,7 +69,9 @@ requires `dvo` authorization.
 Each pool has three independent FIFO queues: swaps, deposits and withdrawals.
 Blocked requests hold only their own family. A persisted
 round-robin selects an eligible family; swaps, proportional deposits and withdrawals form batches
-up to the configured size. Initial funding settles individually.
+up to their own configured size. Each queue has an independent automatic switch and policy version.
+Automatic swaps wait for their own batch size; manual runs can settle a smaller prefix.
+Initial funding settles individually.
 Liquidity preflight advances reserves and LP supply for each request; automatic
 liquidity settlements send the valid FIFO prefix without waiting to fill the batch. Each batch
 replaces `PoolState` once and confirms each request from its own receipt.
@@ -76,7 +80,11 @@ stopping at the first blocked request. Later requests remain unevaluated. It is 
 estimate from the reported pool state, not confirmation of token movement.
 
 Manual dispatch can carry the exact preview selection: request IDs, pool/config
-version and policy version. Admission and dispatch reject a stale selection.
+version and the selected queue's policy version. Admission and dispatch reject a stale selection.
+Changing another queue's settings does not invalidate it.
+An operator can select one eligible request anywhere in its queue and run it as a
+singleton batch. This preserves the queue policy and leaves other requests pending.
+Deferred requests must first return to the queue. `requestId` and `retryOf` are mutually exclusive.
 An uncertain response must reuse the original idempotency key and selection.
 Retries create a new attempt linked by `retryOf`; submitted or unresolved attempts
 must reconcile first. Deferred requests stay outside automatic selection until an
@@ -85,7 +93,7 @@ their deadlines; expired requests need the trader's recovery flow.
 
 One executor per pool protects the shared reserves and
 reconciles any uncertain settlement before submitting another. The existing
-scheduler applies the automatic policy to all three queues.
+scheduler considers only queues with automation enabled, using each queue's policy.
 
 ## Provide Liquidity
 

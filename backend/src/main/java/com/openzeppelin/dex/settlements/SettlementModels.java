@@ -30,6 +30,7 @@ public final class SettlementModels {
 
   public record Policy(
       String poolId,
+      String type,
       boolean automaticEnabled,
       int batchSize,
       int maxBatchSize,
@@ -321,7 +322,7 @@ public final class SettlementModels {
 
   public record Monitoring(
       String poolId,
-      Policy policy,
+      List<Policy> policies,
       int readyCount,
       int pendingCount,
       RequestRef blockedRequest,

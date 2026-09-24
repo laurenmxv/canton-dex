@@ -157,10 +157,8 @@ public class LiquidityStore {
         tx.execute(
             s -> {
               String poolId = p.request().terms().poolId();
-              sql.sql(
-                      "INSERT INTO pool_queues(pool_id,batch_size) VALUES(?,?) ON CONFLICT DO"
-                          + " NOTHING")
-                  .params(poolId, defaultBatchSize)
+              sql.sql("INSERT INTO pool_queues(pool_id) VALUES(?) ON CONFLICT DO" + " NOTHING")
+                  .param(poolId)
                   .update();
               sql.sql("SELECT pool_id FROM pool_queues WHERE pool_id=? FOR UPDATE")
                   .param(poolId)
@@ -168,9 +166,9 @@ public class LiquidityStore {
                   .single();
               String family = p.request().kind() == Kind.DEPOSIT ? "deposit" : "withdraw";
               sql.sql(
-                      "INSERT INTO pool_request_queues(pool_id,family) VALUES(?,?) ON CONFLICT DO"
+                      "INSERT INTO pool_request_queues(pool_id,family,batch_size) VALUES(?,?,?) ON CONFLICT DO"
                           + " NOTHING")
-                  .params(poolId, family)
+                  .params(poolId, family, defaultBatchSize)
                   .update();
               ownedLocked(p.request().requestId(), caller);
               String previousStatus =

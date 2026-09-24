@@ -43,16 +43,13 @@ public class SettlementStore {
     this.maxBatchSize = maxBatchSize;
   }
 
-  public Policy policy(String poolId) {
-    ensureQueue(poolId);
-    return sql.sql("SELECT * FROM pool_queues WHERE pool_id=?")
-        .param(poolId)
-        .query(this::readPolicy)
-        .optional()
-        .orElseThrow(NoSuchElementException::new);
+  public Policy policy(String poolId, String family) {
+    requireFamily(family);
+    return tx.execute(s -> lockQueue(poolId).policy(family));
   }
 
-  public Policy updatePolicy(String poolId, UpdatePolicy input, Instant now) {
+  public Policy updatePolicy(String poolId, String family, UpdatePolicy input, Instant now) {
+    requireFamily(family);
     if (input.batchSize() < 1 || input.batchSize() > maxBatchSize)
       throw new SwapFailure("INVALID_BATCH_SIZE", "Batch size exceeds the configured limit", 400);
     return tx.execute(
@@ -61,24 +58,22 @@ public class SettlementStore {
           int changed =
               sql.sql(
                       """
-                      UPDATE pool_queues SET automatic_enabled=?,batch_size=?,
-                        policy_version=policy_version+1,updated_at=?
-                      WHERE pool_id=? AND policy_version=?
+                      UPDATE pool_request_queues SET automatic_enabled=?,batch_size=?,
+                        policy_version=policy_version+1,blocked_version=NULL,updated_at=?
+                      WHERE pool_id=? AND family=? AND policy_version=?
                       """)
                   .params(
                       input.automaticEnabled(),
                       input.batchSize(),
                       Timestamp.from(now),
                       poolId,
+                      family,
                       input.expectedVersion())
                   .update();
           if (changed != 1)
             throw SwapFailure.conflict(
                 POLICY_CHANGED, "The settlement policy changed. Refresh it before saving.");
-          sql.sql("UPDATE pool_request_queues SET blocked_version=NULL WHERE pool_id=?")
-              .param(poolId)
-              .update();
-          return policy(poolId);
+          return policy(poolId, family);
         });
   }
 
@@ -109,22 +104,41 @@ public class SettlementStore {
     return existing;
   }
 
-  public Plan plan(String poolId, String family, UUID retryOf, Snapshot snapshot, Instant now) {
+  public Plan plan(
+      String poolId, String family, UUID retryOf, UUID requestId, Snapshot snapshot, Instant now) {
     requireFamily(family);
+    if (retryOf != null && requestId != null)
+      throw new IllegalArgumentException("Choose either a batch retry or an individual request");
     return tx.execute(
         s -> {
           var state = lockQueue(poolId);
           expireReady(poolId, now);
-          var requests = candidates(poolId, family, retryOf, state.policy().batchSize());
+          var policy = state.policy(family);
+          var requests =
+              requestId == null
+                  ? candidates(poolId, family, retryOf, policy.batchSize())
+                  : individual(poolId, new RequestRef(family, requestId));
           var selection =
               new Selection(
                   family,
                   retryOf,
                   snapshot.version(),
-                  state.policy().version(),
+                  policy.version(),
                   requests.stream().map(QueueRequest::reference).toList());
           return new Plan(selection, requests, state.activeId());
         });
+  }
+
+  private List<QueueRequest> individual(String poolId, RequestRef reference) {
+    return queue(poolId).stream()
+        .filter(r -> r.reference().equals(reference))
+        .filter(r -> !r.deferred() && SELECTABLE_STATUSES.contains(r.status()))
+        .findFirst()
+        .map(List::of)
+        .orElseThrow(
+            () ->
+                SwapFailure.conflict(
+                    QUEUE_CHANGED, "Request is no longer eligible. Refresh the preview."));
   }
 
   private List<QueueRequest> candidates(String poolId, String family, UUID retryOf, int limit) {
@@ -154,7 +168,11 @@ public class SettlementStore {
       throw SwapFailure.conflict(POOL_CHANGED, "Pool changed. Refresh the preview.");
     if (policy.version() != selection.policyVersion())
       throw SwapFailure.conflict(POLICY_CHANGED, "Policy changed. Refresh the preview.");
-    var requests = candidates(poolId, selection.type(), selection.retryOf(), policy.batchSize());
+    // A manual singleton may select any eligible request without changing the queue policy.
+    var requests =
+        selection.retryOf() == null && selection.requests().size() == 1
+            ? individual(poolId, selection.requests().getFirst())
+            : candidates(poolId, selection.type(), selection.retryOf(), policy.batchSize());
     if (!requests.stream().map(QueueRequest::reference).toList().equals(selection.requests()))
       throw SwapFailure.conflict(QUEUE_CHANGED, "Queue changed. Refresh the preview.");
     return requests;
@@ -268,7 +286,8 @@ public class SettlementStore {
   }
 
   public List<String> automaticPools() {
-    return sql.sql("SELECT pool_id FROM pool_queues WHERE automatic_enabled ORDER BY pool_id")
+    return sql.sql(
+            "SELECT DISTINCT pool_id FROM pool_request_queues WHERE automatic_enabled ORDER BY pool_id")
         .query(String.class)
         .list();
   }
@@ -313,13 +332,7 @@ public class SettlementStore {
                     BATCH_IN_FLIGHT, "This pool already has a settlement in flight");
               return Optional.empty();
             }
-            String policyLimit = policyLimitReason(queue.policy());
-            if (policyLimit != null)
-              throw SwapFailure.conflict("POLICY_LIMIT_EXCEEDED", policyLimit);
             expireReady(poolId, now);
-            queue = lockQueue(poolId);
-            if (trigger == Trigger.AUTOMATIC && !queue.policy().automaticEnabled())
-              return Optional.empty();
             Set<String> blockedFamilies =
                 trigger == Trigger.AUTOMATIC
                     ? new HashSet<>(
@@ -334,12 +347,16 @@ public class SettlementStore {
                 selection == null
                     ? select(
                         queue(poolId),
-                        queue.policy().batchSize(),
+                        queue.policies(),
                         queue.lastProcessedFamily(),
                         blockedFamilies,
                         trigger == Trigger.AUTOMATIC)
-                    : selected(poolId, queue.policy(), snapshot, selection);
+                    : selected(poolId, queue.policy(selection.type()), snapshot, selection);
             if (selected.isEmpty()) return Optional.empty();
+            var policy = queue.policy(selected.getFirst().type());
+            String policyLimit = policyLimitReason(policy);
+            if (policyLimit != null)
+              throw SwapFailure.conflict("POLICY_LIMIT_EXCEEDED", policyLimit);
 
             List<RequestRef> ids = selected.stream().map(QueueRequest::reference).toList();
             sql.sql(
@@ -353,7 +370,7 @@ public class SettlementStore {
                     poolId,
                     trigger.name(),
                     json.writeValueAsString(ids),
-                    queue.policy().version(),
+                    policy.version(),
                     id,
                     snapshot.ledgerOffset(),
                     snapshot.version(),
@@ -410,29 +427,26 @@ public class SettlementStore {
 
   static List<QueueRequest> select(
       List<QueueRequest> requests,
-      int batchSize,
+      List<Policy> policies,
       String lastProcessedFamily,
       Set<String> blockedFamilies,
       boolean automatic) {
-    List<String> families = FAMILIES;
-    Map<String, List<QueueRequest>> ready = new HashMap<>();
-    for (String family : families) {
-      if (blockedFamilies.contains(family)) continue;
+    int start = lastProcessedFamily == null ? 0 : FAMILIES.indexOf(lastProcessedFamily) + 1;
+    for (int n = 0; n < FAMILIES.size(); n++) {
+      String family = FAMILIES.get((start + n) % FAMILIES.size());
+      var policy = policies.stream().filter(p -> p.type().equals(family)).findFirst().orElseThrow();
+      if (blockedFamilies.contains(family)
+          || automatic
+              && (!policy.automaticEnabled() || policy.batchSize() > policy.maxBatchSize()))
+        continue;
       var queue =
           requests.stream()
               .filter(r -> r.type().equals(family))
               .sorted(Comparator.comparing(QueueRequest::arrivalSequence))
               .toList();
-      var candidates = prefix(queue, batchSize);
-      if (!candidates.isEmpty()) ready.put(family, candidates);
-    }
-    int start = lastProcessedFamily == null ? 0 : families.indexOf(lastProcessedFamily) + 1;
-    for (int n = 0; n < families.size(); n++) {
-      String family = families.get((start + n) % families.size());
-      var selected = ready.get(family);
-      if (selected == null) continue;
-      if (automatic && family.equals("swap") && selected.size() < batchSize && ready.size() == 1)
-        continue;
+      var selected = prefix(queue, policy.batchSize());
+      if (selected.isEmpty()) continue;
+      if (automatic && family.equals("swap") && selected.size() < policy.batchSize()) continue;
       return selected;
     }
     return List.of();
@@ -561,15 +575,15 @@ public class SettlementStore {
           Settlement batch = lockBatch(id);
           if (batch.status() != Status.PREPARING) return Optional.empty();
           QueueState queue = lockQueue(batch.poolId());
-          String policyLimit = policyLimitReason(queue.policy());
+          var policy = queue.policy(batch.requests().getFirst().type());
+          String policyLimit = policyLimitReason(policy);
           if (policyLimit != null) {
             release(batch, batch.requests(), null, null, null, now);
             finishAttempt(batch, Status.CANCELLED, "POLICY_LIMIT_EXCEEDED", policyLimit, now);
             return Optional.empty();
           }
           if (batch.trigger() == Trigger.AUTOMATIC
-              && (!queue.policy().automaticEnabled()
-                  || queue.policy().version() != batch.policyVersion())) {
+              && (!policy.automaticEnabled() || policy.version() != batch.policyVersion())) {
             release(batch, batch.requests(), null, null, null, now);
             finishAttempt(
                 batch,
@@ -585,7 +599,7 @@ public class SettlementStore {
           var selection = pending.selection();
           if (selection != null
               && (!selection.stateVersion().equals(snapshot.version())
-                  || selection.policyVersion() != queue.policy().version())) {
+                  || selection.policyVersion() != policy.version())) {
             release(batch, batch.requests(), null, null, null, now);
             boolean changedPool = !selection.stateVersion().equals(snapshot.version());
             finishAttempt(
@@ -743,14 +757,13 @@ public class SettlementStore {
                                       "RECOVERY_UNRESOLVED")
                                   .contains(r.status()))
                       .count();
-          String policyLimit = policyLimitReason(state.policy());
           return new Monitoring(
               poolId,
-              state.policy(),
+              state.policies(),
               ready,
               pending,
-              policyLimit != null || blocked == null ? null : blocked.reference(),
-              policyLimit != null ? policyLimit : blocked == null ? null : blocked.error(),
+              blocked == null ? null : blocked.reference(),
+              blocked == null ? null : blocked.error(),
               requests.stream()
                   .map(QueueRequest::submittedAt)
                   .filter(Objects::nonNull)
@@ -771,43 +784,50 @@ public class SettlementStore {
             + policy.batchSize()
             + " exceeds the current maximum "
             + maxBatchSize
-            + ". Update this pool's settlement policy before dispatching."
+            + ". Update this queue's settlement policy before dispatching."
         : null;
   }
 
-  private void ensureQueue(String poolId) {
-    sql.sql(
-            """
-            INSERT INTO pool_queues(pool_id,batch_size)
-            SELECT pool_id,? FROM pools WHERE pool_id=? ON CONFLICT(pool_id) DO NOTHING
-            """)
-        .params(Math.min(5, maxBatchSize), poolId)
-        .update();
+  private record QueueState(List<Policy> policies, UUID activeId, String lastProcessedFamily) {
+    Policy policy(String family) {
+      return policies.stream().filter(p -> p.type().equals(family)).findFirst().orElseThrow();
+    }
   }
 
-  private record QueueState(Policy policy, UUID activeId, String lastProcessedFamily) {}
-
   private QueueState lockQueue(String poolId) {
-    ensureQueue(poolId);
-    var state =
-        sql.sql("SELECT * FROM pool_queues WHERE pool_id=? FOR UPDATE")
-            .param(poolId)
-            .query(
-                (r, n) ->
-                    new QueueState(
-                        readPolicy(r, n),
-                        r.getObject("active_settlement_id", UUID.class),
-                        r.getString("last_processed_family")))
-            .optional()
-            .orElseThrow(NoSuchElementException::new);
-    for (String family : FAMILIES) {
-      sql.sql(
-              "INSERT INTO pool_request_queues(pool_id,family) SELECT pool_id,? FROM pools WHERE"
-                  + " pool_id=? ON CONFLICT DO NOTHING")
-          .params(family, poolId)
-          .update();
-    }
-    return state;
+    sql.sql(
+            """
+            INSERT INTO pool_queues(pool_id)
+            SELECT pool_id FROM pools WHERE pool_id=? ON CONFLICT DO NOTHING
+            """)
+        .param(poolId)
+        .update();
+    // Request admission takes this same pool lock before creating a family queue.
+    return sql.sql("SELECT * FROM pool_queues WHERE pool_id=? FOR UPDATE")
+        .param(poolId)
+        .query(
+            (r, n) -> {
+              for (String family : FAMILIES) {
+                sql.sql(
+                        """
+                        INSERT INTO pool_request_queues(pool_id,family,batch_size)
+                        VALUES(?,?,?) ON CONFLICT DO NOTHING
+                        """)
+                    .params(poolId, family, Math.min(5, maxBatchSize))
+                    .update();
+              }
+              var policies =
+                  sql.sql("SELECT * FROM pool_request_queues WHERE pool_id=? ORDER BY family")
+                      .param(poolId)
+                      .query(this::readPolicy)
+                      .list();
+              return new QueueState(
+                  policies,
+                  r.getObject("active_settlement_id", UUID.class),
+                  r.getString("last_processed_family"));
+            })
+        .optional()
+        .orElseThrow(NoSuchElementException::new);
   }
 
   private Settlement lockBatch(UUID id) {
@@ -846,10 +866,17 @@ public class SettlementStore {
   }
 
   private void blockFamily(Settlement batch, String version, Instant now) {
+    var first = batch.requests().getFirst();
+    // A failed request selected further down the queue says nothing about its head.
+    var head =
+        queue(batch.poolId()).stream()
+            .filter(r -> r.type().equals(first.type()) && !r.deferred())
+            .findFirst();
+    if (head.isEmpty() || !head.get().reference().equals(first)) return;
     sql.sql(
             "UPDATE pool_request_queues SET blocked_version=?,updated_at=? WHERE pool_id=? AND"
                 + " family=?")
-        .params(version, Timestamp.from(now), batch.poolId(), batch.requests().getFirst().type())
+        .params(version, Timestamp.from(now), batch.poolId(), first.type())
         .update();
   }
 
@@ -915,6 +942,7 @@ public class SettlementStore {
   private Policy readPolicy(ResultSet r, int ignored) throws SQLException {
     return new Policy(
         r.getString("pool_id"),
+        r.getString("family"),
         r.getBoolean("automatic_enabled"),
         r.getInt("batch_size"),
         maxBatchSize,

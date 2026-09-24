@@ -432,7 +432,7 @@ class SwapIT {
   }
 
   private static String policyPath(String pool) {
-    return "/v1/admin/pools/" + pool + "/settlement-policy";
+    return "/v1/admin/pools/" + pool + "/settlement-policy/swap";
   }
 
   private void updatePolicy(

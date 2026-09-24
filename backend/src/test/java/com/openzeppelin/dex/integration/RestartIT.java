@@ -194,6 +194,6 @@ class RestartIT {
   }
 
   private String policyPath(String poolId) {
-    return "/v1/admin/pools/" + poolId + "/settlement-policy";
+    return "/v1/admin/pools/" + poolId + "/settlement-policy/swap";
   }
 }

@@ -98,9 +98,6 @@ CREATE TABLE IF NOT EXISTS pool_pair_claims (
 
 CREATE TABLE IF NOT EXISTS pool_queues (
     pool_id TEXT PRIMARY KEY REFERENCES pools(pool_id),
-    automatic_enabled BOOLEAN NOT NULL DEFAULT false,
-    batch_size INTEGER NOT NULL DEFAULT 5 CHECK (batch_size>0),
-    policy_version BIGINT NOT NULL DEFAULT 0,
     active_settlement_id UUID,
     last_processed_family TEXT CHECK (last_processed_family IN ('swap','deposit','withdraw')),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -109,6 +106,9 @@ CREATE TABLE IF NOT EXISTS pool_queues (
 CREATE TABLE IF NOT EXISTS pool_request_queues (
     pool_id TEXT NOT NULL REFERENCES pools(pool_id),
     family TEXT NOT NULL CHECK (family IN ('swap','deposit','withdraw')),
+    automatic_enabled BOOLEAN NOT NULL DEFAULT false,
+    batch_size INTEGER NOT NULL DEFAULT 5 CHECK (batch_size>0),
+    policy_version BIGINT NOT NULL DEFAULT 0,
     next_sequence BIGINT NOT NULL DEFAULT 0,
     blocked_version TEXT,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),

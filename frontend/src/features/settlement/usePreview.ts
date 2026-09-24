@@ -1,12 +1,12 @@
 import { useEffect, useRef } from 'react';
 import { useDexClient } from '../../app/runtime';
 import { useAsync, useChange, type AsyncResult } from '../../app/useAsync';
-import type { SettlementPreview } from '../../lib/api/types';
+import type { SettlementPreview, SettlementRequestRef } from '../../lib/api/types';
 import type { Family } from './queueRows';
 import { STALE_OBSERVATION_SECONDS } from './reserves';
 
 export interface PreviewRead extends AsyncResult<SettlementPreview> {
-  /** The pool, its policy or this queue has moved on since the preview was read, or it has aged. */
+  /** The pool, this queue or its policy has moved on since the preview was read, or it has aged. */
   stale: boolean;
 }
 
@@ -19,29 +19,38 @@ interface Received {
 }
 
 /**
- * The next batch of one queue, kept in step with what it was projected from.
+ * The next batch of one queue, or one request alone, kept in step with what
+ * it was projected from.
  *
- * It is read again when the pool, the policy or the queue changes, and once
+ * It is read again when the pool, the queue or its policy changes, and once
  * it has aged, but never polled blindly: every read checks each request
  * against the ledger. Until a new read lands, the old one counts as stale,
- * even when that read fails.
+ * even when that read fails. Another queue's policy is not part of it.
  */
 export function usePreview({
   poolId,
   family,
   retryOf,
+  request,
+  enabled = true,
   poolVersion,
   policyVersion,
   queue,
   now,
 }: {
   poolId: string;
+  /** The queue previewed, which is the request's own when there is one. */
   family: Family;
   retryOf: string | null;
+  /** One request to preview alone, in place of its queue's next batch. */
+  request?: SettlementRequestRef;
+  /** False while there is nothing to preview. The last read is then dropped. */
+  enabled?: boolean;
   /** The pool version monitoring last observed, which a current preview matches. */
   poolVersion: string | undefined;
+  /** The previewed queue's newest confirmed policy version. */
   policyVersion: number | undefined;
-  /** This family's queue as a token that changes whenever a request in it does. */
+  /** What was previewed, as a token that changes whenever a request in it does. */
   queue: string | undefined;
   now: number;
 }): PreviewRead {
@@ -52,12 +61,13 @@ export function usePreview({
   const read = useAsync(
     async (signal): Promise<Received> => {
       const basis = queueRef.current;
-      const preview = await client.admin.settlements.preview(poolId, family, retryOf ?? undefined, {
-        signal,
-      });
+      const preview = request
+        ? await client.admin.settlements.previewRequest(poolId, request, { signal })
+        : await client.admin.settlements.preview(poolId, family, retryOf ?? undefined, { signal });
       return { preview, queue: basis, receivedAt: Date.now() };
     },
-    [client, poolId, family, retryOf],
+    [client, poolId, family, retryOf, request?.type, request?.requestId],
+    { enabled },
   );
   const { data, reload } = read;
 

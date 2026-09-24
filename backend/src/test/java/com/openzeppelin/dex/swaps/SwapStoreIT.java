@@ -184,7 +184,8 @@ class SwapStoreIT {
     Pending preparation = save(quote(now.plusSeconds(300)));
     store.begin(preparation.preparationId(), trader, "signature", 42, now);
     assertThat(
-            sql.sql("SELECT batch_size FROM pool_queues WHERE pool_id='pool'")
+            sql.sql(
+                    "SELECT batch_size FROM pool_request_queues WHERE pool_id='pool' AND family='swap'")
                 .query(Integer.class)
                 .single())
         .isEqualTo(2);

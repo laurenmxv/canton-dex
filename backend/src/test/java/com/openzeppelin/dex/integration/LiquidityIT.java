@@ -35,7 +35,8 @@ class LiquidityIT {
               .single();
       String operator = f.token("operator");
       var policy =
-          f.request("GET", "/v1/admin/pools/" + pool + "/settlement-policy", operator, null, 200);
+          f.request(
+              "GET", "/v1/admin/pools/" + pool + "/settlement-policy/deposit", operator, null, 200);
       assertThat(policy.path("automaticEnabled").asBoolean()).isFalse();
       assertThat(
               f.request(

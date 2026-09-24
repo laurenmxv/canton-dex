@@ -12,12 +12,14 @@ import {
   type Settlement,
   type SettlementHistory,
   type SettlementHistoryQuery,
+  type SettlementMonitoring,
   type SettlementPolicy,
   type SettlementPreview,
   type SettlementQueueFilter,
   type SettlementRequest,
   type SettlementRequestRef,
   type Swap,
+  type UpdateSettlementPolicy,
   type WithdrawalRequest,
 } from '../lib/api/types';
 import { testClient } from './clients';
@@ -27,9 +29,9 @@ import {
   deposit,
   monitoring,
   OPERATOR,
+  POLICIES,
   POOL,
   POOL_ID,
-  POLICY,
   preview,
   previewStep,
   projected,
@@ -58,10 +60,29 @@ function page(...items: Settlement[]): Promise<SettlementHistory> {
   return Promise.resolve({ items, nextCursor: null });
 }
 
-/** A queue with nothing to settle, observed where monitoring says the pool is. */
+/** A queue with nothing to settle, observed where monitoring says the pool and that queue are. */
 function nothingToSettle(type: RequestType = 'swap'): SettlementPreview {
   const empty = preview({ steps: [] });
-  return { ...empty, selection: { ...empty.selection, type } };
+  return { ...empty, selection: { ...empty.selection, type, policyVersion: POLICIES[type].version } };
+}
+
+/** One request previewed alone: a batch of one, wherever that request waits in its queue. */
+function alonePreview(request: SettlementRequestRef): SettlementPreview {
+  return preview({ steps: [previewStep({ request })] });
+}
+
+/** The runnable swap batch, as the venue previews it under one version of the swap queue's policy. */
+function previewAt(policyVersion: number): SettlementPreview {
+  const shown = preview();
+  return { ...shown, selection: { ...shown.selection, policyVersion } };
+}
+
+/** An observation with one queue's settings replaced, the way a save of that queue leaves them. */
+function withPolicy(changed: SettlementPolicy, observed = monitoring()): SettlementMonitoring {
+  return {
+    ...observed,
+    policies: observed.policies.map((policy) => (policy.type === changed.type ? changed : policy)),
+  };
 }
 
 /** A second pool, so a change of scope can be told apart from a shared setting. */
@@ -76,12 +97,36 @@ const OTHER: PoolDetail = {
   },
 };
 const OTHER_POLICY: SettlementPolicy = {
-  ...POLICY,
+  ...POLICIES.swap,
   poolId: OTHER_ID,
   automaticEnabled: true,
   batchSize: 7,
   version: 9,
 };
+
+/** A proportional deposit the preview projects to settle, which is what the deposit queue runs. */
+const DEPOSIT_STEP = previewStep({
+  request: { type: 'deposit', requestId: 'deposit-0001' },
+  fill: {
+    type: 'deposit',
+    requestId: 'deposit-0001',
+    actualBaseIn: '0.05',
+    actualQuoteIn: '3000',
+    actualBaseRefund: '0',
+    actualQuoteRefund: '0',
+    actualLpOut: '12.2474486745',
+  },
+  after: projected('5.05', '303000'),
+  outputs: [
+    {
+      instrument: POOL.settings.lpTokenInstrumentId,
+      amount: '12.2474486745',
+      minimum: '12.1862114311',
+      headroomBps: '50',
+    },
+  ],
+});
+const PROPORTIONAL_DEPOSIT = deposit({ terms: { ...deposit().terms, mode: 'PROPORTIONAL' } });
 
 const FIRST_WITHDRAWAL = withdrawal();
 const SECOND_WITHDRAWAL = withdrawal({
@@ -175,12 +220,13 @@ function dashboard(parts: Parts = {}, pools: PoolDetail[] = [POOL]) {
     ...parts,
     admin: { listPools: () => Promise.resolve(pools), ...parts.admin },
     settlements: {
-      policy: () => Promise.resolve(POLICY),
+      policy: (_poolId, type) => Promise.resolve(POLICIES[type]),
       monitoring: () => Promise.resolve(monitoring()),
       requests: () => Promise.resolve([]),
       list: () => Promise.resolve([]),
       history: () => page(),
       preview: (_poolId, type) => Promise.resolve(nothingToSettle(type)),
+      previewRequest: (_poolId, request) => Promise.resolve(alonePreview(request)),
       setDeferred: () => Promise.resolve(),
       // A key nobody has run yet: the venue has no batch under it.
       get: () => Promise.reject(new DomainError('Settlement not found', 'NOT_FOUND')),
@@ -196,12 +242,29 @@ function dashboard(parts: Parts = {}, pools: PoolDetail[] = [POOL]) {
   return userEvent.setup();
 }
 
+const RUN_BATCH = 'Run batch';
 const BATCH_SIZE = 'Batch size';
 const BATCH_SIZE_EXACT = 'Batch size, exact';
+const AUTOMATIC = 'Automatic settlement';
+const SAVE = 'Save settings';
+const CHANGED_ELSEWHERE = 'These settings changed elsewhere';
 
-/** The policy form sits behind a disclosure; each pool opens it anew. */
+/** The queue on screen's settings trigger, which names its saved mode and batch size. */
+function settingsButton(summary?: string, timeout?: number): Promise<HTMLElement> {
+  return screen.findByRole('button', { name: summary ? `Settings: ${summary}` : /^Settings/ }, { timeout });
+}
+
+/** Each queue's settings open over its own panel; each pool and queue opens them anew. */
 async function openSettings(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(await screen.findByRole('button', { name: /^Policy settings/ }));
+  await user.click(await settingsButton());
+}
+
+/** Types a batch size into the open settings and saves it. */
+async function saveBatchSize(user: ReturnType<typeof userEvent.setup>, size: string) {
+  const exact = await screen.findByLabelText(BATCH_SIZE_EXACT);
+  await user.clear(exact);
+  await user.type(exact, size);
+  await user.click(screen.getByRole('button', { name: SAVE }));
 }
 
 function cardOf(element: HTMLElement): HTMLElement {
@@ -221,7 +284,7 @@ async function openBatch(user: ReturnType<typeof userEvent.setup>): Promise<HTML
 
 /** The workspace's Run batch, once the venue's preview allows it. */
 async function runButton(): Promise<HTMLElement> {
-  const button = await screen.findByRole('button', { name: 'Run batch' });
+  const button = await screen.findByRole('button', { name: RUN_BATCH });
   await waitFor(() => expect(button).toBeEnabled());
   return button;
 }
@@ -254,6 +317,12 @@ async function queueCard(title: string): Promise<HTMLElement> {
   return cardOf(await screen.findByRole('heading', { name: title }));
 }
 
+/** Opens one queued request's detail, which is a dialog of its own. */
+async function openRequest(user: ReturnType<typeof userEvent.setup>, requestId: string): Promise<HTMLElement> {
+  await user.click(await screen.findByRole('button', { name: `Details for request ${requestId}` }));
+  return screen.findByRole('dialog');
+}
+
 function rowTexts(card: HTMLElement): string[] {
   return within(card)
     .getAllByRole('row')
@@ -276,8 +345,8 @@ describe('what the dashboard reads', () => {
   });
 
   it('scopes every read to the chosen pool', async () => {
-    const policy = vi.fn((poolId: string) =>
-      Promise.resolve(poolId === POOL_ID ? POLICY : OTHER_POLICY),
+    const policy = vi.fn((poolId: string, _type: RequestType) =>
+      Promise.resolve(poolId === POOL_ID ? POLICIES.swap : OTHER_POLICY),
     );
     const requests = vi.fn((_poolId: string) => Promise.resolve([]));
     const previewed = vi.fn((_poolId: string, type: RequestType) => Promise.resolve(nothingToSettle(type)));
@@ -291,7 +360,7 @@ describe('what the dashboard reads', () => {
 
     await pick(user, 'Pool', OTHER.name);
 
-    await waitFor(() => expect(policy).toHaveBeenLastCalledWith(OTHER_ID, expect.anything()));
+    await waitFor(() => expect(policy).toHaveBeenLastCalledWith(OTHER_ID, 'swap', expect.anything()));
     await waitFor(() => expect(previewed.mock.calls.at(-1)?.[0]).toBe(OTHER_ID));
 
     // The screen polls while it is open, so what matters is not how many reads
@@ -312,7 +381,7 @@ describe('what the dashboard reads', () => {
     const user = dashboard(
       {
         settlements: {
-          policy: (poolId) => Promise.resolve(poolId === POOL_ID ? POLICY : OTHER_POLICY),
+          policy: (poolId) => Promise.resolve(poolId === POOL_ID ? POLICIES.swap : OTHER_POLICY),
         },
       },
       [POOL, OTHER],
@@ -320,13 +389,13 @@ describe('what the dashboard reads', () => {
 
     await openSettings(user);
     expect(await screen.findByLabelText(BATCH_SIZE_EXACT)).toHaveValue(5);
-    expect(screen.getByLabelText('Automatic settlement')).not.toBeChecked();
+    expect(screen.getByLabelText(AUTOMATIC)).not.toBeChecked();
 
     await pick(user, 'Pool', OTHER.name);
     await openSettings(user);
 
     await waitFor(() => expect(screen.getByLabelText(BATCH_SIZE_EXACT)).toHaveValue(7));
-    expect(screen.getByLabelText('Automatic settlement')).toBeChecked();
+    expect(screen.getByLabelText(AUTOMATIC)).toBeChecked();
   });
 
   it('shows no settings at all while the newly chosen pool’s are still being read', async () => {
@@ -334,7 +403,7 @@ describe('what the dashboard reads', () => {
       {
         settlements: {
           policy: (poolId) =>
-            poolId === POOL_ID ? Promise.resolve(POLICY) : new Promise(() => {}),
+            poolId === POOL_ID ? Promise.resolve(POLICIES.swap) : new Promise(() => {}),
         },
       },
       [POOL, OTHER],
@@ -351,29 +420,26 @@ describe('what the dashboard reads', () => {
     await waitFor(() =>
       expect(screen.queryByLabelText(BATCH_SIZE_EXACT)).not.toBeInTheDocument(),
     );
-    expect(screen.getByText("Loading this pool's settings…")).toBeInTheDocument();
+    expect(screen.getByText("Loading this queue's settings…")).toBeInTheDocument();
   });
 });
 
-describe('saving one pool’s settings', () => {
-  it('sends the version it read, so a stale form cannot restore an old setting', async () => {
+describe('saving one queue’s settings', () => {
+  it('sends the queue and the version it read, so a stale form cannot restore an old setting', async () => {
     const updatePolicy = vi.fn(() =>
-      Promise.resolve({ ...POLICY, automaticEnabled: true, batchSize: 3, version: 5 }),
+      Promise.resolve({ ...POLICIES.swap, automaticEnabled: true, batchSize: 3, version: 5 }),
     );
     const user = dashboard({ settlements: { updatePolicy } });
 
     await openSettings(user);
-    const exact = await screen.findByLabelText(BATCH_SIZE_EXACT);
-    await user.clear(exact);
-    await user.type(exact, '3');
-    await user.click(screen.getByLabelText('Automatic settlement'));
-    await user.click(screen.getByRole('button', { name: 'Save settings' }));
+    await user.click(await screen.findByLabelText(AUTOMATIC));
+    await saveBatchSize(user, '3');
 
     await waitFor(() =>
-      expect(updatePolicy).toHaveBeenCalledWith(POOL_ID, {
+      expect(updatePolicy).toHaveBeenCalledWith(POOL_ID, 'swap', {
         automaticEnabled: true,
         batchSize: 3,
-        expectedVersion: POLICY.version,
+        expectedVersion: POLICIES.swap.version,
       }),
     );
   });
@@ -414,35 +480,36 @@ describe('saving one pool’s settings', () => {
     });
 
     await openSettings(user);
-    const exact = await screen.findByLabelText(BATCH_SIZE_EXACT);
-    await user.clear(exact);
-    await user.type(exact, '2');
-    await user.click(screen.getByRole('button', { name: 'Save settings' }));
+    await saveBatchSize(user, '2');
 
-    expect(await screen.findByText('These settings changed elsewhere')).toBeInTheDocument();
-    expect(screen.getByText(/Saved version 4/)).toBeInTheDocument();
+    expect(await screen.findByText(CHANGED_ELSEWHERE)).toBeInTheDocument();
+    expect(await settingsButton('Manual · 5 per batch')).toBeInTheDocument();
   });
 
-  it('holds the manual run until a pending save is acknowledged, even with the settings folded', async () => {
+  it('holds the queue’s manual run until a pending save is acknowledged, even with the settings closed', async () => {
+    let policyVersion = POLICIES.swap.version;
     let acknowledge = () => {};
     const updatePolicy = vi.fn(
       () =>
         new Promise<SettlementPolicy>((resolve) => {
-          acknowledge = () => resolve({ ...POLICY, batchSize: 1, version: 5 });
+          acknowledge = () => {
+            policyVersion += 1;
+            resolve({ ...POLICIES.swap, batchSize: 1, version: policyVersion });
+          };
         }),
     );
-    const user = dashboard({ settlements: { ...RUNNABLE, updatePolicy } });
+    const user = dashboard({
+      settlements: { ...RUNNABLE, preview: () => Promise.resolve(previewAt(policyVersion)), updatePolicy },
+    });
 
     const run = await runButton();
     await openSettings(user);
-    const exact = await screen.findByLabelText(BATCH_SIZE_EXACT);
-    await user.clear(exact);
-    await user.type(exact, '1');
-    await user.click(screen.getByRole('button', { name: 'Save settings' }));
+    await saveBatchSize(user, '1');
 
     // A batch dispatched now would run under the batch size being replaced.
     expect(run).toBeDisabled();
-    await openSettings(user);
+    await user.keyboard('{Escape}');
+    expect(screen.queryByLabelText(BATCH_SIZE_EXACT)).not.toBeInTheDocument();
     expect(run).toBeDisabled();
 
     await act(async () => acknowledge());
@@ -450,10 +517,193 @@ describe('saving one pool’s settings', () => {
     expect(updatePolicy).toHaveBeenCalledTimes(1);
   });
 
+  it('holds the run from the save’s own answer until a preview at that version lands, however late monitoring is', async () => {
+    let observe = () => Promise.resolve(monitoring());
+    let review = () => Promise.resolve(previewAt(POLICIES.swap.version));
+    let release = (_shown: SettlementPreview) => {};
+    const user = dashboard({
+      settlements: {
+        ...RUNNABLE,
+        preview: () => review(),
+        monitoring: () => observe(),
+        updatePolicy: () => Promise.resolve({ ...POLICIES.swap, batchSize: 3, version: 5 }),
+      },
+    });
+
+    const run = await runButton();
+    // From here monitoring answers nothing, and the next preview waits to be released.
+    observe = () => new Promise<SettlementMonitoring>(() => {});
+    review = () =>
+      new Promise<SettlementPreview>((resolve) => {
+        release = resolve;
+      });
+    await openSettings(user);
+    await saveBatchSize(user, '3');
+
+    // Version 5 is committed, so the version 4 batch on screen cannot run.
+    expect(await settingsButton('Manual · 3 per batch')).toBeInTheDocument();
+    await waitFor(() => expect(run).toHaveAccessibleDescription('Refreshing the preview'));
+    expect(run).toBeDisabled();
+
+    await act(async () => release(previewAt(5)));
+    await waitFor(() => expect(run).toBeEnabled());
+  });
+
+  it('follows another operator’s newer settings from monitoring, though this screen read an older version', async () => {
+    let observed = monitoring();
+    const updatePolicy = vi.fn((_poolId: string, _type: RequestType, input: UpdateSettlementPolicy) =>
+      Promise.resolve({ ...POLICIES.swap, ...input, version: 6 }),
+    );
+    const user = dashboard({
+      settlements: { ...RUNNABLE, monitoring: () => Promise.resolve(observed), updatePolicy },
+    });
+
+    const run = await runButton();
+    await openSettings(user);
+    expect(await screen.findByLabelText(BATCH_SIZE_EXACT)).toHaveValue(5);
+
+    observed = withPolicy({ ...POLICIES.swap, automaticEnabled: true, batchSize: 7, version: 5 });
+
+    // The trigger, the open form, the overview and the preview all move to version 5.
+    expect(await settingsButton('Automatic · 7 per batch', 10_000)).toBeInTheDocument();
+    expect(screen.getByLabelText(BATCH_SIZE_EXACT)).toHaveValue(7);
+    expect(screen.getByLabelText(AUTOMATIC)).toBeChecked();
+    expect(screen.getByRole('button', { name: /^Swaps/ })).toHaveTextContent('Automatic');
+    await waitFor(() => expect(run).toHaveAccessibleDescription('Refreshing the preview'));
+
+    await saveBatchSize(user, '8');
+    await waitFor(() =>
+      expect(updatePolicy).toHaveBeenCalledWith(POOL_ID, 'swap', {
+        automaticEnabled: true,
+        batchSize: 8,
+        expectedVersion: 5,
+      }),
+    );
+  });
+
   it('offers no save until something has actually changed', async () => {
     await openSettings(dashboard());
 
-    expect(await screen.findByRole('button', { name: 'Save settings' })).toBeDisabled();
+    expect(await screen.findByRole('button', { name: SAVE })).toBeDisabled();
+  });
+});
+
+describe('each queue on its own settings', () => {
+  it('keeps a newer direct read across queue switches while monitoring is behind', async () => {
+    const latest = { ...POLICIES.swap, automaticEnabled: true, batchSize: 2, version: 5 };
+    const policy = vi.fn((_poolId: string, type: RequestType) =>
+      Promise.resolve(type === 'swap' ? latest : POLICIES[type]),
+    );
+    const user = dashboard({ settlements: { policy } });
+    const summary = 'Automatic · 2 per batch';
+
+    expect(await settingsButton(summary)).toBeInTheDocument();
+    await showFamily(user, /^Add liquidity/);
+    expect(screen.getByRole('button', { name: /^Swaps/ })).toHaveTextContent('Automatic');
+
+    policy.mockImplementation(() => new Promise<SettlementPolicy>(() => {}));
+    await showFamily(user, /^Swaps/);
+    expect(await settingsButton(summary)).toBeInTheDocument();
+  });
+
+  it('reads, shows and saves every queue’s own mode, batch size and version', async () => {
+    const policy = vi.fn((_poolId: string, type: RequestType) => Promise.resolve(POLICIES[type]));
+    const updatePolicy = vi.fn((_poolId: string, type: RequestType, input: UpdateSettlementPolicy) =>
+      Promise.resolve({ ...POLICIES[type], ...input, version: POLICIES[type].version + 1 }),
+    );
+    const user = dashboard({ settlements: { policy, updatePolicy } });
+
+    // Every queue's saved mode at a glance, from monitoring's own entry for it.
+    const deposits = await screen.findByRole('button', { name: /^Add liquidity/ });
+    await waitFor(() => expect(deposits).toHaveTextContent('Automatic'));
+    expect(screen.getByRole('button', { name: /^Swaps/ })).toHaveTextContent('Manual');
+    expect(screen.getByRole('button', { name: /^Withdraw liquidity/ })).toHaveTextContent('Manual');
+    expect(await settingsButton('Manual · 5 per batch')).toBeInTheDocument();
+
+    await user.click(deposits);
+    await openSettings(user);
+    expect(await screen.findByLabelText(BATCH_SIZE_EXACT)).toHaveValue(3);
+    expect(screen.getByLabelText(AUTOMATIC)).toBeChecked();
+    await saveBatchSize(user, '4');
+
+    await waitFor(() =>
+      expect(updatePolicy).toHaveBeenCalledWith(POOL_ID, 'deposit', {
+        automaticEnabled: true,
+        batchSize: 4,
+        expectedVersion: POLICIES.deposit.version,
+      }),
+    );
+    expect(policy).toHaveBeenCalledWith(POOL_ID, 'deposit', expect.anything());
+
+    await user.keyboard('{Escape}');
+    await showFamily(user, /^Withdraw liquidity/);
+    expect(await settingsButton('Manual · 8 per batch')).toBeInTheDocument();
+  });
+
+  it('keeps a save, its answer and its refusal on the queue it was made for', async () => {
+    let refuse = () => {};
+    const updatePolicy = vi.fn(
+      () =>
+        new Promise<SettlementPolicy>((_resolve, reject) => {
+          refuse = () => reject(new DomainError('Settings changed elsewhere', 'CONFLICT'));
+        }),
+    );
+    const user = dashboard({ settlements: { updatePolicy } });
+
+    await openSettings(user);
+    await saveBatchSize(user, '2');
+    expect(screen.getByRole('button', { name: SAVE })).toBeDisabled();
+    await user.keyboard('{Escape}');
+
+    // The swap save is still waiting, and none of it belongs to the deposit queue.
+    await showFamily(user, /^Add liquidity/);
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: RUN_BATCH })).toHaveAccessibleDescription('Nothing to settle'),
+    );
+    await openSettings(user);
+    const exact = await screen.findByLabelText(BATCH_SIZE_EXACT);
+    expect(exact).toBeEnabled();
+    await user.clear(exact);
+    await user.type(exact, '6');
+
+    await act(async () => refuse());
+
+    // The refusal lands on the swap queue, and the deposit draft stays as typed.
+    expect(screen.queryByText(CHANGED_ELSEWHERE)).not.toBeInTheDocument();
+    expect(exact).toHaveValue(6);
+    expect(screen.getByRole('button', { name: SAVE })).toBeEnabled();
+
+    await user.keyboard('{Escape}');
+    await showFamily(user, /^Swaps/);
+    await openSettings(user);
+    expect(await screen.findByText(CHANGED_ELSEWHERE)).toBeInTheDocument();
+    expect(updatePolicy).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the saved queue’s new settings once it answers, even after the operator moved on', async () => {
+    let acknowledge = () => {};
+    const updatePolicy = vi.fn(
+      (_poolId: string, _type: RequestType, input: UpdateSettlementPolicy) =>
+        new Promise<SettlementPolicy>((resolve) => {
+          acknowledge = () => resolve({ ...POLICIES.swap, ...input, version: POLICIES.swap.version + 1 });
+        }),
+    );
+    const user = dashboard({ settlements: { updatePolicy } });
+
+    await openSettings(user);
+    await saveBatchSize(user, '2');
+    await user.keyboard('{Escape}');
+    await showFamily(user, /^Add liquidity/);
+    await settingsButton('Automatic · 3 per batch');
+
+    await act(async () => acknowledge());
+
+    // The answer is the swap queue's, so the deposit queue on screen keeps its own.
+    expect(await settingsButton('Automatic · 3 per batch')).toBeInTheDocument();
+    // This screen's read and monitoring still report the old swap version; the answer is newer.
+    await showFamily(user, /^Swaps/);
+    expect(await settingsButton('Manual · 2 per batch')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Swaps/ })).toHaveTextContent('Manual');
   });
 });
 
@@ -484,7 +734,7 @@ describe('the next batch, before it runs', () => {
     expect(within(key).getByText('Before blocker')).toBeInTheDocument();
     expect(within(key).queryByText('After the batch')).not.toBeInTheDocument();
 
-    const run = screen.getByRole('button', { name: 'Run batch' });
+    const run = screen.getByRole('button', { name: RUN_BATCH });
     await waitFor(() => expect(run).toHaveAccessibleDescription('Step 2 is blocked'));
     expect(run).toBeDisabled();
   });
@@ -522,38 +772,9 @@ describe('the next batch, before it runs', () => {
   it('draws the constant-product guide for swaps and none for liquidity', async () => {
     const user = dashboard({
       settlements: {
-        requests: () =>
-          Promise.resolve([queued(swap()), queuedDeposit(deposit({ terms: { ...deposit().terms, mode: 'PROPORTIONAL' } }))]),
+        requests: () => Promise.resolve([queued(swap()), queuedDeposit(PROPORTIONAL_DEPOSIT)]),
         preview: (_poolId, type) =>
-          Promise.resolve(
-            type === 'swap'
-              ? preview()
-              : preview({
-                  steps: [
-                    previewStep({
-                      request: { type: 'deposit', requestId: 'deposit-0001' },
-                      fill: {
-                        type: 'deposit',
-                        requestId: 'deposit-0001',
-                        actualBaseIn: '0.05',
-                        actualQuoteIn: '3000',
-                        actualBaseRefund: '0',
-                        actualQuoteRefund: '0',
-                        actualLpOut: '12.2474486745',
-                      },
-                      after: projected('5.05', '303000'),
-                      outputs: [
-                        {
-                          instrument: POOL.settings.lpTokenInstrumentId,
-                          amount: '12.2474486745',
-                          minimum: '12.1862114311',
-                          headroomBps: '50',
-                        },
-                      ],
-                    }),
-                  ],
-                }),
-          ),
+          Promise.resolve(type === 'swap' ? preview() : preview({ steps: [DEPOSIT_STEP] })),
       },
     });
 
@@ -570,7 +791,7 @@ describe('the next batch, before it runs', () => {
   it('shows a queue with nothing to settle as the observed state alone, with no move', async () => {
     dashboard();
 
-    const run = await screen.findByRole('button', { name: 'Run batch' });
+    const run = await screen.findByRole('button', { name: RUN_BATCH });
     await waitFor(() => expect(run).toHaveAccessibleDescription('Nothing to settle'));
     expect(run).toBeDisabled();
     expect(within(chart()).queryAllByRole('button')).toHaveLength(0);
@@ -660,6 +881,32 @@ describe('the next batch, before it runs', () => {
     await runButton();
   });
 
+  it('reads the preview again for its own queue’s new settings, and never for another queue’s', async () => {
+    let observed = monitoring();
+    let swapVersion = POLICIES.swap.version;
+    const observe = vi.fn(() => Promise.resolve(observed));
+    const previewed = vi.fn(() => Promise.resolve(previewAt(swapVersion)));
+    dashboard({ settlements: { requests: RUNNABLE.requests, preview: previewed, monitoring: observe } });
+
+    const run = await runButton();
+    const reads = previewed.mock.calls.length;
+
+    // Another operator switches the deposit queue to manual: the swap batch stays reviewed and runnable.
+    observed = withPolicy({ ...POLICIES.deposit, automaticEnabled: false, version: POLICIES.deposit.version + 1 });
+    const deposits = screen.getByRole('button', { name: /^Add liquidity/ });
+    await waitFor(() => expect(deposits).toHaveTextContent('Manual'), { timeout: 10_000 });
+    const polls = observe.mock.calls.length;
+    await waitFor(() => expect(observe.mock.calls.length).toBeGreaterThan(polls), { timeout: 10_000 });
+    expect(previewed).toHaveBeenCalledTimes(reads);
+    expect(run).toBeEnabled();
+
+    // The swap queue's own settings move on, so its preview is read again before it can run.
+    swapVersion += 1;
+    observed = withPolicy({ ...POLICIES.swap, batchSize: 3, version: swapVersion }, observed);
+    await waitFor(() => expect(previewed.mock.calls.length).toBeGreaterThan(reads), { timeout: 10_000 });
+    await runButton();
+  });
+
   it('holds the run on a preview it could not read again, and keeps that preview in view', async () => {
     let reachable = true;
     const user = dashboard({
@@ -683,8 +930,8 @@ describe('the next batch, before it runs', () => {
     await runButton();
   });
 
-  it('holds the run while a batch is in flight, and for a request past its deadline', async () => {
-    dashboard({
+  it('holds every queue’s run while the pool has a batch in flight, and a run past a deadline', async () => {
+    const user = dashboard({
       settlements: {
         ...RUNNABLE,
         monitoring: () =>
@@ -692,10 +939,15 @@ describe('the next batch, before it runs', () => {
       },
     });
 
-    const run = await screen.findByRole('button', { name: 'Run batch' });
+    const run = await screen.findByRole('button', { name: RUN_BATCH });
     await waitFor(() => expect(run).toHaveAccessibleDescription('A batch is in flight'));
     expect(run).toBeDisabled();
     expect(screen.getByText(/Batch in flight/)).toHaveTextContent('settle-live');
+    // The pool runs one batch at a time, whichever queue it came from.
+    await showFamily(user, /^Add liquidity/);
+    const deposits = within(await queueCard('Add liquidity queue')).getByRole('button', { name: RUN_BATCH });
+    await waitFor(() => expect(deposits).toHaveAccessibleDescription('A batch is in flight'));
+    expect(deposits).toBeDisabled();
     cleanup();
 
     dashboard({
@@ -706,7 +958,7 @@ describe('the next batch, before it runs', () => {
       },
     });
 
-    const expired = await screen.findByRole('button', { name: 'Run batch' });
+    const expired = await screen.findByRole('button', { name: RUN_BATCH });
     await waitFor(() => expect(expired).toHaveAccessibleDescription('A deadline has elapsed'));
     expect(expired).toBeDisabled();
   });
@@ -762,11 +1014,19 @@ describe('running the previewed batch', () => {
 
     await user.click(await runButton());
     await screen.findByText('Batch status unknown');
-    // No new run starts while this one has no answer.
-    expect(screen.getByRole('button', { name: 'Run batch' })).toHaveAccessibleDescription(
+    // No new run starts on any queue of the pool while this one has no answer.
+    expect(screen.getByRole('button', { name: RUN_BATCH })).toHaveAccessibleDescription(
       'The last run is unresolved',
     );
-    await user.click(screen.getByRole('button', { name: 'Retry this run' }));
+    await showFamily(user, /^Add liquidity/);
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: RUN_BATCH })).toHaveAccessibleDescription(
+        'The last run is unresolved',
+      ),
+    );
+    expect(screen.getByText('Batch status unknown')).toBeInTheDocument();
+    await showFamily(user, /^Swaps/);
+    await user.click(await screen.findByRole('button', { name: 'Retry this run' }));
 
     expect(await screen.findByText(/Operator access required/)).toBeInTheDocument();
     expect(screen.getByText('Batch status unknown')).toBeInTheDocument();
@@ -810,21 +1070,19 @@ describe('running the previewed batch', () => {
         requests: () => Promise.resolve([queued(swap()), queued(SECOND_SWAP)]),
         preview: () => Promise.resolve(shown),
         run,
-        updatePolicy: () => Promise.resolve({ ...POLICY, batchSize: 3, version: 5 }),
+        updatePolicy: () => Promise.resolve({ ...POLICIES.swap, batchSize: 3, version: 5 }),
       },
     });
 
     await user.click(await runButton());
     await screen.findByText('Batch status unknown');
 
-    // The queue moves on and the policy is saved, which reads a new preview.
+    // The queue moves on and its policy is saved, which reads a new preview.
     shown = preview({ steps: [previewStep({ request: { type: 'swap', requestId: 'swap-0002' } })] });
     await openSettings(user);
-    const exact = await screen.findByLabelText(BATCH_SIZE_EXACT);
-    await user.clear(exact);
-    await user.type(exact, '3');
-    await user.click(screen.getByRole('button', { name: 'Save settings' }));
-    await within((await batchSteps())[0]!).findByText('swap-0002');
+    await saveBatchSize(user, '3');
+    const steps = await screen.findByRole('list', { name: /requests in the next batch/ });
+    await within(steps).findByText('swap-0002');
 
     await user.click(screen.getByRole('button', { name: 'Retry this run' }));
 
@@ -921,6 +1179,232 @@ describe('running the previewed batch', () => {
     await waitFor(() => expect(run).toHaveBeenCalledTimes(1));
     expect(run.mock.calls[0]![0]).toBe(OTHER_ID);
     expect(run.mock.calls[0]![1].selection?.requests).toEqual([otherStep.request]);
+  });
+
+  it('runs only the queue on screen, from its own panel, and never the queue shown before it', async () => {
+    let release = (_shown: SettlementPreview) => {};
+    const deposits = new Promise<SettlementPreview>((resolve) => {
+      release = resolve;
+    });
+    const run = vi.fn<Run>(() => Promise.resolve(settlement({ status: 'SUBMITTING' })));
+    const user = dashboard({
+      settlements: {
+        requests: () => Promise.resolve([queued(swap()), queuedDeposit(PROPORTIONAL_DEPOSIT)]),
+        preview: (_poolId, type) => (type === 'swap' ? Promise.resolve(preview()) : deposits),
+        run,
+      },
+    });
+
+    await runButton();
+    await showFamily(user, /^Add liquidity/);
+    // The swap batch reviewed a moment ago is not this queue's, so nothing runs before its own preview.
+    const button = within(await queueCard('Add liquidity queue')).getByRole('button', { name: RUN_BATCH });
+    await waitFor(() => expect(button).toHaveAccessibleDescription('Loading the preview'));
+    expect(button).toBeDisabled();
+
+    await act(async () => release(preview({ steps: [DEPOSIT_STEP] })));
+    await waitFor(() => expect(button).toBeEnabled());
+    expect(button).toHaveAccessibleDescription('1 in the next batch');
+    await user.click(button);
+
+    await waitFor(() => expect(run).toHaveBeenCalledTimes(1));
+    const selection = run.mock.calls[0]![1].selection;
+    expect(selection?.type).toBe('deposit');
+    expect(selection?.requests).toEqual([DEPOSIT_STEP.request]);
+    expect(selection?.policyVersion).toBe(POLICIES.deposit.version);
+  });
+});
+
+describe('running one request alone', () => {
+  const RUN_REQUEST = 'Run request';
+
+  it.each([
+    {
+      type: 'swap',
+      family: /^Swaps/,
+      queue: [queued(swap({ status: 'BLOCKED' })), queued(SECOND_SWAP)],
+      requestId: SECOND_SWAP.swapId,
+    },
+    {
+      type: 'deposit',
+      family: /^Add liquidity/,
+      queue: [
+        queuedDeposit(deposit({ status: 'BLOCKED' })),
+        queuedDeposit(deposit({ requestId: 'deposit-0002', arrivalSequence: 9 })),
+      ],
+      requestId: 'deposit-0002',
+    },
+    {
+      type: 'withdraw',
+      family: /^Withdraw liquidity/,
+      queue: [queuedWithdrawal(withdrawal({ status: 'BLOCKED' })), queuedWithdrawal(SECOND_WITHDRAWAL)],
+      requestId: SECOND_WITHDRAWAL.requestId,
+    },
+  ] as const)('runs a $type request alone from its detail, past a blocked head, exactly as previewed', async ({
+    type,
+    family,
+    queue,
+    requestId,
+  }) => {
+    const previewRequest = vi.fn((_poolId: string, request: SettlementRequestRef) =>
+      Promise.resolve(alonePreview(request)),
+    );
+    const run = vi.fn<Run>((_poolId, input) =>
+      Promise.resolve(settlement({ status: 'SUBMITTING', requests: input.selection!.requests })),
+    );
+    const user = dashboard({ settlements: { requests: () => Promise.resolve([...queue]), previewRequest, run } });
+
+    await showFamily(user, family);
+    const dialog = await openRequest(user, requestId);
+    // Opening the detail previews the request alone, and sends nothing.
+    const button = within(dialog).getByRole('button', { name: RUN_REQUEST });
+    await waitFor(() => expect(button).toBeEnabled());
+    expect(previewRequest).toHaveBeenCalledWith(POOL_ID, { type, requestId }, expect.anything());
+    expect(within(dialog).getByText('Projected')).toBeInTheDocument();
+    expect(run).not.toHaveBeenCalled();
+
+    await user.click(button);
+
+    await waitFor(() => expect(run).toHaveBeenCalledTimes(1));
+    expect(run.mock.calls[0]![1].selection).toEqual({
+      type,
+      retryOf: null,
+      stateVersion: monitoring().pool.version,
+      policyVersion: POLICIES[type].version,
+      requests: [{ type, requestId }],
+    });
+    // Sent is not settled: only a confirmed batch is.
+    expect(within(dialog).getByText('Not settled yet.')).toBeInTheDocument();
+    expect(within(dialog).queryByRole('button', { name: RUN_REQUEST })).not.toBeInTheDocument();
+    expect(within(dialog).getByText(/Batch in flight/)).toBeInTheDocument();
+  });
+
+  it('shows a confirmed response immediately while the queue and batch list are still behind', async () => {
+    const run = vi.fn<Run>((_poolId, input) => Promise.resolve(settlement({
+      requests: input.selection!.requests,
+      fills: [{ type: 'swap', requestId: SECOND_SWAP.swapId, amountOut: '42', outputInstrument: USDC }],
+    })));
+    const user = dashboard({
+      settlements: { requests: () => Promise.resolve([queued(swap()), queued(SECOND_SWAP)]), run },
+    });
+    const dialog = await openRequest(user, SECOND_SWAP.swapId);
+    const button = within(dialog).getByRole('button', { name: RUN_REQUEST });
+    await waitFor(() => expect(button).toBeEnabled());
+    await user.click(button);
+
+    expect(await within(dialog).findByText('Settled')).toBeInTheDocument();
+    expect(within(dialog).queryByText('Not settled yet.')).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole('button', { name: RUN_REQUEST })).not.toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    const other = await openRequest(user, 'swap-0001');
+    expect(within(other).getByText('Not settled yet.')).toBeInTheDocument();
+    await waitFor(() => expect(within(other).getByRole('button', { name: RUN_REQUEST })).toBeEnabled());
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it('holds a deferred request until it returns to its queue, and offers no run for an expired one', async () => {
+    const previewRequest = vi.fn((_poolId: string, request: SettlementRequestRef) =>
+      Promise.resolve(alonePreview(request)),
+    );
+    const lapsed = swap({
+      swapId: 'swap-0003',
+      arrivalSequence: 3,
+      settlementDeadline: new Date(Date.now() - 60_000).toISOString(),
+    });
+    const user = dashboard({
+      settlements: {
+        requests: () => Promise.resolve([queued(swap()), queued(SECOND_SWAP, true), queued(lapsed)]),
+        previewRequest,
+      },
+    });
+
+    const held = within(await openRequest(user, SECOND_SWAP.swapId)).getByRole('button', { name: RUN_REQUEST });
+    expect(held).toBeDisabled();
+    expect(held).toHaveAccessibleDescription('Return to queue first');
+    await user.keyboard('{Escape}');
+
+    const expired = await openRequest(user, lapsed.swapId);
+    expect(within(expired).queryByRole('button', { name: RUN_REQUEST })).not.toBeInTheDocument();
+    // Neither was previewed: the venue would refuse both.
+    expect(previewRequest).not.toHaveBeenCalled();
+  });
+
+  it('never runs a preview of a request or a pool the operator has moved past', async () => {
+    let answerFirst = (_shown: SettlementPreview) => {};
+    const previewRequest = vi.fn((poolId: string, request: SettlementRequestRef) =>
+      request.requestId === 'swap-0001'
+        ? new Promise<SettlementPreview>((resolve) => {
+            answerFirst = resolve;
+          })
+        : Promise.resolve({ ...alonePreview(request), pool: { ...monitoring().pool, poolId } }),
+    );
+    const run = vi.fn<Run>((poolId) => Promise.resolve(settlement({ poolId, status: 'SUBMITTING' })));
+    const user = dashboard(
+      {
+        settlements: {
+          requests: (poolId) =>
+            Promise.resolve(
+              poolId === POOL_ID ? [queued(swap()), queued(SECOND_SWAP)] : [queued(swap({ swapId: 'swap-eth-0001' }))],
+            ),
+          previewRequest,
+          run,
+        },
+      },
+      [POOL, OTHER],
+    );
+
+    // The first request's preview is still on its way when the operator moves to the second.
+    let dialog = await openRequest(user, 'swap-0001');
+    expect(within(dialog).getByRole('button', { name: RUN_REQUEST })).toHaveAccessibleDescription(
+      'Loading the preview',
+    );
+    await user.keyboard('{Escape}');
+    dialog = await openRequest(user, SECOND_SWAP.swapId);
+    await act(async () => answerFirst(alonePreview({ type: 'swap', requestId: 'swap-0001' })));
+    const second = within(dialog).getByRole('button', { name: RUN_REQUEST });
+    await waitFor(() => expect(second).toBeEnabled());
+    await user.click(second);
+    await waitFor(() => expect(run).toHaveBeenCalledTimes(1));
+    expect(run.mock.calls[0]![1].selection?.requests).toEqual([{ type: 'swap', requestId: SECOND_SWAP.swapId }]);
+
+    // Another pool starts from its own request's preview.
+    await user.keyboard('{Escape}');
+    await pick(user, 'Pool', OTHER.name);
+    dialog = await openRequest(user, 'swap-eth-0001');
+    const other = within(dialog).getByRole('button', { name: RUN_REQUEST });
+    await waitFor(() => expect(other).toBeEnabled());
+    await user.click(other);
+    await waitFor(() => expect(run).toHaveBeenCalledTimes(2));
+    expect(run.mock.calls[1]![0]).toBe(OTHER_ID);
+    expect(run.mock.calls[1]![1].selection?.requests).toEqual([{ type: 'swap', requestId: 'swap-eth-0001' }]);
+  });
+
+  it('keeps an unanswered run of one request under its key and selection, and retries it from the detail', async () => {
+    const run = vi
+      .fn<Run>()
+      .mockRejectedValueOnce(new Error('The venue could not be reached.'))
+      .mockResolvedValue(settlement({ status: 'SUBMITTING' }));
+    const user = dashboard({
+      settlements: {
+        requests: () => Promise.resolve([queued(swap({ status: 'BLOCKED' })), queued(SECOND_SWAP)]),
+        run,
+      },
+    });
+
+    const dialog = await openRequest(user, SECOND_SWAP.swapId);
+    const button = within(dialog).getByRole('button', { name: RUN_REQUEST });
+    await waitFor(() => expect(button).toBeEnabled());
+    await user.click(button);
+
+    // The outcome is unknown, so no new run starts, and the same one can go again from here.
+    expect(await within(dialog).findByText('Batch status unknown')).toBeInTheDocument();
+    expect(button).toHaveAccessibleDescription('The last run is unresolved');
+    expect(window.localStorage.getItem(INTENT_NAME)).not.toBeNull();
+    await user.click(within(dialog).getByRole('button', { name: 'Retry this run' }));
+
+    await waitFor(() => expect(run).toHaveBeenCalledTimes(2));
+    expect(run.mock.calls[1]![1]).toEqual(run.mock.calls[0]![1]);
+    expect(run.mock.calls[0]![1].selection?.requests).toEqual([{ type: 'swap', requestId: SECOND_SWAP.swapId }]);
   });
 });
 
@@ -1255,59 +1739,71 @@ describe('a batch that has not been confirmed', () => {
 });
 
 describe('the mode an operator reads', () => {
-  it('describes the saved policy, not the switch being edited', async () => {
-    const user = dashboard({
-      settlements: { policy: () => Promise.resolve({ ...POLICY, automaticEnabled: true }) },
-    });
+  const AUTOMATIC_SWAPS = { ...POLICIES.swap, automaticEnabled: true };
 
-    const panel = cardOf(await screen.findByRole('heading', { name: 'Policy', level: 2 }));
-    expect(await within(panel).findByText('Automatic')).toBeInTheDocument();
-
-    await openSettings(user);
-    await user.click(await screen.findByLabelText('Automatic settlement'));
-
-    // Unticking a box changes nothing at the venue until it is saved.
-    expect(within(panel).getByText('Automatic')).toBeInTheDocument();
-    expect(within(panel).getByText('Unsaved changes')).toBeInTheDocument();
-  });
-
-  it('keeps describing the saved policy after a save is refused', async () => {
+  it('describes the saved settings, not the switch being edited', async () => {
     const user = dashboard({
       settlements: {
-        policy: () => Promise.resolve({ ...POLICY, automaticEnabled: true }),
+        policy: (_poolId, type) => Promise.resolve(type === 'swap' ? AUTOMATIC_SWAPS : POLICIES[type]),
+        monitoring: () => Promise.resolve(withPolicy(AUTOMATIC_SWAPS)),
+      },
+    });
+
+    const swaps = await screen.findByRole('button', { name: /^Swaps/ });
+    await waitFor(() => expect(swaps).toHaveTextContent('Automatic'));
+    await openSettings(user);
+    await user.click(await screen.findByLabelText(AUTOMATIC));
+
+    // Unticking a box changes nothing at the venue until it is saved.
+    expect(screen.getByLabelText(AUTOMATIC)).not.toBeChecked();
+    expect(await settingsButton('Automatic · 5 per batch')).toBeInTheDocument();
+    expect(swaps).toHaveTextContent('Automatic');
+  });
+
+  it('keeps describing the saved settings after a save is refused', async () => {
+    const user = dashboard({
+      settlements: {
+        policy: () => Promise.resolve(AUTOMATIC_SWAPS),
+        monitoring: () => Promise.resolve(withPolicy(AUTOMATIC_SWAPS)),
         updatePolicy: () =>
           Promise.reject(new DomainError('Settings changed elsewhere', 'CONFLICT')),
       },
     });
 
     await openSettings(user);
-    await user.click(await screen.findByLabelText('Automatic settlement'));
-    await user.click(screen.getByRole('button', { name: 'Save settings' }));
+    await user.click(await screen.findByLabelText(AUTOMATIC));
+    await user.click(screen.getByRole('button', { name: SAVE }));
 
-    expect(await screen.findByText('These settings changed elsewhere')).toBeInTheDocument();
-    const panel = cardOf(screen.getByRole('heading', { name: 'Policy', level: 2 }));
-    expect(within(panel).getByText('Automatic')).toBeInTheDocument();
+    expect(await screen.findByText(CHANGED_ELSEWHERE)).toBeInTheDocument();
+    expect(await settingsButton('Automatic · 5 per batch')).toBeInTheDocument();
   });
 
-  it('keeps the policy editor folded away, with the mode in view', async () => {
+  it('keeps the settings closed in the queue’s own panel, with the mode in view', async () => {
     dashboard();
 
-    const panel = cardOf(await screen.findByRole('heading', { name: 'Policy', level: 2 }));
-    expect(await within(panel).findByText('Manual')).toBeInTheDocument();
-    expect(
-      within(panel).getByRole('button', { name: 'Policy settings · batch size 5' }),
-    ).toHaveAttribute('aria-expanded', 'false');
+    const queue = await queueCard('Swap queue');
+    const trigger = within(queue).getByRole('button', { name: /^Settings/ });
+    await waitFor(() => expect(trigger).toHaveAccessibleName('Settings: Manual · 5 per batch'));
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByLabelText(BATCH_SIZE_EXACT)).not.toBeInTheDocument();
   });
 
-  it('says which requests share the batch size, and which settle one at a time', async () => {
-    await openSettings(dashboard());
+  it('says what each queue’s batch size means, and claims no wait for liquidity', async () => {
+    const user = dashboard();
+    const note = () => screen.getByText(/^1 to 10\./);
 
-    expect(
-      await screen.findByText(
-        '1 to 10 swaps, proportional deposits or withdrawals. Initial deposits settle one at a time.',
-      ),
-    ).toBeInTheDocument();
+    await openSettings(user);
+    await waitFor(() => expect(note()).toHaveTextContent('1 to 10. Automatic batches wait for a full batch.'));
+    await user.keyboard('{Escape}');
+
+    await showFamily(user, /^Add liquidity/);
+    await openSettings(user);
+    await waitFor(() => expect(note()).toHaveTextContent('1 to 10. Initial deposits settle one at a time.'));
+    await user.keyboard('{Escape}');
+
+    await showFamily(user, /^Withdraw liquidity/);
+    await openSettings(user);
+    await waitFor(() => expect(note()).toHaveTextContent(/^1 to 10\.$/));
   });
 });
 
@@ -1687,13 +2183,6 @@ describe('a queued request in full', () => {
     return within(dialog).getByText(label).nextElementSibling!.textContent;
   }
 
-  async function open(user: ReturnType<typeof userEvent.setup>, requestId: string) {
-    await user.click(
-      await screen.findByRole('button', { name: `Details for request ${requestId}` }),
-    );
-    return screen.findByRole('dialog');
-  }
-
   async function openEvidence(user: ReturnType<typeof userEvent.setup>, dialog: HTMLElement) {
     await user.click(
       within(dialog).getByRole('button', { name: 'Identifiers, instruments and ledger evidence' }),
@@ -1706,7 +2195,7 @@ describe('a queued request in full', () => {
     });
 
     await showFamily(user, /^Add liquidity/);
-    const dialog = await open(user, 'deposit-0001');
+    const dialog = await openRequest(user, 'deposit-0001');
 
     expect(within(dialog).getByRole('heading', { name: 'Deposit deposit-0001' })).toBeInTheDocument();
     // An arrival counter, not a rank in the queue.
@@ -1733,7 +2222,7 @@ describe('a queued request in full', () => {
       settlements: { requests: () => Promise.resolve([queued(swap({ status: 'BLOCKED' }), true)]) },
     });
 
-    const dialog = await open(user, 'swap-0001');
+    const dialog = await openRequest(user, 'swap-0001');
 
     expect(within(dialog).getByText('Blocked in the queue')).toBeInTheDocument();
     expect(within(dialog).getByText('Deferred')).toBeInTheDocument();
@@ -1751,13 +2240,13 @@ describe('a queued request in full', () => {
     });
 
     await showFamily(user, /^Withdraw liquidity/);
-    const withdraw = await open(user, 'withdraw-0001');
+    const withdraw = await openRequest(user, 'withdraw-0001');
     expect(valueOf(withdraw, 'LP to burn')).toBe('100.00 LP');
     expect(valueOf(withdraw, 'Minimum out')).toBe('0.406207049 BTC + 24,372.4229406926 USDC');
     await user.keyboard('{Escape}');
 
     await showFamily(user, /^Swaps/);
-    const swapDetail = await open(user, 'swap-0001');
+    const swapDetail = await openRequest(user, 'swap-0001');
     expect(valueOf(swapDetail, 'Minimum out')).toBe('2,926.470588 USDC');
     expect(valueOf(swapDetail, 'Paid out')).toBe('2,950.123456 USDC');
   });
@@ -1792,7 +2281,7 @@ describe('a queued request in full', () => {
     });
 
     await showFamily(user, /^Add liquidity/);
-    const dialog = await open(user, 'deposit-0001');
+    const dialog = await openRequest(user, 'deposit-0001');
     expect(within(dialog).getByText('Ratio outside signed bounds')).toBeInTheDocument();
 
     // The queue stops answering, so the row stays BLOCKED, while a newer batch confirms it.
@@ -1852,7 +2341,7 @@ describe('a queued request in full', () => {
     });
 
     async function readOutcome(requestId: string) {
-      const dialog = await open(user, requestId);
+      const dialog = await openRequest(user, requestId);
       await within(dialog).findByText('Settled');
       const read = { burned: valueOf(dialog, 'LP burned'), paid: valueOf(dialog, 'Paid out') };
       await user.keyboard('{Escape}');
@@ -1870,7 +2359,7 @@ describe('a queued request in full', () => {
     const user = dashboard({ settlements: { requests: () => Promise.resolve(queue) } });
 
     await showFamily(user, /^Withdraw liquidity/);
-    const dialog = await open(user, 'withdraw-0001');
+    const dialog = await openRequest(user, 'withdraw-0001');
     queue = [];
 
     expect(
@@ -1899,7 +2388,7 @@ describe('a queued request in full', () => {
     let queue: SettlementRequest[] = [queued(swap())];
     const user = dashboard({ settlements: { requests: () => Promise.resolve(queue) } });
 
-    const dialog = await open(user, 'swap-0001');
+    const dialog = await openRequest(user, 'swap-0001');
     queue = [];
     await within(dialog).findByText('No longer in the active queue', {}, { timeout: 10_000 });
 

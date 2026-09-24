@@ -66,9 +66,11 @@ After onboarding, exchange local test tokens: the trader signs a request and the
 
 1. **Trader:** Open **Liquidity**, select a pool, enter maximum amounts of both tokens, and click **Get a quote**.
 2. Review the accepted amounts, refunds and minimum LP, then sign the request in MetaMask.
-3. **Operator:** Open **Settlement** for that pool and run settlement. Swaps, deposits and withdrawals have separate queues.
+3. **Operator:** Open **Settlement** for that pool, select the deposit queue, and run its batch. Each queue has its own automatic mode and batch size.
 4. **Trader:** Check the confirmed amounts and LP balance. Select a position to quote and sign a withdrawal.
 5. After an unsettled request expires, use **Recover funds** to release its remaining allocations.
+
+To settle just one swap, deposit or withdrawal, open its **Details** and click **Run request**.
 
 Withdrawals and recovery require current pool access and KYC. The initial `0.0000001 LP` stays permanently in the supply without a redeemable holding.
 

@@ -30,21 +30,14 @@ import {
   NOTHING_TO_SETTLE,
   OBSERVED,
   reserveText,
-  runBlocker,
+  rowOfStep,
   stepStateLabels,
   stepStateOf,
   stepStateTones,
   trajectory,
   type StepState,
 } from './preview';
-import {
-  amount,
-  canChangeHold,
-  familyInfo,
-  isExpired,
-  type FamilyInfo,
-  type QueueRow,
-} from './queueRows';
+import { amount, familyInfo, isWaiting, type FamilyInfo, type QueueRow } from './queueRows';
 import { DeferButton, DetailsButton } from './RequestCells';
 import { TrajectoryChart } from './TrajectoryChart';
 import type { PreviewRead } from './usePreview';
@@ -73,13 +66,15 @@ function sameInstrument(a: InstrumentId, b: InstrumentId): boolean {
 }
 
 /**
- * The next batch of one queue, before it runs: the requests in order, where
- * each would leave the pool, and the one action that runs exactly this.
+ * The next batch of one queue, before it runs: the requests in order, and
+ * where each would leave the pool. The queue's own panel runs exactly this,
+ * and what that run did is reported here.
  *
  * Every figure is the venue's projection from one observation, so nothing here
  * is a settlement. A projection that holds now can still fail on the ledger.
  */
 export function BatchPreview({
+  regionId,
   family,
   retryOf,
   preview,
@@ -93,11 +88,12 @@ export function BatchPreview({
   holdsLocked,
   holdError,
   now,
-  onRun,
   onDefer,
   onOpen,
   onExitRetry,
 }: {
+  /** The id the queue's Run batch leads back to. */
+  regionId: string;
   family: FamilyInfo;
   retryOf: string | null;
   preview: PreviewRead;
@@ -113,14 +109,11 @@ export function BatchPreview({
   holdsLocked: boolean;
   holdError: Error | undefined;
   now: number;
-  onRun: (preview: SettlementPreview) => void;
   onDefer: (request: SettlementRequestRef) => void;
   onOpen: (row: QueueRow, trigger: HTMLElement) => void;
   onExitRetry: () => void;
 }) {
-  const regionId = useId();
   const headingId = useId();
-  const reasonId = useId();
   const [pinned, setPinned] = useState<string | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
 
@@ -134,7 +127,7 @@ export function BatchPreview({
   const joined: Joined[] = (data?.steps ?? []).map((step, index) => ({
     step,
     number: index + 1,
-    row: rows?.find((row) => row.requestId === step.request.requestId),
+    row: rowOfStep(step, rows),
     state: stepStateOf(step),
   }));
   const ids = joined.map(({ step }) => step.request.requestId);
@@ -144,21 +137,7 @@ export function BatchPreview({
   const numberOf = (id: string | null) => (id === null ? null : ids.indexOf(id) + 1);
   const idOf = (step: number) => ids[step - 1] ?? null;
   const active = joined.find(({ step }) => step.request.requestId === activeId);
-
-  const blocker = runBlocker({
-    preview: data,
-    loading: preview.loading,
-    failed: preview.error !== undefined,
-    // A step the queue no longer lists means the preview is behind the queue.
-    stale: preview.stale || joined.some(({ row }) => row === undefined),
-    inFlight: inFlight !== null,
-    unresolved: run.intent !== undefined,
-    busy: busy || run.pending,
-    expired: joined.some(({ row }) => row !== undefined && isExpired(row, now)),
-  });
   const pin = (id: string) => setPinned((current) => (current === id ? null : id));
-  // A run in flight shows its own spinner, so it needs no reason beside it.
-  const reason = run.pending ? null : blocker;
 
   return (
     <Card id={regionId} tabIndex={-1} role="region" aria-labelledby={headingId} className="outline-none">
@@ -176,30 +155,14 @@ export function BatchPreview({
           />
         }
         actions={
-          <>
-            {reason ? (
-              <span id={reasonId} className="text-muted-foreground text-xs">
-                {reason}
-              </span>
-            ) : null}
-            <Button
-              variant="ghost"
-              size="sm"
-              loading={preview.loading && data !== undefined}
-              onClick={preview.reload}
-            >
-              Refresh
-            </Button>
-            <Button
-              size="sm"
-              loading={run.pending}
-              disabled={blocker !== null}
-              aria-describedby={reason ? reasonId : undefined}
-              onClick={() => data && onRun(data)}
-            >
-              Run batch
-            </Button>
-          </>
+          <Button
+            variant="ghost"
+            size="sm"
+            loading={preview.loading && data !== undefined}
+            onClick={preview.reload}
+          >
+            Refresh
+          </Button>
         }
       />
 
@@ -325,13 +288,40 @@ function Notices({
   preview: PreviewRead;
   now: number;
 }) {
-  const unanswered = run.intent !== undefined && !run.pending ? run.intent : undefined;
-  const refusal = run.intent === undefined ? run.error : undefined;
   const failedRefresh = preview.data !== undefined ? preview.error : undefined;
-  if (!unanswered && !refusal && !holdError && !inFlight && !failedRefresh) return null;
 
   return (
-    <CardContent className="flex flex-col gap-2 px-5 pt-4 pb-0">
+    // Hidden while nothing here has anything to report.
+    <CardContent className="flex flex-col gap-2 px-5 pt-4 pb-0 empty:hidden">
+      <RunNotices run={run} inFlight={inFlight} now={now} />
+      {holdError ? (
+        <Banner variant="error" size="compact" dismissible={false}>
+          {holdError.message}
+        </Banner>
+      ) : null}
+      {failedRefresh ? <RefreshFailure error={failedRefresh} onRetry={preview.reload} /> : null}
+    </CardContent>
+  );
+}
+
+/**
+ * What the pool's manual runs report, whichever panel started one: a run with
+ * no answer yet and its retry, a refused run, and the batch in flight.
+ */
+export function RunNotices({
+  run,
+  inFlight,
+  now,
+}: {
+  run: RunIntentState;
+  inFlight: Settlement | null;
+  now: number;
+}) {
+  const unanswered = run.intent !== undefined && !run.pending ? run.intent : undefined;
+  const refusal = run.intent === undefined ? run.error : undefined;
+
+  return (
+    <>
       {unanswered ? (
         <Banner variant="warning" title="Batch status unknown" size="compact" dismissible={false}>
           <span className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
@@ -352,11 +342,6 @@ function Notices({
           {refusal.message}
         </Banner>
       ) : null}
-      {holdError ? (
-        <Banner variant="error" size="compact" dismissible={false}>
-          {holdError.message}
-        </Banner>
-      ) : null}
       {inFlight ? (
         <p className="flex flex-wrap items-center gap-2 text-xs">
           <StatusBadge
@@ -370,8 +355,7 @@ function Notices({
           </span>
         </p>
       ) : null}
-      {failedRefresh ? <RefreshFailure error={failedRefresh} onRetry={preview.reload} /> : null}
-    </CardContent>
+    </>
   );
 }
 
@@ -439,7 +423,7 @@ function StepRow({
               {row ? <span className="text-muted-foreground">{row.offered} →</span> : null}
               <span className="flex flex-col">
                 {step.outputs.map((check) => (
-                  <Output key={`${check.instrument.admin}:${check.instrument.id}`} check={check} state={state} lp={lp} />
+                  <ProjectedOutput key={`${check.instrument.admin}:${check.instrument.id}`} check={check} state={state} lp={lp} />
                 ))}
               </span>
             </span>
@@ -453,7 +437,7 @@ function StepRow({
       </Button>
       {row ? (
         <span className="flex items-center gap-1 pr-2">
-          {canChangeHold(row, now) ? (
+          {isWaiting(row, now) ? (
             <DeferButton row={row} holding={holding} disabled={holdsLocked || busy} onDefer={onDefer} />
           ) : null}
           <DetailsButton row={row} onOpen={onOpen} />
@@ -464,7 +448,7 @@ function StepRow({
 }
 
 /** One projected output: what it would pay, the minimum it was signed for, and the room between. */
-function Output({ check, state, lp }: { check: SettlementOutputCheck; state: StepState; lp: InstrumentId }) {
+export function ProjectedOutput({ check, state, lp }: { check: SettlementOutputCheck; state: StepState; lp: InstrumentId }) {
   const unit = sameInstrument(check.instrument, lp) ? 'LP' : check.instrument;
   return (
     <span className="flex flex-wrap gap-x-2">

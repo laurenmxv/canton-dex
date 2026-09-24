@@ -2,36 +2,38 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useDexClient } from '../../app/runtime';
 import { useAction, useAsync } from '../../app/useAsync';
 import { useNow } from '../../app/useNow';
-import type {
-  PoolDetail,
-  Settlement,
-  SettlementPreview,
-  SettlementRequestRef,
-  UpdateSettlementPolicy,
-} from '../../lib/api/types';
+import type { PoolDetail, Settlement, SettlementPreview, SettlementRequestRef } from '../../lib/api/types';
 import { RefreshFailure } from '../../ui/States';
 import { BatchHistory } from './BatchHistory';
-import { BatchPreview } from './BatchPreview';
+import { BatchPreview, RunNotices } from './BatchPreview';
 import { DeferredList } from './DeferredList';
-import { PolicyControls } from './PolicyControls';
 import { PoolState } from './PoolState';
+import { runBlocker } from './preview';
 import { QueueOverview } from './QueueOverview';
 import {
   byArrival,
   FAMILIES,
   familyInfo,
+  holdLabels,
+  isWaiting,
+  policyOf,
   queueToken,
   rowOf,
+  selectsOnly,
   summarize,
   type Family,
   type FamilySummary,
   type QueueRow,
   type View,
 } from './queueRows';
+import { QueueSettings } from './QueueSettings';
 import { QueueTable } from './QueueTable';
-import { RequestDetail } from './RequestDetail';
-import { useBatchHistory } from './useBatchHistory';
+import { RequestDetail, requestEvidence } from './RequestDetail';
+import { RunBatch } from './RunBatch';
+import { RunRequest } from './RunRequest';
+import { IN_FLIGHT_STATUSES, useBatchHistory } from './useBatchHistory';
 import { usePreview } from './usePreview';
+import { useQueuePolicy } from './useQueuePolicy';
 import { useRunIntent } from './useRunIntent';
 
 /**
@@ -62,11 +64,8 @@ export function PoolSettlement({ pool }: { pool: PoolDetail }) {
   const [holding, setHolding] = useState<string>();
   const trigger = useRef<HTMLElement | null>(null);
   const searchId = useId();
+  const previewId = useId();
 
-  const policy = useAsync(
-    (signal) => client.admin.settlements.policy(poolId, { signal }),
-    [client, poolId],
-  );
   const monitoring = useAsync(
     (signal) => client.admin.settlements.monitoring(poolId, { signal }),
     [client, poolId],
@@ -109,13 +108,48 @@ export function PoolSettlement({ pool }: { pool: PoolDetail }) {
   }, [rows]);
 
   const familyRows = rows?.[family];
+  // The newest settings the venue confirmed for this queue. A save moves them
+  // from its own answer, so the preview it outdated cannot run while monitoring
+  // catches up. Another queue's save moves none of them.
+  const settings = useQueuePolicy(poolId, family, monitoring.data?.policies, monitoring.reload);
   const preview = usePreview({
     poolId,
     family,
     retryOf,
     poolVersion: monitoring.data?.pool.version,
-    policyVersion: monitoring.data?.policy.version,
+    policyVersion: settings.current.data?.version,
     queue: familyRows && queueToken(familyRows),
+    now,
+  });
+
+  const run = useRunIntent(poolId, batches.data, (batch) => {
+    if (batch) setRetryOf(null);
+    reload();
+  });
+  const knownBatches = run.answered ? [run.answered, ...(batches.data ?? [])] : batches.data;
+  const live = selected
+    ? rows?.[selected.family].find((row) => row.requestId === selected.requestId)
+    : undefined;
+  useEffect(() => {
+    if (live) setSelected(live);
+  }, [live]);
+  // The open request as the queue now reads it, while it waits there. One no
+  // operator holds back is previewed alone, apart from the batch preview.
+  const requestBatch = selected && requestEvidence(live ?? selected, knownBatches).batch;
+  const pendingRequest = requestBatch && IN_FLIGHT_STATUSES.has(requestBatch.status) ? requestBatch : null;
+  const waiting = live && isWaiting(live, now) && requestBatch?.status !== 'CONFIRMED' && !pendingRequest
+    ? live
+    : undefined;
+  const single = waiting && !waiting.deferred ? waiting : undefined;
+  const alone = usePreview({
+    poolId,
+    family: single?.family ?? family,
+    retryOf: null,
+    request: single && { type: single.family, requestId: single.requestId },
+    enabled: single !== undefined,
+    poolVersion: monitoring.data?.pool.version,
+    policyVersion: single && policyOf(settings.policies, single.family)?.version,
+    queue: single && queueToken([single]),
     now,
   });
 
@@ -125,20 +159,34 @@ export function PoolSettlement({ pool }: { pool: PoolDetail }) {
     batches.reload();
     history.page.reload();
     preview.reload();
+    alone.reload();
   }
 
-  const run = useRunIntent(poolId, batches.data, (batch) => {
-    // A new batch is the retry, so the review of the old attempt is over.
-    if (batch) setRetryOf(null);
-    reload();
-  });
   const hold = useAction((request: SettlementRequestRef, deferred: boolean) =>
     client.admin.settlements.setDeferred(poolId, request, deferred),
   );
-  const save = useAction((input: UpdateSettlementPolicy) =>
-    client.admin.settlements.updatePolicy(poolId, input),
-  );
   const inFlight = monitoring.data?.activeSettlement ?? null;
+  const busy = hold.pending || settings.saving || run.pending;
+  // One batch at a time per pool: a run in flight or unanswered on any queue
+  // holds every queue's run.
+  const blocker = runBlocker({
+    preview,
+    rows: familyRows,
+    now,
+    inFlight: inFlight !== null,
+    unresolved: run.intent !== undefined,
+    busy,
+  });
+  const aloneBlocker = waiting?.deferred
+    ? `${holdLabels.back} first`
+    : runBlocker({
+        preview: alone,
+        rows: single && rows?.[single.family],
+        now,
+        inFlight: inFlight !== null,
+        unresolved: run.intent !== undefined,
+        busy,
+      });
 
   async function changeHold(request: SettlementRequestRef, deferred: boolean) {
     setHolding(request.requestId);
@@ -153,6 +201,12 @@ export function PoolSettlement({ pool }: { pool: PoolDetail }) {
     run.run(shown.selection);
   }
 
+  /** Runs the open request alone, and only if the preview on screen is of that request alone. */
+  function runAlone(shown: SettlementPreview) {
+    if (aloneBlocker !== null || !single || shown.pool.poolId !== poolId || !selectsOnly(shown.selection, single)) return;
+    run.run(shown.selection);
+  }
+
   function selectFamily(next: Family) {
     setFamily(next);
     setRetryOf(null);
@@ -164,13 +218,6 @@ export function PoolSettlement({ pool }: { pool: PoolDetail }) {
     setFamily(type);
     setRetryOf(batch.settlementId);
   }
-
-  const live = selected
-    ? rows?.[selected.family].find((row) => row.requestId === selected.requestId)
-    : undefined;
-  useEffect(() => {
-    if (live) setSelected(live);
-  }, [live]);
 
   function open(row: QueueRow, button: HTMLElement) {
     trigger.current = button;
@@ -192,7 +239,7 @@ export function PoolSettlement({ pool }: { pool: PoolDetail }) {
     holding,
     // The venue refuses every hold change while a batch is in flight.
     holdsLocked: inFlight !== null,
-    busy: hold.pending || save.pending || run.pending,
+    busy,
     now,
   };
 
@@ -204,25 +251,31 @@ export function PoolSettlement({ pool }: { pool: PoolDetail }) {
         <RefreshFailure error={monitoring.error} onRetry={monitoring.reload} />
       ) : null}
 
-      <QueueOverview summaries={summaries} family={family} onSelect={selectFamily} now={now} />
+      <QueueOverview
+        summaries={summaries}
+        policies={settings.policies}
+        family={family}
+        onSelect={selectFamily}
+        now={now}
+      />
 
       <BatchPreview
         // A new queue or a new retry starts with nothing pinned.
         key={`${family}:${retryOf ?? ''}`}
+        regionId={previewId}
         family={info}
         retryOf={retryOf}
         preview={preview}
         rows={familyRows}
-        batchSize={monitoring.data?.policy.batchSize}
+        batchSize={settings.current.data?.batchSize}
         labels={{ ...labels, lp: pool.settings.lpTokenInstrumentId }}
         inFlight={inFlight}
         run={run}
-        busy={hold.pending || save.pending}
+        busy={hold.pending || settings.saving}
         holding={holding}
         holdsLocked={holdProps.holdsLocked}
         holdError={hold.error}
         now={now}
-        onRun={runPreviewed}
         onDefer={(request) => void changeHold(request, true)}
         onOpen={open}
         onExitRetry={() => setRetryOf(null)}
@@ -238,6 +291,18 @@ export function PoolSettlement({ pool }: { pool: PoolDetail }) {
 
       <QueueTable
         family={info}
+        actions={
+          <>
+            <QueueSettings family={info} settings={settings} busy={hold.pending || run.pending} />
+            <RunBatch
+              blocker={blocker}
+              pending={run.pending}
+              size={preview.data?.selection.requests.length ?? 0}
+              previewId={previewId}
+              onRun={() => preview.data && runPreviewed(preview.data)}
+            />
+          </>
+        }
         queue={queue}
         rows={familyRows?.filter((row) => !row.deferred)}
         monitoring={monitoring.data}
@@ -260,22 +325,23 @@ export function PoolSettlement({ pool }: { pool: PoolDetail }) {
         now={now}
       />
 
-      <PolicyControls
-        poolId={poolId}
-        policy={policy}
-        save={save}
-        busy={hold.pending || run.pending}
-        onSaved={() => {
-          policy.reload();
-          reload();
-        }}
-      />
-
       <RequestDetail
         row={selected}
         left={selected !== undefined && rows !== undefined && live === undefined}
-        batches={batches.data}
+        batches={knownBatches}
         now={now}
+        notices={<RunNotices run={run} inFlight={pendingRequest ?? inFlight} now={now} />}
+        action={
+          waiting ? (
+              <RunRequest
+                preview={alone}
+                blocker={aloneBlocker}
+                pending={run.pending}
+                lp={pool.settings.lpTokenInstrumentId}
+                onRun={() => alone.data && runAlone(alone.data)}
+              />
+          ) : undefined
+        }
         onClose={() => setSelected(undefined)}
         onCloseAutoFocus={restoreFocus}
       />

@@ -24,14 +24,20 @@ export type SettlementStatus =
 export type SettlementTrigger = 'MANUAL' | 'AUTOMATIC';
 
 /**
- * One pool's own batching settings, as the venue's database holds them.
+ * One queue's own batching settings, as the venue's database holds them.
  *
- * Every field belongs to this pool alone: there is no venue-wide target and no
- * venue-wide switch. `version` rises on every accepted update and is what an
- * update must quote so a stale form cannot restore an old setting.
+ * Every field belongs to this queue of this pool alone: there is no pool-wide
+ * or venue-wide target, and no shared switch. `version` rises on every
+ * accepted update of this queue, and is what an update must quote so a stale
+ * form cannot restore an old setting.
+ *
+ * Automatic dispatch takes only enabled queues, each up to its own
+ * `batchSize`. An automatic swap batch waits until the queue can fill it. An
+ * automatic deposit or withdrawal batch can start with fewer requests.
  */
 export interface SettlementPolicy {
   poolId: string;
+  type: RequestType;
   automaticEnabled: boolean;
   batchSize: number;
   /** The largest target the venue has tested for this pool. */
@@ -51,9 +57,12 @@ export interface UpdateSettlementPolicy {
  * The batch one preview proposed, which is what the venue checks again before
  * it runs it.
  *
- * `stateVersion` and `policyVersion` are the pool and the policy the preview
- * observed, and `requests` is the membership in queue order. `retryOf` names
- * the rejected or cancelled batch whose remaining members this proposes again.
+ * `type` is the queue it comes from. `stateVersion` is the pool the preview
+ * observed, and `policyVersion` is the version of that queue's policy alone,
+ * so a change to another queue's settings leaves it current. `requests` is the
+ * membership in queue order. `retryOf` names the rejected or cancelled batch
+ * whose remaining members this proposes again. One request and no `retryOf`
+ * can name any eligible request of its queue, which is how a request runs alone.
  */
 export interface SettlementSelection {
   type: RequestType;
@@ -67,8 +76,9 @@ export interface SettlementSelection {
  * Starts one manual batch. Repeating the same key never starts a second.
  *
  * With a `selection`, the venue runs exactly that membership, and refuses it
- * with a conflict once the pool, the policy or the queue has moved on from what
- * the preview observed. Without one, the venue selects the batch itself.
+ * with a conflict once the pool, that queue's policy or the queue itself has
+ * moved on from what the preview observed. Without one, the venue selects the
+ * batch itself.
  */
 export interface RunSettlementInput {
   idempotencyKey: string;
@@ -258,7 +268,11 @@ export interface PoolSnapshot {
 }
 
 /**
- * One pool's queue and state together, which is what an operator decides from.
+ * One pool's queues and state together, which is what an operator decides from.
+ *
+ * `policies` holds the settings of every queue, one entry per `type`; find a
+ * queue's own by its type rather than by position. The pool still runs one
+ * batch at a time across all three queues.
  *
  * The two counts do not add up to the queue, and neither is the queue's
  * length:
@@ -273,7 +287,7 @@ export interface PoolSnapshot {
  */
 export interface SettlementMonitoring {
   poolId: string;
-  policy: SettlementPolicy;
+  policies: readonly SettlementPolicy[];
   readyCount: number;
   pendingCount: number;
   /** A request that cannot settle at the head of its own family's queue. */

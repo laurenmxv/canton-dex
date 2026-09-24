@@ -206,7 +206,7 @@ describe('what the adapter forwards', () => {
     ]);
   });
 
-  it('forwards the batch preview, the hold and the history with every argument', async () => {
+  it('forwards the previews, the hold, the history and one queue’s settings with every argument', async () => {
     const calls: unknown[][] = [];
     const record =
       (name: string) =>
@@ -218,22 +218,32 @@ describe('what the adapter forwards', () => {
       admin: {
         settlements: {
           preview: record('preview'),
+          previewRequest: record('previewRequest'),
           setDeferred: record('setDeferred'),
           history: record('history'),
+          policy: record('policy'),
+          updatePolicy: record('updatePolicy'),
         },
       },
     } as unknown as ApiClient);
     const signal = new AbortController().signal;
     const request = { type: 'withdraw', requestId: ID } as const;
+    const settings = { automaticEnabled: true, batchSize: 3, expectedVersion: 2 };
 
     await client.admin.settlements.preview('pool', 'withdraw', 'batch-0001', { signal });
+    await client.admin.settlements.previewRequest('pool', request, { signal });
     await client.admin.settlements.setDeferred('pool', request, false, { signal });
     await client.admin.settlements.history('pool', { status: 'REJECTED', before: 'cursor' }, { signal });
+    await client.admin.settlements.policy('pool', 'deposit', { signal });
+    await client.admin.settlements.updatePolicy('pool', 'deposit', settings, { signal });
 
     expect(calls).toEqual([
       ['preview', 'pool', 'withdraw', 'batch-0001', { signal }],
+      ['previewRequest', 'pool', request, { signal }],
       ['setDeferred', 'pool', request, false, { signal }],
       ['history', 'pool', { status: 'REJECTED', before: 'cursor' }, { signal }],
+      ['policy', 'pool', 'deposit', { signal }],
+      ['updatePolicy', 'pool', 'deposit', settings, { signal }],
     ]);
   });
 });

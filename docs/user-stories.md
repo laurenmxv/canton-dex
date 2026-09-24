@@ -141,14 +141,15 @@ Example:
 
 - **Run settlements.** Can settle swaps, proportional deposits and withdrawals in batches; initial
   funding settles individually,
-  following arrival order within each pool's swap, deposit or withdrawal queue.
+  following arrival order within each pool's swap, deposit or withdrawal queue,
+  or manually select one eligible request to settle individually.
   **(Required role: `venue_operator`)**
 
-  - **Frontend:** Shows separate swap, deposit and withdrawal queues, settlement controls, and results.
+  - **Frontend:** Each queue's Requests panel offers manual batch execution and its own automatic mode and batch size. Request details also allow running one eligible request as a singleton batch. Shows settlement previews and results.
   - **Client:** Sends settlement requests to the backend and fetches results.
-  - **Backend:** Selects an eligible queue in turn, preserves its arrival order,
+  - **Backend:** Selects an eligible queue in turn, preserves its arrival order for batches,
     and submits one settlement per pool at a time. A blocked family does not
-    stop the others. Records results and can run automatically.
+    stop the others. Automatic mode, batch size and policy version are independent per queue.
   - **DAML:** Atomically settles through `dvo` delegation, updating reserves and
     LP supply while enforcing signed limits and deadlines.
 

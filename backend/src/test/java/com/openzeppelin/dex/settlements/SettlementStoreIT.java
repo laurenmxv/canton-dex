@@ -102,54 +102,157 @@ class SettlementStoreIT {
   @Test
   void policyCompareAndSwapAllowsOneWriterAndStaleSliderCannotReactivateAutomation()
       throws Exception {
-    store.policy("pool");
+    store.policy("pool", "swap");
     var results =
         concurrent(
             () -> update(new UpdatePolicy(true, 2, 0)),
             () -> update(new UpdatePolicy(false, 3, 0)));
     assertThat(results).containsExactlyInAnyOrder(true, false);
-    Policy policy = store.policy("pool");
+    Policy policy = store.policy("pool", "swap");
     assertThat(policy.version()).isEqualTo(1);
-    store.updatePolicy("pool", new UpdatePolicy(false, 2, policy.version()), now);
-    assertThatThrownBy(() -> store.updatePolicy("pool", new UpdatePolicy(true, 4, 1), now))
+    store.updatePolicy("pool", "swap", new UpdatePolicy(false, 2, policy.version()), now);
+    assertThatThrownBy(() -> store.updatePolicy("pool", "swap", new UpdatePolicy(true, 4, 1), now))
         .isInstanceOf(SwapFailure.class)
         .hasMessageContaining("changed");
-    assertThat(store.policy("pool").automaticEnabled()).isFalse();
+    assertThat(store.policy("pool", "swap").automaticEnabled()).isFalse();
+  }
+
+  @Test
+  void queuePoliciesHaveIndependentVersionsSizesAndDispatchAuthorization() {
+    store.updatePolicy("pool", "swap", new UpdatePolicy(true, 2, 0), now);
+    store.updatePolicy("pool", "deposit", new UpdatePolicy(false, 1, 0), now);
+    store.updatePolicy("pool", "withdraw", new UpdatePolicy(true, 3, 0), now);
+    insert(1, "READY", now.plusSeconds(600));
+    insert(2, "READY", now.plusSeconds(600));
+    insertLiquidity(LiquidityModels.Kind.DEPOSIT);
+    insertLiquidity(LiquidityModels.Kind.DEPOSIT);
+    insertLiquidity(LiquidityModels.Kind.WITHDRAW);
+    insertLiquidity(LiquidityModels.Kind.WITHDRAW);
+    assertThat(store.plan("pool", "deposit", null, null, snapshot, now).requests()).hasSize(1);
+    assertThat(store.plan("pool", "withdraw", null, null, snapshot, now).requests()).hasSize(2);
+    var preview = store.plan("pool", "swap", null, null, snapshot, now);
+    assertThat(preview.requests()).hasSize(2);
+    store.updatePolicy("pool", "deposit", new UpdatePolicy(true, 2, 1), now);
+    var manual =
+        store
+            .claim("pool", UUID.randomUUID(), Trigger.MANUAL, snapshot, now, preview.selection())
+            .orElseThrow();
+    assertThat(manual.settlement().requests())
+        .containsExactlyElementsOf(preview.selection().requests());
+    store.cancelPreparation(manual.settlement().settlementId(), "TEST", "Release test batch", now);
+    store.updatePolicy("pool", "deposit", new UpdatePolicy(false, 2, 2), now);
+    store.updatePolicy("pool", "withdraw", new UpdatePolicy(false, 3, 1), now);
+    var automatic =
+        store.claim("pool", UUID.randomUUID(), Trigger.AUTOMATIC, snapshot, now).orElseThrow();
+    store.updatePolicy("pool", "deposit", new UpdatePolicy(true, 1, 3), now);
+    assertThat(
+            store.authorizeDispatch(
+                automatic.settlement().settlementId(), fills(automatic), snapshot, now))
+        .isPresent();
+    var restarted =
+        new SettlementStore(sql, json, new DataSourceTransactionManager(dataSource), 10);
+    assertThat(restarted.policy("pool", "swap").version()).isEqualTo(1);
+    assertThat(restarted.policy("pool", "deposit").version()).isEqualTo(4);
+    assertThat(restarted.policy("pool", "withdraw").automaticEnabled()).isFalse();
+    assertThat(restarted.monitoring("pool", snapshot, now).policies()).hasSize(3);
+  }
+
+  @Test
+  void automaticOnlySelectsEnabledQueuesAndManualCanRunADisabledQueue() {
+    store.updatePolicy("pool", "swap", new UpdatePolicy(true, 2, 0), now);
+    store.updatePolicy("pool", "deposit", new UpdatePolicy(false, 1, 0), now);
+    store.updatePolicy("pool", "withdraw", new UpdatePolicy(false, 2, 0), now);
+    insert(1, "READY", now.plusSeconds(600));
+    insertLiquidity(LiquidityModels.Kind.DEPOSIT);
+    var withdrawal = insertLiquidity(LiquidityModels.Kind.WITHDRAW);
+    assertThat(store.claim("pool", UUID.randomUUID(), Trigger.AUTOMATIC, snapshot, now)).isEmpty();
+    store.updatePolicy("pool", "deposit", new UpdatePolicy(true, 1, 1), now);
+    assertThat(store.automaticPools()).containsExactly("pool");
+    var deposit =
+        store.claim("pool", UUID.randomUUID(), Trigger.AUTOMATIC, snapshot, now).orElseThrow();
+    assertThat(deposit.settlement().requests())
+        .extracting(RequestRef::type)
+        .containsExactly("deposit");
+    store.cancelPreparation(deposit.settlement().settlementId(), "TEST", "Release test batch", now);
+    var preview = store.plan("pool", "withdraw", null, null, snapshot, now);
+    var manual =
+        store
+            .claim("pool", UUID.randomUUID(), Trigger.MANUAL, snapshot, now, preview.selection())
+            .orElseThrow();
+    assertThat(manual.settlement().requests())
+        .containsExactly(new RequestRef("withdraw", withdrawal.requestId()));
+    assertThatThrownBy(() -> store.updatePolicy("pool", "all", new UpdatePolicy(true, 1, 0), now))
+        .isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
   void reducedMaximumReportsPolicyMismatchUntilOperatorSavesACompatibleSize() {
-    Policy saved = store.updatePolicy("pool", new UpdatePolicy(true, 10, 0), now);
+    Policy saved = store.updatePolicy("pool", "swap", new UpdatePolicy(true, 10, 0), now);
     for (int sequence = 1; sequence <= 5; sequence++)
       insert(sequence, "READY", now.plusSeconds(60));
     var restarted = new SettlementStore(sql, json, new DataSourceTransactionManager(dataSource), 5);
-    for (Trigger trigger : Trigger.values())
-      assertThatThrownBy(() -> restarted.claim("pool", UUID.randomUUID(), trigger, snapshot, now))
-          .isInstanceOfSatisfying(
-              SwapFailure.class,
-              failure -> {
-                assertThat(failure.code()).isEqualTo("POLICY_LIMIT_EXCEEDED");
-                assertThat(failure.status()).isEqualTo(409);
-                assertThat(failure.getMessage()).contains("10", "5", "Update this pool");
-              });
+    assertThat(restarted.claim("pool", UUID.randomUUID(), Trigger.AUTOMATIC, snapshot, now))
+        .isEmpty();
+    assertThatThrownBy(
+            () -> restarted.claim("pool", UUID.randomUUID(), Trigger.MANUAL, snapshot, now))
+        .isInstanceOfSatisfying(
+            SwapFailure.class,
+            failure -> {
+              assertThat(failure.code()).isEqualTo("POLICY_LIMIT_EXCEEDED");
+              assertThat(failure.status()).isEqualTo(409);
+              assertThat(failure.getMessage()).contains("10", "5", "Update this queue");
+            });
     Monitoring monitoring = restarted.monitoring("pool", snapshot, now);
-    assertThat(monitoring.blockedReason()).contains("Saved batch size 10", "current maximum 5");
+    assertThat(monitoring.blockedReason()).isNull();
     assertThat(monitoring.blockedRequest()).isNull();
-    assertThat(monitoring.policy().batchSize()).isEqualTo(10);
-    assertThat(monitoring.policy().maxBatchSize()).isEqualTo(5);
-    assertThat(monitoring.policy().automaticEnabled()).isTrue();
-    assertThat(monitoring.policy().version()).isEqualTo(saved.version());
+    assertThat(
+            monitoring.policies().stream()
+                .filter(p -> p.type().equals("swap"))
+                .findFirst()
+                .orElseThrow()
+                .batchSize())
+        .isEqualTo(10);
+    assertThat(
+            monitoring.policies().stream()
+                .filter(p -> p.type().equals("swap"))
+                .findFirst()
+                .orElseThrow()
+                .maxBatchSize())
+        .isEqualTo(5);
+    assertThat(
+            monitoring.policies().stream()
+                .filter(p -> p.type().equals("swap"))
+                .findFirst()
+                .orElseThrow()
+                .automaticEnabled())
+        .isTrue();
+    assertThat(
+            monitoring.policies().stream()
+                .filter(p -> p.type().equals("swap"))
+                .findFirst()
+                .orElseThrow()
+                .version())
+        .isEqualTo(saved.version());
     assertThat(monitoring.readyCount()).isEqualTo(5);
     assertThat(restarted.pending()).isEmpty();
+    insertLiquidity(LiquidityModels.Kind.DEPOSIT);
+    restarted.updatePolicy("pool", "deposit", new UpdatePolicy(true, 1, 0), now);
+    var deposit =
+        restarted.claim("pool", UUID.randomUUID(), Trigger.AUTOMATIC, snapshot, now).orElseThrow();
+    assertThat(deposit.settlement().requests())
+        .extracting(RequestRef::type)
+        .containsExactly("deposit");
+    restarted.cancelPreparation(
+        deposit.settlement().settlementId(), "TEST", "Release test batch", now);
     sql.sql(
             "INSERT INTO pools(pool_id,config_id,state_id,package_id,name)"
                 + " VALUES('other-pool','other-config','other-state','package','Other pool')")
         .update();
-    assertThat(restarted.policy("other-pool").batchSize()).isEqualTo(5);
+    assertThat(restarted.policy("other-pool", "swap").batchSize()).isEqualTo(5);
     assertThat(restarted.claim("other-pool", UUID.randomUUID(), Trigger.MANUAL, snapshot, now))
         .isEmpty();
     Policy corrected =
-        restarted.updatePolicy("pool", new UpdatePolicy(true, 5, saved.version()), now);
+        restarted.updatePolicy("pool", "swap", new UpdatePolicy(true, 5, saved.version()), now);
     assertThat(corrected.version()).isEqualTo(saved.version() + 1);
     assertThat(restarted.monitoring("pool", snapshot, now).blockedReason()).isNull();
     assertThat(
@@ -166,7 +269,7 @@ class SettlementStoreIT {
 
   @Test
   void reducedMaximumCancelsOnlyAnUnsentPreparationAndPreservesTheSavedPolicy() {
-    Policy saved = store.updatePolicy("pool", new UpdatePolicy(true, 10, 0), now);
+    Policy saved = store.updatePolicy("pool", "swap", new UpdatePolicy(true, 10, 0), now);
     for (int sequence = 1; sequence <= 10; sequence++)
       insert(sequence, "READY", now.plusSeconds(60));
     Pending preparing =
@@ -180,14 +283,14 @@ class SettlementStoreIT {
     assertThat(restarted.queue("pool"))
         .extracting(r -> SwapModels.Status.valueOf(r.status()))
         .containsOnly(SwapModels.Status.READY);
-    assertThat(restarted.policy("pool").batchSize()).isEqualTo(10);
-    assertThat(restarted.policy("pool").version()).isEqualTo(saved.version());
+    assertThat(restarted.policy("pool", "swap").batchSize()).isEqualTo(10);
+    assertThat(restarted.policy("pool", "swap").version()).isEqualTo(saved.version());
     assertThat(restarted.monitoring("pool", snapshot, now).activeSettlement()).isNull();
   }
 
   @Test
   void concurrentManualAndAutomaticClaimsFreezeOnlyOneBatch() throws Exception {
-    store.updatePolicy("pool", new UpdatePolicy(true, 2, 0), now);
+    store.updatePolicy("pool", "swap", new UpdatePolicy(true, 2, 0), now);
     UUID first = insert(1, "READY", now.plusSeconds(60));
     UUID second = insert(2, "READY", now.plusSeconds(60));
     var results = concurrent(() -> claim(Trigger.MANUAL), () -> claim(Trigger.AUTOMATIC));
@@ -208,11 +311,11 @@ class SettlementStoreIT {
 
   @Test
   void disableBeforeDispatchCancelsAutomaticClaimAndReleasesQueue() {
-    store.updatePolicy("pool", new UpdatePolicy(true, 1, 0), now);
+    store.updatePolicy("pool", "swap", new UpdatePolicy(true, 1, 0), now);
     UUID swap = insert(1, "READY", now.plusSeconds(60));
     Pending pending =
         store.claim("pool", UUID.randomUUID(), Trigger.AUTOMATIC, snapshot, now).orElseThrow();
-    store.updatePolicy("pool", new UpdatePolicy(false, 1, 1), now);
+    store.updatePolicy("pool", "swap", new UpdatePolicy(false, 1, 1), now);
     assertThat(
             store.authorizeDispatch(
                 pending.settlement().settlementId(), fills(pending), snapshot, now))
@@ -268,14 +371,14 @@ class SettlementStoreIT {
 
   @Test
   void disableAfterDispatchDoesNotPreventConfirmation() {
-    store.updatePolicy("pool", new UpdatePolicy(true, 1, 0), now);
+    store.updatePolicy("pool", "swap", new UpdatePolicy(true, 1, 0), now);
     UUID swap = insert(1, "READY", now.plusSeconds(60));
     Pending pending =
         store.claim("pool", UUID.randomUUID(), Trigger.AUTOMATIC, snapshot, now).orElseThrow();
     store
         .authorizeDispatch(pending.settlement().settlementId(), fills(pending), snapshot, now)
         .orElseThrow();
-    store.updatePolicy("pool", new UpdatePolicy(false, 1, 1), now);
+    store.updatePolicy("pool", "swap", new UpdatePolicy(false, 1, 1), now);
     store.confirm(pending.settlement().settlementId(), confirmation(pending));
     assertThat(status(swap)).isEqualTo("SETTLED");
     assertThat(store.pending()).isEmpty();
@@ -457,7 +560,7 @@ class SettlementStoreIT {
 
   @Test
   void automaticNeedsExactThresholdButManualCanSettleSmallerPrefix() {
-    store.updatePolicy("pool", new UpdatePolicy(true, 2, 0), now);
+    store.updatePolicy("pool", "swap", new UpdatePolicy(true, 2, 0), now);
     UUID swap = insert(1, "READY", now.plusSeconds(60));
     assertThat(store.claim("pool", UUID.randomUUID(), Trigger.AUTOMATIC, snapshot, now)).isEmpty();
     assertThat(
@@ -474,7 +577,7 @@ class SettlementStoreIT {
 
   @Test
   void unchangedSnapshotCannotRepeatedlySubmitDeterministicallyRejectedBatch() {
-    store.updatePolicy("pool", new UpdatePolicy(true, 1, 0), now);
+    store.updatePolicy("pool", "swap", new UpdatePolicy(true, 1, 0), now);
     insert(1, "READY", now.plusSeconds(60));
     Pending pending =
         store.claim("pool", UUID.randomUUID(), Trigger.AUTOMATIC, snapshot, now).orElseThrow();
@@ -526,7 +629,7 @@ class SettlementStoreIT {
 
   @Test
   void independentFamiliesKeepTheirOwnSequenceAndShareOnlyTheSettlementLock() {
-    store.policy("pool");
+    store.policy("pool", "swap");
     UUID unknownSwap = insert(1, "UNRESOLVED", now.plusSeconds(600));
     var deposit = insertLiquidity(LiquidityModels.Kind.DEPOSIT);
     var laterDeposit = insertLiquidity(LiquidityModels.Kind.DEPOSIT);
@@ -669,10 +772,157 @@ class SettlementStoreIT {
   }
 
   @Test
+  void individualRequestsSettleAsSingletonBatchesWithoutChangingOtherRequestsOrPolicies() {
+    for (String family : FAMILIES) {
+      RequestRef first = readyRequest(family, 1);
+      RequestRef chosen = readyRequest(family, 2);
+      var policy = store.policy("pool", family);
+      var plan = store.plan("pool", family, null, chosen.requestId(), snapshot, now);
+      assertThat(plan.selection().requests()).containsExactly(chosen);
+      UUID id = UUID.randomUUID();
+      var claimed =
+          store.claim("pool", id, Trigger.MANUAL, snapshot, now, plan.selection()).orElseThrow();
+      assertThat(claimed.requests()).extracting(QueueRequest::reference).containsExactly(chosen);
+      assertThatThrownBy(
+              () -> store.claim("pool", UUID.randomUUID(), Trigger.MANUAL, snapshot, now))
+          .isInstanceOf(SwapFailure.class)
+          .hasMessageContaining("in flight");
+      Fill fill =
+          switch (family) {
+            case "swap" -> new SwapFill(chosen.requestId(), "18", new Instrument("issuer", "B"));
+            case "deposit" -> new DepositFill(chosen.requestId(), "10", "20", "0", "5", "10");
+            default -> new WithdrawalFill(chosen.requestId(), "1", "1", "2");
+          };
+      store.authorizeDispatch(id, List.of(fill), snapshot, now).orElseThrow();
+      store.unresolved(id, now);
+      var restarted =
+          new SettlementStore(sql, json, new DataSourceTransactionManager(dataSource), 10);
+      assertThat(restarted.findIntent("pool", id, plan.selection()).orElseThrow().requests())
+          .containsExactly(chosen);
+      restarted.confirm(
+          id, new Confirmation(List.of(fill), reserves, reserves, "individual-" + family, 44, now));
+      assertThat(restarted.get(id).status()).isEqualTo(Status.CONFIRMED);
+      assertThat(restarted.queue("pool").stream().filter(r -> r.reference().equals(first)))
+          .singleElement()
+          .extracting(QueueRequest::status)
+          .isEqualTo("READY");
+      assertThat(restarted.queue("pool"))
+          .extracting(QueueRequest::reference)
+          .doesNotContain(chosen);
+      assertThat(restarted.policy("pool", family))
+          .usingRecursiveComparison()
+          .ignoringFields("updatedAt")
+          .isEqualTo(policy);
+    }
+  }
+
+  @Test
+  void individualSelectionRechecksEligibilityAndVersionsBeforeClaiming() {
+    for (String family : FAMILIES) {
+      var chosen = readyRequest(family, 1);
+      var plan = store.plan("pool", family, null, chosen.requestId(), snapshot, now);
+      store.setDeferred("pool", chosen, true, now);
+      assertThatThrownBy(() -> store.plan("pool", family, null, chosen.requestId(), snapshot, now))
+          .isInstanceOfSatisfying(
+              SwapFailure.class, e -> assertThat(e.code()).isEqualTo(QUEUE_CHANGED));
+      assertThatThrownBy(
+              () ->
+                  store.claim(
+                      "pool", UUID.randomUUID(), Trigger.MANUAL, snapshot, now, plan.selection()))
+          .isInstanceOfSatisfying(
+              SwapFailure.class, e -> assertThat(e.code()).isEqualTo(QUEUE_CHANGED));
+      store.setDeferred("pool", chosen, false, now);
+      var changedState =
+          new Selection(
+              family, null, "old-state", plan.selection().policyVersion(), List.of(chosen));
+      assertThatThrownBy(
+              () ->
+                  store.claim(
+                      "pool", UUID.randomUUID(), Trigger.MANUAL, snapshot, now, changedState))
+          .isInstanceOfSatisfying(
+              SwapFailure.class, e -> assertThat(e.code()).isEqualTo(POOL_CHANGED));
+      store.updatePolicy(
+          "pool", family, new UpdatePolicy(true, 2, plan.selection().policyVersion()), now);
+      assertThatThrownBy(
+              () ->
+                  store.claim(
+                      "pool", UUID.randomUUID(), Trigger.MANUAL, snapshot, now, plan.selection()))
+          .isInstanceOfSatisfying(
+              SwapFailure.class, e -> assertThat(e.code()).isEqualTo(POLICY_CHANGED));
+      var fresh = store.plan("pool", family, null, chosen.requestId(), snapshot, now);
+      assertThatThrownBy(
+              () ->
+                  store.claim(
+                      "pool",
+                      UUID.randomUUID(),
+                      Trigger.MANUAL,
+                      snapshot,
+                      now.plusSeconds(601),
+                      fresh.selection()))
+          .isInstanceOfSatisfying(
+              SwapFailure.class, e -> assertThat(e.code()).isEqualTo(QUEUE_CHANGED));
+    }
+    assertThat(store.list("pool")).isEmpty();
+  }
+
+  @Test
+  void rejectingAnIndividualRequestBehindTheHeadDoesNotBlockAutomaticSettlement() {
+    store.updatePolicy("pool", "swap", new UpdatePolicy(true, 1, 0), now);
+    var head = readyRequest("swap", 1);
+    var chosen = readyRequest("swap", 2);
+    for (boolean submitted : List.of(false, true)) {
+      var plan = store.plan("pool", "swap", null, chosen.requestId(), snapshot, now);
+      UUID id = UUID.randomUUID();
+      var batch =
+          store.claim("pool", id, Trigger.MANUAL, snapshot, now, plan.selection()).orElseThrow();
+      if (submitted) {
+        store.authorizeDispatch(id, fills(batch), snapshot, now).orElseThrow();
+        store.rejectSubmission(id, "MIN_OUT", "Minimum not met", now);
+      } else {
+        store.rejectPreparation(id, chosen, "MIN_OUT", "Minimum not met", snapshot.version(), now);
+      }
+      var automatic =
+          store.claim("pool", UUID.randomUUID(), Trigger.AUTOMATIC, snapshot, now).orElseThrow();
+      assertThat(automatic.settlement().requests()).containsExactly(head);
+      store.cancelPreparation(
+          automatic.settlement().settlementId(), "TEST", "Release test batch", now);
+    }
+  }
+
+  @Test
+  void individualPreviewRequiresTheCorrectPoolAndFamilyAndCannotAlsoRetryABatch() {
+    var chosen = readyRequest("swap", 1);
+    sql.sql(
+            "INSERT INTO pools(pool_id,config_id,state_id,package_id,name) VALUES('other','c','s','p','Other')")
+        .update();
+    assertThatThrownBy(() -> store.plan("other", "swap", null, chosen.requestId(), snapshot, now))
+        .isInstanceOfSatisfying(
+            SwapFailure.class, e -> assertThat(e.code()).isEqualTo(QUEUE_CHANGED));
+    assertThatThrownBy(() -> store.plan("pool", "deposit", null, chosen.requestId(), snapshot, now))
+        .isInstanceOfSatisfying(
+            SwapFailure.class, e -> assertThat(e.code()).isEqualTo(QUEUE_CHANGED));
+    assertThatThrownBy(
+            () -> store.plan("pool", "swap", UUID.randomUUID(), chosen.requestId(), snapshot, now))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  private RequestRef readyRequest(String family, long sequence) {
+    UUID id =
+        family.equals("swap")
+            ? insert(sequence, "READY", now.plusSeconds(600))
+            : insertLiquidity(
+                    family.equals("deposit")
+                        ? LiquidityModels.Kind.DEPOSIT
+                        : LiquidityModels.Kind.WITHDRAW)
+                .requestId();
+    return new RequestRef(family, id);
+  }
+
+  @Test
   void deferredRequestsKeepTheirFundsAndReturnToTheirOwnQueueTail() {
     var first = new RequestRef("swap", insert(1, "READY", now.plusSeconds(600)));
     var second = new RequestRef("swap", insert(2, "READY", now.plusSeconds(600)));
-    store.plan("pool", "swap", null, snapshot, now);
+    store.plan("pool", "swap", null, null, snapshot, now);
     sql.sql("UPDATE pool_request_queues SET next_sequence=2 WHERE pool_id='pool' AND family='swap'")
         .update();
     var references = new ArrayList<RequestRef>();
@@ -693,13 +943,17 @@ class SettlementStoreIT {
               .orElseThrow();
       assertThat(row.deferred()).isTrue();
       assertThat(row.status()).isEqualTo("READY");
-      assertThat(store.plan("pool", reference.type(), null, snapshot, now).selection().requests())
+      assertThat(
+              store
+                  .plan("pool", reference.type(), null, null, snapshot, now)
+                  .selection()
+                  .requests())
           .doesNotContain(reference);
     }
     var restarted =
         new SettlementStore(sql, json, new DataSourceTransactionManager(dataSource), 10);
     assertThat(restarted.queue("pool").stream().filter(QueueRequest::deferred)).hasSize(3);
-    assertThat(restarted.plan("pool", "swap", null, snapshot, now).selection().requests())
+    assertThat(restarted.plan("pool", "swap", null, null, snapshot, now).selection().requests())
         .containsExactly(second);
     for (var reference : references) {
       restarted.setDeferred("pool", reference, false, now);
@@ -717,10 +971,10 @@ class SettlementStoreIT {
                   .arrivalSequence())
           .isEqualTo(returned.arrivalSequence());
     }
-    assertThat(restarted.plan("pool", "swap", null, snapshot, now).selection().requests())
+    assertThat(restarted.plan("pool", "swap", null, null, snapshot, now).selection().requests())
         .containsExactly(second, first);
     restarted.setDeferred("pool", first, true, now);
-    restarted.plan("pool", "swap", null, snapshot, now.plusSeconds(601));
+    restarted.plan("pool", "swap", null, null, snapshot, now.plusSeconds(601));
     var expired =
         restarted.queue("pool").stream()
             .filter(r -> r.reference().equals(first))
@@ -739,17 +993,17 @@ class SettlementStoreIT {
     var first = new RequestRef("swap", insert(1, "READY", now.plusSeconds(600)));
     var blocked = new RequestRef("swap", insert(2, "READY", now.plusSeconds(600)));
     var last = new RequestRef("swap", insert(3, "READY", now.plusSeconds(600)));
-    var original = store.plan("pool", "swap", null, snapshot, now);
+    var original = store.plan("pool", "swap", null, null, snapshot, now);
     UUID oldId = UUID.randomUUID();
     store.claim("pool", oldId, Trigger.MANUAL, snapshot, now, original.selection()).orElseThrow();
     assertThatThrownBy(() -> store.setDeferred("pool", blocked, true, now))
         .isInstanceOf(SwapFailure.class);
-    assertThatThrownBy(() -> store.plan("pool", "swap", oldId, snapshot, now))
+    assertThatThrownBy(() -> store.plan("pool", "swap", oldId, null, snapshot, now))
         .isInstanceOf(SwapFailure.class);
     store.rejectPreparation(oldId, blocked, "MIN_OUT", "Minimum not met", snapshot.version(), now);
     var rejected = store.get(oldId);
     store.setDeferred("pool", blocked, true, now);
-    var retry = store.plan("pool", "swap", oldId, snapshot, now);
+    var retry = store.plan("pool", "swap", oldId, null, snapshot, now);
     assertThat(retry.selection().requests()).containsExactly(first, last);
     assertThat(store.get(oldId)).isEqualTo(rejected);
     UUID newId = UUID.randomUUID();
@@ -766,7 +1020,7 @@ class SettlementStoreIT {
     assertThatThrownBy(
             () -> store.claim("pool", newId, Trigger.MANUAL, snapshot, now, retry.selection()))
         .isInstanceOf(SwapFailure.class);
-    var refreshed = store.plan("pool", "swap", oldId, snapshot, now);
+    var refreshed = store.plan("pool", "swap", oldId, null, snapshot, now);
     var claimed =
         store
             .claim("pool", newId, Trigger.MANUAL, snapshot, now, refreshed.selection())
@@ -779,7 +1033,7 @@ class SettlementStoreIT {
         .isInstanceOf(SwapFailure.class);
     store.authorizeDispatch(newId, fills(claimed), snapshot, now).orElseThrow();
     store.unresolved(newId, now);
-    assertThatThrownBy(() -> store.plan("pool", "swap", newId, snapshot, now))
+    assertThatThrownBy(() -> store.plan("pool", "swap", newId, null, snapshot, now))
         .isInstanceOf(SwapFailure.class);
     assertThatThrownBy(() -> store.setDeferred("pool", blocked, false, now))
         .isInstanceOf(SwapFailure.class);
@@ -790,7 +1044,7 @@ class SettlementStoreIT {
   void aRecoveredPreviewCannotDispatchAfterThePoolOrPolicyChanges() {
     insert(1, "READY", now.plusSeconds(600));
     for (boolean changePool : List.of(true, false)) {
-      var selection = store.plan("pool", "swap", null, snapshot, now).selection();
+      var selection = store.plan("pool", "swap", null, null, snapshot, now).selection();
       UUID id = UUID.randomUUID();
       var claimed = store.claim("pool", id, Trigger.MANUAL, snapshot, now, selection).orElseThrow();
       Snapshot observed = snapshot;
@@ -798,14 +1052,16 @@ class SettlementStoreIT {
         observed =
             new Snapshot(
                 "pool", "changed-state", reserves, "30", "READY", null, now, 43, "100", "2");
-      else store.updatePolicy("pool", new UpdatePolicy(false, 2, selection.policyVersion()), now);
+      else
+        store.updatePolicy(
+            "pool", "swap", new UpdatePolicy(false, 2, selection.policyVersion()), now);
       var restarted =
           new SettlementStore(sql, json, new DataSourceTransactionManager(dataSource), 10);
       assertThat(restarted.authorizeDispatch(id, fills(claimed), observed, now)).isEmpty();
       assertThat(restarted.get(id).status()).isEqualTo(Status.CANCELLED);
       assertThat(restarted.get(id).errorCode())
           .isEqualTo(changePool ? "POOL_CHANGED" : "POLICY_CHANGED");
-      assertThat(restarted.plan("pool", "swap", null, snapshot, now).selection().requests())
+      assertThat(restarted.plan("pool", "swap", null, null, snapshot, now).selection().requests())
           .hasSize(1);
     }
   }
@@ -921,7 +1177,7 @@ class SettlementStoreIT {
 
   private boolean update(UpdatePolicy input) {
     try {
-      store.updatePolicy("pool", input, now);
+      store.updatePolicy("pool", "swap", input, now);
       return true;
     } catch (SwapFailure e) {
       assertThat(e.code()).isEqualTo("POLICY_CHANGED");

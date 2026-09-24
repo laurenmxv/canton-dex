@@ -1,4 +1,4 @@
-import { useId } from 'react';
+import { useId, type ReactNode } from 'react';
 import {
   Banner,
   CardContent,
@@ -15,7 +15,7 @@ import { StatusBadge } from '../../ui/Badge';
 import { Card, CardHeader } from '../../ui/Card';
 import { AsyncSection, EmptyState } from '../../ui/States';
 import {
-  canChangeHold,
+  isWaiting,
   sameRequest,
   VIEWS,
   visible,
@@ -26,11 +26,13 @@ import {
 import { Deadline, DeferButton, DetailsButton, RequestCell } from './RequestCells';
 
 /**
- * One family's queued requests, in its own arrival order. Filters narrow what
- * is shown and never reorder the queue. Deferred requests are listed apart.
+ * One family's queued requests, in its own arrival order, under the queue's
+ * own controls. Filters narrow what is shown and never reorder the queue.
+ * Deferred requests are listed apart.
  */
 export function QueueTable({
   family,
+  actions,
   queue,
   rows,
   monitoring,
@@ -47,6 +49,8 @@ export function QueueTable({
   now,
 }: {
   family: FamilyInfo;
+  /** What the operator does to this queue as a whole: its settings and its manual run. */
+  actions: ReactNode;
   queue: AsyncResult<SettlementRequest[]>;
   /** The family's queued rows, deferred ones excluded, in arrival order. */
   rows: QueueRow[] | undefined;
@@ -88,36 +92,7 @@ export function QueueTable({
               ? `${queued.length} queued`
               : `${shown.length} of ${queued.length} shown`
         }
-        actions={
-          <>
-            <div role="group" aria-label="Show" className="bg-surface flex flex-wrap gap-0.5 rounded-2xl border p-[0.1875rem]">
-              {VIEWS.map((one) => (
-                <Button
-                  key={one.id}
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  aria-pressed={view === one.id}
-                  className="text-muted-foreground aria-pressed:bg-card aria-pressed:text-foreground aria-pressed:shadow-card h-7 rounded-full px-3 text-[0.75rem] font-medium"
-                  onClick={() => onView(one.id)}
-                >
-                  {one.label}
-                </Button>
-              ))}
-            </div>
-            <Label className="sr-only" htmlFor={searchId}>
-              Search requests
-            </Label>
-            <Input
-              id={searchId}
-              type="search"
-              placeholder="Request, quote, trader or allocation"
-              className="h-8 w-72 text-xs"
-              value={search}
-              onChange={(event) => onSearch(event.target.value)}
-            />
-          </>
-        }
+        actions={actions}
       />
 
       {headBlocked || reason ? (
@@ -128,6 +103,35 @@ export function QueueTable({
           </Banner>
         </CardContent>
       ) : null}
+
+      <CardContent className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
+        <div role="group" aria-label="Show" className="bg-surface flex flex-wrap gap-0.5 rounded-2xl border p-[0.1875rem]">
+          {VIEWS.map((one) => (
+            <Button
+              key={one.id}
+              type="button"
+              variant="ghost"
+              size="sm"
+              aria-pressed={view === one.id}
+              className="text-muted-foreground aria-pressed:bg-card aria-pressed:text-foreground aria-pressed:shadow-card h-7 rounded-full px-3 text-[0.75rem] font-medium"
+              onClick={() => onView(one.id)}
+            >
+              {one.label}
+            </Button>
+          ))}
+        </div>
+        <Label className="sr-only" htmlFor={searchId}>
+          Search requests
+        </Label>
+        <Input
+          id={searchId}
+          type="search"
+          placeholder="Request, quote, trader or allocation"
+          className="h-8 w-72 text-xs"
+          value={search}
+          onChange={(event) => onSearch(event.target.value)}
+        />
+      </CardContent>
 
       <AsyncSection result={queue} label="Loading the queue" rows={3}>
         {() =>
@@ -187,7 +191,7 @@ export function QueueTable({
                   header: <span className="sr-only">Actions</span>,
                   cell: (row) => (
                     <div className="flex items-center justify-end gap-1">
-                      {canChangeHold(row, now) ? (
+                      {isWaiting(row, now) ? (
                         <DeferButton
                           row={row}
                           holding={holding}

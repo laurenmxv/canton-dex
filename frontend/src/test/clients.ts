@@ -89,6 +89,7 @@ export function testClient(parts: {
         requests: unused('admin.settlements.requests'),
         setDeferred: unused('admin.settlements.setDeferred'),
         preview: unused('admin.settlements.preview'),
+        previewRequest: unused('admin.settlements.previewRequest'),
         list: unused('admin.settlements.list'),
         history: unused('admin.settlements.history'),
         get: unused('admin.settlements.get'),

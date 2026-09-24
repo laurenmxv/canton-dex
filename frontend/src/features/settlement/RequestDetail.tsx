@@ -28,7 +28,7 @@ import { DataList } from '../../ui/Card';
 import { CopyField } from '../../ui/CopyField';
 import { Disclosure } from '../../ui/Disclosure';
 import { Mono } from '../../ui/Mono';
-import { amount, holdLabels, type QueueRow } from './queueRows';
+import { amount, holdLabels, sameRequest, type QueueRow } from './queueRows';
 
 type Item = { label: string; value: ReactNode };
 
@@ -140,16 +140,16 @@ function fillItems(row: QueueRow, fill: SettlementFill): Item[] {
  * The batch that carried this request. A confirmed batch listing it wins over
  * any cached reading, since the queue and the batches poll independently and a
  * fast settlement can leave the queue before its settlement id is ever read.
- * Otherwise the attempt it names, or the latest one listing it.
+ * Otherwise use the latest observation of an attempt containing this request.
  */
-function evidence(row: QueueRow, batches: readonly Settlement[] | undefined) {
-  const { settlementId } = row.entry.request;
-  const lists = (batch: Settlement) =>
-    batch.requests.some((ref) => ref.type === row.family && ref.requestId === row.requestId);
+export function requestEvidence(row: QueueRow, batches: readonly Settlement[] | undefined) {
+  const matching = batches?.filter((batch) => batch.requests.some((ref) => sameRequest(row, ref))) ?? [];
   const batch =
-    batches?.find((candidate) => candidate.status === 'CONFIRMED' && lists(candidate)) ??
-    (settlementId ? batches?.find((candidate) => candidate.settlementId === settlementId) : undefined) ??
-    batches?.find(lists);
+    matching.find((candidate) => candidate.status === 'CONFIRMED') ??
+    matching.reduce<Settlement | undefined>(
+      (latest, candidate) => !latest || Date.parse(candidate.updatedAt) > Date.parse(latest.updatedAt) ? candidate : latest,
+      undefined,
+    );
   const fill = batch?.fills.find((one) => one.type === row.family && one.requestId === row.requestId);
   return { batch, fill };
 }
@@ -166,12 +166,15 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 /**
  * Everything the venue reported about one queued request. It stays open on
  * the last reading after the request leaves the active queue, and says so.
+ * Opening it runs nothing: a run alone starts only from its own action.
  */
 export function RequestDetail({
   row,
   left,
   batches,
   now,
+  action,
+  notices,
   onClose,
   onCloseAutoFocus,
 }: {
@@ -180,6 +183,9 @@ export function RequestDetail({
   left: boolean;
   batches: readonly Settlement[] | undefined;
   now: number;
+  /** How to run this request alone, while it waits in its queue. */
+  action?: ReactNode;
+  notices?: ReactNode;
   onClose: () => void;
   /** Returns focus to where the operator was, since no dialog trigger owns it. */
   onCloseAutoFocus: () => void;
@@ -193,7 +199,7 @@ export function RequestDetail({
           onCloseAutoFocus();
         }}
       >
-        {row ? <Body row={row} left={left} batches={batches} now={now} /> : null}
+        {row ? <Body row={row} left={left} batches={batches} now={now} action={action} notices={notices} /> : null}
       </DialogContent>
     </Dialog>
   );
@@ -204,15 +210,19 @@ function Body({
   left,
   batches,
   now,
+  action,
+  notices,
 }: {
   row: QueueRow;
   left: boolean;
   batches: readonly Settlement[] | undefined;
   now: number;
+  action: ReactNode;
+  notices: ReactNode;
 }) {
   const request = row.entry.request;
   const facts = sections(row);
-  const { batch, fill } = evidence(row, batches);
+  const { batch, fill } = requestEvidence(row, batches);
   const confirmed = batch?.status === 'CONFIRMED';
   const result = facts.result ?? (confirmed && fill ? fillItems(row, fill) : null);
   // A confirmed outcome outranks whatever status or error the last queue read carried.
@@ -260,6 +270,9 @@ function Body({
             {row.error}
           </Banner>
         ) : null}
+
+        {notices}
+        {!settled && action ? <Section title="Run alone">{action}</Section> : null}
 
         <Section title="Signed terms">
           <DataList items={facts.signed} />

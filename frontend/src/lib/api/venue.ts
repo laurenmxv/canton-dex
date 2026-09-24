@@ -138,6 +138,8 @@ export function venueClient(api: DexClient): DexClient {
           translate(api.admin.settlements.setDeferred(poolId, request, deferred, options)),
         preview: (poolId, type, retryOf, options) =>
           translate(api.admin.settlements.preview(poolId, type, retryOf, options)),
+        previewRequest: (poolId, request, options) =>
+          translate(api.admin.settlements.previewRequest(poolId, request, options)),
         list: (poolId, options) => translate(api.admin.settlements.list(poolId, options)),
         history: (poolId, query, options) =>
           translate(api.admin.settlements.history(poolId, query, options)),
@@ -145,9 +147,10 @@ export function venueClient(api: DexClient): DexClient {
           translate(api.admin.settlements.get(settlementId, options)),
         run: (poolId, input, options) =>
           translate(api.admin.settlements.run(poolId, input, options)),
-        policy: (poolId, options) => translate(api.admin.settlements.policy(poolId, options)),
-        updatePolicy: (poolId, input, options) =>
-          translate(api.admin.settlements.updatePolicy(poolId, input, options)),
+        policy: (poolId, type, options) =>
+          translate(api.admin.settlements.policy(poolId, type, options)),
+        updatePolicy: (poolId, type, input, options) =>
+          translate(api.admin.settlements.updatePolicy(poolId, type, input, options)),
         monitoring: (poolId, options) =>
           translate(api.admin.settlements.monitoring(poolId, options)),
       },

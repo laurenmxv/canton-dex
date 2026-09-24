@@ -9,6 +9,8 @@ import org.springframework.web.servlet.function.*;
 
 @Configuration(proxyBeanMethods = false)
 public class SettlementRoutes {
+  private static final String POLICY_PATH = "/v1/admin/pools/{poolId}/settlement-policy/{type}";
+
   @Bean
   RouterFunction<ServerResponse> settlementEndpoints(
       SettlementWorkflow workflow, RequestBody body, ApiErrors errors) {
@@ -63,6 +65,7 @@ public class SettlementRoutes {
                                 .orElseThrow(
                                     () -> new IllegalArgumentException("type is required")),
                             r.param("retryOf").map(UUID::fromString).orElse(null),
+                            r.param("requestId").map(UUID::fromString).orElse(null),
                             CurrentAccount.from(r))))
         .PUT(
             "/v1/admin/pools/{poolId}/settlement-requests/{type}/{requestId}/deferred",
@@ -88,17 +91,22 @@ public class SettlementRoutes {
                             r.param("limit").map(Integer::parseInt).orElse(25),
                             CurrentAccount.from(r))))
         .GET(
-            "/v1/admin/pools/{poolId}/settlement-policy",
+            POLICY_PATH,
             r ->
                 ServerResponse.ok()
-                    .body(workflow.policy(r.pathVariable("poolId"), CurrentAccount.from(r))))
+                    .body(
+                        workflow.policy(
+                            r.pathVariable("poolId"),
+                            r.pathVariable("type"),
+                            CurrentAccount.from(r))))
         .PUT(
-            "/v1/admin/pools/{poolId}/settlement-policy",
+            POLICY_PATH,
             r ->
                 ServerResponse.ok()
                     .body(
                         workflow.updatePolicy(
                             r.pathVariable("poolId"),
+                            r.pathVariable("type"),
                             body.read(r, SettlementModels.UpdatePolicy.class),
                             CurrentAccount.from(r))))
         .GET(

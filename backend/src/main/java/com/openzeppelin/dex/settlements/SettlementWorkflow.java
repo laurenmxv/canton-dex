@@ -33,14 +33,14 @@ public final class SettlementWorkflow {
     this.clock = clock;
   }
 
-  public Policy policy(String poolId, Account caller) {
+  public Policy policy(String poolId, String family, Account caller) {
     caller.requireRole(Account.Role.OPERATOR);
-    return store.policy(poolId);
+    return store.policy(poolId, family);
   }
 
-  public Policy updatePolicy(String poolId, UpdatePolicy input, Account caller) {
+  public Policy updatePolicy(String poolId, String family, UpdatePolicy input, Account caller) {
     caller.requireRole(Account.Role.OPERATOR);
-    return store.updatePolicy(poolId, input, clock.instant());
+    return store.updatePolicy(poolId, family, input, clock.instant());
   }
 
   public Settlement run(String poolId, RunInput input, Account caller) {
@@ -90,12 +90,13 @@ public final class SettlementWorkflow {
     return store.queue(poolId);
   }
 
-  public Preview preview(String poolId, String family, UUID retryOf, Account caller) {
+  public Preview preview(
+      String poolId, String family, UUID retryOf, UUID requestId, Account caller) {
     caller.requireRole(Account.Role.OPERATOR);
     requireFamily(family);
     var snapshot = ledger.snapshot(poolId);
     requireReady(snapshot);
-    var plan = store.plan(poolId, family, retryOf, snapshot, clock.instant());
+    var plan = store.plan(poolId, family, retryOf, requestId, snapshot, clock.instant());
     var steps =
         plan.requests().isEmpty()
             ? List.<PreviewStep>of()
@@ -246,7 +247,7 @@ public final class SettlementWorkflow {
         .map(QueueRequest::reference)
         .toList()
         .equals(fills.stream().map(Fill::reference).toList()))
-      throw new IllegalStateException("Preflight outputs do not match the FIFO selection");
+      throw new IllegalStateException("Preflight outputs do not match the selected requests");
     for (int i = 0; i < requests.size(); i++) {
       var request = requests.get(i);
       var fill = fills.get(i);

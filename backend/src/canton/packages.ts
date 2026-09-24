@@ -11,7 +11,7 @@ export interface DamlName {
 
 export const DEX_PACKAGE_ID = '38a7290bce72ede1d747ede7790a58e8c32fab1fa2db844de0b6dda13052a674';
 export const TOKEN_PACKAGE_ID = 'dbb1f220559dd1d2e505a56449ded609f5f49708678316cf74fc37760da27f6a';
-export const FAUCET_PACKAGE_ID = '30dc61c222e63c1dca7948f5c12e12699942e790d67c0f544db3e7da5349763d';
+export const FAUCET_PACKAGE_ID = 'a0526f9c5bba1406cd99cc0abb3651451f8f55e3b3e57f4e44678e0a1ed9d1b5';
 const HOLDING_PACKAGE_ID = 'dcf74571dd11e678637924e9f10a61a15727801c83c0f21d3218656b7e6039f8';
 const ALLOCATION_PACKAGE_ID = 'e5b7ba48c44c972ea670a983647c544516841e0d9d893d86bdf17a025f4c8b4e';
 
@@ -30,7 +30,7 @@ const token = (module: string, entity: string): DamlName => ({
 const faucet = (entity: string): DamlName => ({
   packageName: 'canton-dex-test-faucet',
   packageId: FAUCET_PACKAGE_ID,
-  module: 'TestTokenFaucet',
+  module: 'TestTokenFaucet.Faucet',
   entity,
 });
 

@@ -1,6 +1,6 @@
 -- | Gives developers test tokens through an issuer-approved grant.
 -- The recipient claims the grant; a receipt records what was minted.
-module TestTokenFaucet where
+module TestTokenFaucet.Faucet where
 
 import TestTokenFaucet.Errors
 import DA.List (dedupSort)

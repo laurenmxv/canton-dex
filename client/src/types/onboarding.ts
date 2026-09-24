@@ -121,9 +121,9 @@ export interface PartyPreparation {
   /** The participant that will host the party. Null on a historical row. */
   participantId: string | null;
   /**
-   * The original topology transactions, base64 encoded, exactly as the venue
-   * serialized them. The trader's own signer reads them to check what it is
-   * about to sign; nothing here parses them. Empty on a historical row.
+   * The original participant-generated topology transactions, base64 encoded.
+   * The current wallet flow signs `multiHash` without inspecting these
+   * transactions. Empty on a historical row.
    */
   topologyTransactions: readonly string[];
 }

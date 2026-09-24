@@ -1,33 +1,31 @@
 import { sql, type Kysely, type Selectable } from 'kysely';
+import { Value } from 'typebox/value';
 import { readRequest } from '../liquidity/store.js';
 import { initialBatchSize, nextArrival } from '../operations/queues.js';
 import {
   isUniqueViolation,
   type Database,
-  type Family,
   type LiquidityRequestsTable,
   type PoolRequestQueuesTable,
   type SettlementBatchesTable,
   type SwapRequestsTable,
 } from '../platform/database.js';
+import type { Family } from '../platform/families.js';
 import { CodedFailure, Conflict, InvalidRequest, NotFound } from '../platform/errors.js';
 import { jsonText } from '../platform/json.js';
 import {
   enumeration,
   list,
-  long,
   object,
   parseInstant,
   pathUuid,
   present,
   requirePageSize,
-  stored,
   strictBase64Url,
-  text,
 } from '../platform/request.js';
+import { stored } from '../platform/stored.js';
 import { epochNanos, instantText, isoInstant } from '../platform/time.js';
 import { readSwap } from '../swaps/store.js';
-import { storedInstrument } from '../tokens/model.js';
 import {
   BATCH_IN_FLIGHT,
   FAMILIES,
@@ -49,16 +47,16 @@ import {
   settlementDeadlineOf,
   swapRequest,
   type Confirmation,
-  type Fill,
+  Fill,
   type History,
   type Monitoring,
   type Pending,
   type Plan,
   type Policy,
   type QueueRequest,
-  type RequestRef,
-  type Reserves,
-  type Selection,
+  RequestRef,
+  Reserves,
+  Selection,
   type Settlement,
   type SettlementStatus,
   type Snapshot,
@@ -105,67 +103,16 @@ function requestTable(family: Family): 'swap_requests' | 'liquidity_requests' {
   return family === 'swap' ? 'swap_requests' : 'liquidity_requests';
 }
 
-function readRef(value: unknown): RequestRef {
-  const fields = present(object(value), 'request');
-  return {
-    type: present(enumeration(fields.type, FAMILIES), 'request type'),
-    requestId: present(text(fields.requestId), 'request id'),
-  };
-}
-
-/** A fill from its stored JSON form. */
+/** A fill's discriminator accepts the same stored enum ordinals as other persisted fields. */
 export function readFill(value: unknown): Fill {
   const fields = present(object(value), 'fill');
-  const field = (name: string) => present(text(fields[name]), name);
-  switch (present(enumeration(fields.type, FAMILIES), 'fill type')) {
-    case 'swap':
-      return {
-        requestId: field('requestId'),
-        amountOut: field('amountOut'),
-        outputInstrument: storedInstrument(fields.outputInstrument),
-        type: 'swap',
-      };
-    case 'deposit':
-      return {
-        requestId: field('requestId'),
-        actualBaseIn: field('actualBaseIn'),
-        actualQuoteIn: field('actualQuoteIn'),
-        actualBaseRefund: field('actualBaseRefund'),
-        actualQuoteRefund: field('actualQuoteRefund'),
-        actualLpOut: field('actualLpOut'),
-        type: 'deposit',
-      };
-    case 'withdraw':
-      return {
-        requestId: field('requestId'),
-        actualLpBurned: field('actualLpBurned'),
-        actualBaseOut: field('actualBaseOut'),
-        actualQuoteOut: field('actualQuoteOut'),
-        type: 'withdraw',
-      };
-  }
-}
-
-function readReserves(value: unknown): Reserves {
-  const fields = present(object(value), 'reserves');
-  return {
-    stateId: present(text(fields.stateId), 'stateId'),
-    baseReserve: present(text(fields.baseReserve), 'baseReserve'),
-    quoteReserve: present(text(fields.quoteReserve), 'quoteReserve'),
-    spotPrice: text(fields.spotPrice),
-    invariant: present(text(fields.invariant), 'invariant'),
-  };
+  const type = present(enumeration(fields.type, FAMILIES), 'fill type');
+  return Value.Decode(Fill, { ...fields, type });
 }
 
 function readSelection(value: unknown): Selection {
-  const fields = present(object(value), 'selection');
-  return selection(
-    present(enumeration(fields.type, FAMILIES), 'selection type'),
-    text(fields.retryOf),
-    present(text(fields.stateVersion), 'stateVersion'),
-    present(long(fields.policyVersion), 'policyVersion'),
-    present(list(fields.requests, readRef), 'selection requests'),
-  );
+  const intent = Value.Decode(Selection, value);
+  return selection(intent.type, intent.retryOf, intent.stateVersion, intent.policyVersion, intent.requests);
 }
 
 function toSettlement(row: BatchRow): Settlement {
@@ -174,10 +121,18 @@ function toSettlement(row: BatchRow): Settlement {
     poolId: row.pool_id,
     trigger: row.trigger,
     status: row.status,
-    requests: stored('settlement requests', row.requests, (value) => list(value, readRef)),
+    requests: stored('settlement requests', row.requests, (value) =>
+      list(value, (item) => Value.Decode(RequestRef, item)),
+    ),
     fills: stored('settlement fills', row.fills, (value) => list(value, readFill)),
-    before: row.reserves_before === null ? null : stored('reserves before', row.reserves_before, readReserves),
-    after: row.reserves_after === null ? null : stored('reserves after', row.reserves_after, readReserves),
+    before:
+      row.reserves_before === null
+        ? null
+        : stored('reserves before', row.reserves_before, (value) => Value.Decode(Reserves, value)),
+    after:
+      row.reserves_after === null
+        ? null
+        : stored('reserves after', row.reserves_after, (value) => Value.Decode(Reserves, value)),
     policyVersion: row.policy_version,
     createdAt: isoInstant(row.created_at),
     updatedAt: isoInstant(row.updated_at),

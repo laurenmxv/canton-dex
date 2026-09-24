@@ -1,7 +1,8 @@
 import { maxHeaderSize } from 'node:http';
 import Fastify, { LogController, type FastifyInstance } from 'fastify';
+import { INVALID_REQUEST } from './errors.js';
 import { firewallOptions, registerFirewall } from './firewall.js';
-import { INVALID_REQUEST, problemFor, REQUEST_FAILED, sendProblem } from './problems.js';
+import { problemFor, REQUEST_FAILED, sendProblem } from './problems.js';
 
 /** The security headers of every response except the firewall answers. */
 const SECURITY_HEADERS = {

@@ -1,15 +1,17 @@
 import { randomUUID } from 'node:crypto';
 import { sql, type Kysely, type Selectable } from 'kysely';
+import { Value } from 'typebox/value';
 import { bindParty, getAccount, profile, type Account } from '../iam/accounts.js';
 import type { Database, OnboardingsTable } from '../platform/database.js';
 import { Conflict, InvalidRequest, NotFound } from '../platform/errors.js';
-import { bool, enumeration, list, long, object, stored, text } from '../platform/request.js';
+import { enumeration, list, text } from '../platform/request.js';
+import { stored } from '../platform/stored.js';
 import { isoInstant } from '../platform/time.js';
 import {
+  PARTY_STATUSES,
   ACCESS_STEP_PREFIX,
   ATTESTATION_STEP,
   DECISIONS,
-  DOCUMENT_CATEGORIES,
   EXTERNAL_MODE,
   onboardingStatus,
   PartyAlreadyExists,
@@ -17,14 +19,13 @@ import {
   validatePartyHint,
   validateReview,
   type Confirmation,
-  type LedgerStep,
+  LedgerStep,
   type Onboarding,
-  type OnboardingApplication,
+  OnboardingApplication,
   type PartyPreparation,
   type PartyStatus,
   type PoolSummary,
   type ReviewDecision,
-  type StepStatus,
 } from './model.js';
 import type { ExternalParties, OnboardingProgress } from './ports.js';
 import type { PartySubmission } from './requests.js';
@@ -33,8 +34,6 @@ import { requirePublicKey, verifyTopology } from './signatures.js';
 type Executor = Kysely<Database>;
 type OnboardingRow = Selectable<OnboardingsTable> & { ledger_steps: string };
 
-const PARTY_STATUSES: readonly PartyStatus[] = ['PREPARED', 'SUBMITTING', 'CONFIRMED', 'UNRESOLVED', 'CONFLICT'];
-const STEP_STATUSES: readonly StepStatus[] = ['PENDING', 'SUBMITTING', 'CONFIRMED', 'UNRESOLVED'];
 const REGISTERING: readonly PartyStatus[] = ['SUBMITTING', 'UNRESOLVED'];
 
 const LEDGER_STEPS = sql<string>`COALESCE((SELECT jsonb_agg(jsonb_build_object(
@@ -51,44 +50,13 @@ function strings(value: unknown): string[] | null {
   return list(value, (item) => present(text(item), 'list element'));
 }
 
-function application(value: unknown): OnboardingApplication | null {
-  const fields = object(value);
-  if (fields === null) return null;
-  return {
-    legalName: present(text(fields.legalName), 'legalName'),
-    countryCode: present(text(fields.countryCode), 'countryCode'),
-    documentReferences: strings(fields.documentReferences) ?? [],
-    documents: (list(fields.documents, object) ?? []).map((document) => {
-      const item = present(document, 'document');
-      return {
-        id: present(text(item.id), 'document id'),
-        category: present(enumeration(item.category, DOCUMENT_CATEGORIES), 'document category'),
-        fileName: present(text(item.fileName), 'fileName'),
-        mediaType: present(text(item.mediaType), 'mediaType'),
-        sizeBytes: Number(present(long(item.sizeBytes), 'sizeBytes')),
-        simulated: present(bool(item.simulated), 'simulated'),
-      };
-    }),
-  };
-}
-
-function ledgerSteps(value: unknown): LedgerStep[] | null {
-  return list(value, (item) => {
-    const step = present(object(item), 'ledger step');
-    return {
-      key: present(text(step.key), 'step key'),
-      commandId: present(text(step.commandId), 'step command'),
-      status: present(enumeration(step.status, STEP_STATUSES), 'step status'),
-      contractId: text(step.contractId),
-      updateId: text(step.updateId),
-      issuer: text(step.issuer),
-    };
-  });
-}
-
 function toOnboarding(row: OnboardingRow): Onboarding {
-  const applicationValue = stored('application', row.application, application);
-  const steps = stored('ledger steps', row.ledger_steps, ledgerSteps);
+  const applicationValue = stored('application', row.application, (value) =>
+    value === null ? null : Value.Decode(OnboardingApplication, value),
+  );
+  const steps = stored('ledger steps', row.ledger_steps, (value) =>
+    list(value, (item) => Value.Decode(LedgerStep, item)),
+  );
   const review =
     row.review_decision === null
       ? null

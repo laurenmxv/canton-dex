@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { Kysely, PostgresDialect, sql, type ColumnType, type Generated } from 'kysely';
 import pg from 'pg';
 import type { DatabaseConfig } from './config.js';
+import type { Family } from './families.js';
 
 /** The application pool: eight connections and 30 s to acquire one. */
 const POOL_SIZE = 8;
@@ -120,8 +121,6 @@ export interface PoolPairClaimsTable {
   proposal_id: string | null;
   pool_id: string | null;
 }
-
-export type Family = 'swap' | 'deposit' | 'withdraw';
 
 export interface PoolQueuesTable {
   pool_id: string;
@@ -287,6 +286,7 @@ export interface DevFaucetClaimsTable {
   grant_id: string;
   grant_command_id: string;
   grant_cid: string | null;
+  grant_expires_at: Nullable<string>;
   grant_begin_offset: bigint | null;
   grant_status: Defaulted<'PENDING' | 'SUBMITTING' | 'UNRESOLVED' | 'CONFIRMED'>;
   preparation_id: string | null;

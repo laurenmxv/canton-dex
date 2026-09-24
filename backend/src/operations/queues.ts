@@ -1,5 +1,6 @@
 import { sql, type Kysely } from 'kysely';
-import type { Database, Family } from '../platform/database.js';
+import type { Database } from '../platform/database.js';
+import type { Family } from '../platform/families.js';
 
 /** A connection or an open transaction. */
 type Executor = Kysely<Database>;

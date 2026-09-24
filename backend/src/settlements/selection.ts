@@ -1,5 +1,5 @@
 /** FIFO batch selection over a pool's per-family queues. */
-import type { Family } from '../platform/database.js';
+import type { Family } from '../platform/families.js';
 import { FAMILIES, type Policy, type QueueRequest } from './model.js';
 
 /** Requests that a batch may carry; any other status stops its family's FIFO prefix. */

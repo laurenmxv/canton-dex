@@ -1,9 +1,9 @@
 import { sql, type Kysely, type Selectable } from 'kysely';
+import { Value } from 'typebox/value';
 import { isUniqueViolation, type Database, type PoolProposalsTable, type PoolsTable } from '../platform/database.js';
 import { Conflict, NotFound } from '../platform/errors.js';
-import { object, stored, text } from '../platform/request.js';
+import { stored } from '../platform/stored.js';
 import { isoInstant } from '../platform/time.js';
-import type { Instrument } from '../tokens/model.js';
 import {
   pairKey,
   type CreateProposal,
@@ -12,9 +12,8 @@ import {
   type PoolDetail,
   type Proposal,
   type ProposalStatus,
-  type ProposalTerms,
-  type ReserveAccount,
-  type Terms,
+  ProposalTerms,
+  Terms,
 } from './model.js';
 import type { PoolProgress } from './ports.js';
 
@@ -31,55 +30,13 @@ function required<T>(value: T | null, field: string): T {
   return value;
 }
 
-function instrument(value: unknown): Instrument {
-  const fields = required(object(value), 'instrument');
-  return { admin: required(text(fields.admin), 'admin'), id: required(text(fields.id), 'id') };
-}
-
-function reserveAccount(value: unknown): ReserveAccount {
-  const fields = required(object(value), 'account');
-  return {
-    owner: required(text(fields.owner), 'owner'),
-    provider: text(fields.provider),
-    id: required(text(fields.id), 'account id'),
-  };
-}
-
-function proposalTerms(value: unknown): ProposalTerms | null {
-  const fields = object(value);
-  if (fields === null) return null;
-  return {
-    dvo: required(text(fields.dvo), 'dvo'),
-    baseInstrumentId: instrument(fields.baseInstrumentId),
-    quoteInstrumentId: instrument(fields.quoteInstrumentId),
-    feeBps: required(text(fields.feeBps), 'feeBps'),
-  };
-}
-
-function terms(value: unknown): Terms | null {
-  const fields = object(value);
-  if (fields === null) return null;
-  const field = (name: string) => required(text(fields[name]), name);
-  return {
-    dvo: field('dvo'),
-    baseInstrumentId: instrument(fields.baseInstrumentId),
-    quoteInstrumentId: instrument(fields.quoteInstrumentId),
-    baseAccount: reserveAccount(fields.baseAccount),
-    quoteAccount: reserveAccount(fields.quoteAccount),
-    lpTokenInstrumentId: instrument(fields.lpTokenInstrumentId),
-    feeBps: field('feeBps'),
-    baseReserve: field('baseReserve'),
-    quoteReserve: field('quoteReserve'),
-    lpTokenSupply: field('lpTokenSupply'),
-    initialRatio: field('initialRatio'),
-  };
-}
-
 function toProposal(row: ProposalRow): Proposal {
   return {
     proposalId: row.id,
     name: row.name,
-    settings: stored('proposal settings', row.settings, proposalTerms),
+    settings: stored('proposal settings', row.settings, (value) =>
+      value === null ? null : Value.Decode(ProposalTerms, value),
+    ),
     status: row.status,
     createdAt: isoInstant(row.created_at),
     updatedAt: isoInstant(row.updated_at),
@@ -96,7 +53,9 @@ function toDetail(row: Selectable<PoolsTable>): PoolDetail {
   return {
     poolId: row.pool_id,
     name: row.name,
-    settings: stored('pool settings', required(row.settings, 'settings'), terms),
+    settings: stored('pool settings', required(row.settings, 'settings'), (value) =>
+      value === null ? null : Value.Decode(Terms, value),
+    ),
     configId: row.config_id,
     stateId: row.state_id,
     packageId: row.package_id,

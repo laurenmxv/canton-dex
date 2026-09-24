@@ -1,44 +1,32 @@
 import { sql, type Kysely, type Selectable } from 'kysely';
+import { Value } from 'typebox/value';
 import type { Account } from '../iam/accounts.js';
 import { lockForAdmission, lockPoolQueue, nextArrival, unblockFamily } from '../operations/queues.js';
 import type { Database, LiquidityPreparationsTable, LiquidityRequestsTable } from '../platform/database.js';
 import { Conflict, InvalidRequest, NotFound } from '../platform/errors.js';
 import { jsonText } from '../platform/json.js';
-import {
-  enumeration,
-  int,
-  list,
-  object,
-  pathUuid,
-  present,
-  requirePageSize,
-  stored,
-  text,
-  type JsonObject,
-} from '../platform/request.js';
+import { enumeration, list, pathUuid, present, requirePageSize, text } from '../platform/request.js';
+import { stored } from '../platform/stored.js';
 import { clockNanos, epochNanos, instantText, isoInstant } from '../platform/time.js';
 import type { Before } from '../swaps/model.js';
-import { storedInstrument } from '../tokens/model.js';
 import {
+  DepositResult,
+  WithdrawalResult,
   familyOf,
   kindOf,
   LIQUIDITY_STATUSES,
-  MODES,
-  RECOVERY_KINDS,
   type Activity,
   type Confirmation,
-  type DepositQuote,
-  type DepositTerms,
+  DepositQuote,
+  DepositTerms,
   type Kind,
   type LiquidityAction,
   type Pending,
-  type RecoveryEffect,
   type Request,
-  type Result,
-  type SigningPayload,
+  SigningPayload,
   type Terms,
-  type WithdrawalQuote,
-  type WithdrawalTerms,
+  WithdrawalQuote,
+  WithdrawalTerms,
 } from './model.js';
 import type { LiquidityHistory, LiquidityProgress, LiquidityRejected } from './ports.js';
 
@@ -56,130 +44,12 @@ const RECOVERABLE = new Set(['READY', 'BLOCKED', 'SETTLING', 'EXPIRED']);
 const IN_FLIGHT = ['SUBMITTING', 'UNRESOLVED'] as const;
 const TRACKED = ['READY', 'BLOCKED', 'EXPIRED', 'SETTLING', 'RECOVERING', 'RECOVERY_UNRESOLVED'] as const;
 
-function fieldReader(fields: JsonObject) {
-  return (name: string) => present(text(fields[name]), name);
-}
-
-function readShared(fields: JsonObject) {
-  const field = fieldReader(fields);
-  return {
-    poolId: field('poolId'),
-    poolName: field('poolName'),
-    trader: field('trader'),
-    baseInstrument: storedInstrument(fields.baseInstrument),
-    quoteInstrument: storedInstrument(fields.quoteInstrument),
-    lpInstrument: storedInstrument(fields.lpInstrument),
-  };
-}
-
-function readDepositFields(fields: JsonObject): Omit<DepositTerms, 'settlementDeadline'> {
-  const field = fieldReader(fields);
-  return {
-    ...readShared(fields),
-    mode: present(enumeration(fields.mode, MODES), 'mode'),
-    maxBaseAmount: field('maxBaseAmount'),
-    maxQuoteAmount: field('maxQuoteAmount'),
-    expectedBaseAmount: field('expectedBaseAmount'),
-    expectedQuoteAmount: field('expectedQuoteAmount'),
-    expectedBaseRefund: field('expectedBaseRefund'),
-    expectedQuoteRefund: field('expectedQuoteRefund'),
-    expectedLpOut: field('expectedLpOut'),
-    minLpOut: field('minLpOut'),
-    minRatio: field('minRatio'),
-    maxRatio: field('maxRatio'),
-    initialMinimumLp: text(fields.initialMinimumLp),
-  };
-}
-
-function readWithdrawalFields(fields: JsonObject): Omit<WithdrawalTerms, 'settlementDeadline'> {
-  const field = fieldReader(fields);
-  return {
-    ...readShared(fields),
-    lpAmount: field('lpAmount'),
-    expectedBaseOut: field('expectedBaseOut'),
-    expectedQuoteOut: field('expectedQuoteOut'),
-    minBaseOut: field('minBaseOut'),
-    minQuoteOut: field('minQuoteOut'),
-  };
-}
-
-function readTerms(kind: Kind) {
-  return (value: unknown): Terms => {
-    const fields = present(object(value), 'terms');
-    const settlementDeadline = present(text(fields.settlementDeadline), 'settlementDeadline');
-    return kind === 'DEPOSIT'
-      ? { ...readDepositFields(fields), settlementDeadline }
-      : { ...readWithdrawalFields(fields), settlementDeadline };
-  };
-}
-
-function quoteFields(fields: JsonObject) {
-  return {
-    slippageBps: present(int(fields.slippageBps), 'slippageBps'),
-    stateId: present(text(fields.stateId), 'stateId'),
-    quoteExpiresAt: present(text(fields.quoteExpiresAt), 'quoteExpiresAt'),
-    settlementDeadline: present(text(fields.settlementDeadline), 'settlementDeadline'),
-  };
-}
-
-function readDepositQuote(value: unknown): DepositQuote {
-  const fields = present(object(value), 'quote');
-  return { quoteId: present(text(fields.quoteId), 'quoteId'), ...readDepositFields(fields), ...quoteFields(fields) };
-}
-
-function readWithdrawalQuote(value: unknown): WithdrawalQuote {
-  const fields = present(object(value), 'quote');
-  return { quoteId: present(text(fields.quoteId), 'quoteId'), ...readWithdrawalFields(fields), ...quoteFields(fields) };
-}
-
-function readResult(kind: Kind) {
-  return (value: unknown): Result => {
-    const field = fieldReader(present(object(value), 'result'));
-    if (kind === 'DEPOSIT') {
-      return {
-        actualBaseIn: field('actualBaseIn'),
-        actualQuoteIn: field('actualQuoteIn'),
-        actualBaseRefund: field('actualBaseRefund'),
-        actualQuoteRefund: field('actualQuoteRefund'),
-        actualLpOut: field('actualLpOut'),
-      };
-    }
-    return {
-      actualLpBurned: field('actualLpBurned'),
-      actualBaseOut: field('actualBaseOut'),
-      actualQuoteOut: field('actualQuoteOut'),
-    };
-  };
-}
-
-function readEffect(value: unknown): RecoveryEffect {
-  const fields = present(object(value), 'recovery effect');
-  return {
-    allocationCid: present(text(fields.allocationCid), 'allocationCid'),
-    instrument: storedInstrument(fields.instrument),
-    amount: present(text(fields.amount), 'amount'),
-    kind: present(enumeration(fields.kind, RECOVERY_KINDS), 'kind'),
-  };
-}
-
-function readSigning(value: unknown): SigningPayload {
-  const fields = present(object(value), 'signing');
-  const field = fieldReader(fields);
-  return {
-    preparedTransaction: field('preparedTransaction'),
-    preparedTransactionHash: field('preparedTransactionHash'),
-    hashingSchemeVersion: present(int(fields.hashingSchemeVersion), 'hashingSchemeVersion'),
-    partyId: field('partyId'),
-    publicKeyFingerprint: field('publicKeyFingerprint'),
-    expiresAt: field('expiresAt'),
-    recoveryEffects: present(list(fields.recoveryEffects, readEffect), 'recoveryEffects'),
-  };
-}
-
 /** A stored liquidity request; locked allocations become recoverable after the deadline. */
 export function readRequest(row: RequestRow): Request {
   const kind = row.kind;
-  const terms = stored('liquidity terms', row.terms, readTerms(kind));
+  const terms = stored('liquidity terms', row.terms, (value) =>
+    Value.Decode(kind === 'DEPOSIT' ? DepositTerms : WithdrawalTerms, value),
+  );
   const status = present(enumeration(row.status, LIQUIDITY_STATUSES), 'liquidity status');
   const allocationCids = stored('allocation ids', row.allocation_cids, (value) =>
     list(value, (item) => present(text(item), 'allocation id')),
@@ -197,7 +67,12 @@ export function readRequest(row: RequestRow): Request {
     submittedAt: row.submitted_at === null ? null : isoInstant(row.submitted_at),
     updatedAt: isoInstant(row.updated_at),
     settlementId: row.settlement_id,
-    result: row.result === null ? null : stored('liquidity result', row.result, readResult(kind)),
+    result:
+      row.result === null
+        ? null
+        : stored('liquidity result', row.result, (value) =>
+            Value.Decode(kind === 'DEPOSIT' ? DepositResult : WithdrawalResult, value),
+          ),
     allocationCids,
     updateId: row.update_id,
     errorCode: row.error_code,
@@ -213,7 +88,7 @@ function toPending(row: RequestRow & PreparationColumns): Pending {
     preparationId: row.preparation_id,
     commandId: row.command_id,
     action: row.action,
-    signing: stored('liquidity signing', row.signing, readSigning),
+    signing: stored('liquidity signing', row.signing, (value) => Value.Decode(SigningPayload, value)),
     signature: row.signature,
     beginOffset: row.begin_offset ?? 0n,
   };
@@ -253,11 +128,15 @@ export class LiquidityStore implements LiquidityProgress, LiquidityHistory {
   }
 
   async depositQuote(id: string, caller: Account): Promise<DepositQuote> {
-    return stored('deposit quote', await this.quote(id, caller, 'DEPOSIT'), readDepositQuote);
+    return stored('deposit quote', await this.quote(id, caller, 'DEPOSIT'), (value) =>
+      Value.Decode(DepositQuote, value),
+    );
   }
 
   async withdrawalQuote(id: string, caller: Account): Promise<WithdrawalQuote> {
-    return stored('withdrawal quote', await this.quote(id, caller, 'WITHDRAW'), readWithdrawalQuote);
+    return stored('withdrawal quote', await this.quote(id, caller, 'WITHDRAW'), (value) =>
+      Value.Decode(WithdrawalQuote, value),
+    );
   }
 
   private async quote(id: string, caller: Account, kind: Kind): Promise<string> {

@@ -1,7 +1,7 @@
-import { InvalidRequest } from '../platform/errors.js';
+import { invalidBody, InvalidRequest } from '../platform/errors.js';
 import { bool, int, list, long, object, text, uuid, type JsonObject } from '../platform/request.js';
-import { invalidBody } from '../swaps/requests.js';
 import {
+  INCOMPLETE_SELECTION,
   requireFamily,
   selection,
   type RequestRef,
@@ -10,9 +10,11 @@ import {
   type UpdatePolicy,
 } from './model.js';
 
+const INVALID_REFERENCE = 'Invalid settlement request reference';
+
 /** A public request reference: a known family and a request id. */
 export function requestRef(type: string | null, requestId: string | null): RequestRef {
-  if (requestId === null) throw new InvalidRequest('Invalid settlement request reference');
+  if (requestId === null) throw new InvalidRequest(INVALID_REFERENCE);
   return { type: requireFamily(type), requestId };
 }
 
@@ -21,10 +23,10 @@ function selectionInput(fields: JsonObject): Selection {
   const stateVersion = text(fields.stateVersion);
   const requests = list(fields.requests, (value) => {
     const ref = object(value);
-    if (ref === null) throw new InvalidRequest('Invalid settlement request reference');
+    if (ref === null) throw new InvalidRequest(INVALID_REFERENCE);
     return requestRef(text(ref.type), uuid(ref.requestId));
   });
-  if (stateVersion === null || requests === null) throw new InvalidRequest('Incomplete settlement selection');
+  if (stateVersion === null || requests === null) throw new InvalidRequest(INCOMPLETE_SELECTION);
   return selection(type, uuid(fields.retryOf), stateVersion, long(fields.policyVersion) ?? 0n, requests);
 }
 

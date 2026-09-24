@@ -1,4 +1,4 @@
-import { InvalidRequest } from '../platform/errors.js';
+import { invalidBody } from '../platform/errors.js';
 import { notBlank, text, uuid, type JsonObject } from '../platform/request.js';
 import type { Submission } from './model.js';
 
@@ -6,7 +6,6 @@ import type { Submission } from './model.js';
 export function faucetSubmission(body: JsonObject): Submission {
   const preparationId = uuid(body.preparationId);
   const signature = text(body.signature);
-  if (preparationId === null || !notBlank(signature))
-    throw new InvalidRequest('Invalid request fields or request body');
+  if (preparationId === null || !notBlank(signature)) throw invalidBody();
   return { preparationId, signature };
 }

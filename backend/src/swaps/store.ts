@@ -1,34 +1,24 @@
 import { sql, type Kysely, type Selectable } from 'kysely';
+import { Value } from 'typebox/value';
 import type { Account } from '../iam/accounts.js';
 import { lockForAdmission, lockPoolQueue, nextArrival, unblockFamily } from '../operations/queues.js';
 import type { Database, SwapPreparationsTable, SwapRequestsTable } from '../platform/database.js';
 import { Conflict, InvalidRequest, NotFound } from '../platform/errors.js';
 import { jsonText } from '../platform/json.js';
-import {
-  enumeration,
-  int,
-  list,
-  object,
-  pathUuid,
-  present,
-  requirePageSize,
-  stored,
-  text,
-} from '../platform/request.js';
+import { enumeration, list, pathUuid, present, requirePageSize, text } from '../platform/request.js';
+import { stored } from '../platform/stored.js';
 import { clockNanos, epochNanos, instantText, isoInstant } from '../platform/time.js';
-import { storedInstrument } from '../tokens/model.js';
 import {
-  DIRECTIONS,
+  Quote,
+  SigningPayload,
   SWAP_STATUSES,
+  Terms,
   type Activity,
   type Before,
   type Confirmation,
   type Pending,
-  type Quote,
-  type SigningPayload,
   type Swap,
   type SwapAction,
-  type Terms,
 } from './model.js';
 import type { SwapHistory, SwapProgress, SwapRejected } from './ports.js';
 
@@ -46,66 +36,13 @@ const NOT_WITHDRAWABLE = new Set(['SETTLED', 'WITHDRAWN', 'WITHDRAWING', 'WITHDR
 const IN_FLIGHT = ['SUBMITTING', 'UNRESOLVED'] as const;
 const TRACKED = ['READY', 'BLOCKED', 'EXPIRED', 'SETTLING', 'WITHDRAWING', 'WITHDRAWAL_UNRESOLVED'] as const;
 
-function readTerms(value: unknown): Terms {
-  const fields = present(object(value), 'terms');
-  const field = (name: string) => present(text(fields[name]), name);
-  return {
-    poolId: field('poolId'),
-    poolName: field('poolName'),
-    trader: field('trader'),
-    direction: present(enumeration(fields.direction, DIRECTIONS), 'direction'),
-    inputInstrument: storedInstrument(fields.inputInstrument),
-    outputInstrument: storedInstrument(fields.outputInstrument),
-    amountIn: field('amountIn'),
-    expectedOut: field('expectedOut'),
-    feeAmount: field('feeAmount'),
-    minOut: field('minOut'),
-    settlementDeadline: field('settlementDeadline'),
-  };
-}
-
-function readSigning(value: unknown): SigningPayload {
-  const fields = present(object(value), 'signing');
-  const field = (name: string) => present(text(fields[name]), name);
-  return {
-    preparedTransaction: field('preparedTransaction'),
-    preparedTransactionHash: field('preparedTransactionHash'),
-    hashingSchemeVersion: present(int(fields.hashingSchemeVersion), 'hashingSchemeVersion'),
-    partyId: field('partyId'),
-    publicKeyFingerprint: field('publicKeyFingerprint'),
-    expiresAt: field('expiresAt'),
-  };
-}
-
-function readQuote(value: unknown): Quote {
-  const fields = present(object(value), 'quote');
-  const field = (name: string) => present(text(fields[name]), name);
-  return {
-    quoteId: field('quoteId'),
-    poolId: field('poolId'),
-    poolName: field('poolName'),
-    trader: field('trader'),
-    direction: present(enumeration(fields.direction, DIRECTIONS), 'direction'),
-    inputInstrument: storedInstrument(fields.inputInstrument),
-    outputInstrument: storedInstrument(fields.outputInstrument),
-    amountIn: field('amountIn'),
-    expectedOut: field('expectedOut'),
-    feeAmount: field('feeAmount'),
-    minOut: field('minOut'),
-    slippageBps: present(int(fields.slippageBps), 'slippageBps'),
-    stateId: field('stateId'),
-    quoteExpiresAt: field('quoteExpiresAt'),
-    settlementDeadline: field('settlementDeadline'),
-  };
-}
-
 function readAllocations(json: string): string[] {
   return stored('allocation ids', json, (value) => list(value, (item) => present(text(item), 'allocation id')));
 }
 
 /** A stored swap request; allocations become withdrawable once the settlement deadline passes. */
 export function readSwap(row: SwapRow): Swap {
-  const terms = stored('swap terms', row.terms, readTerms);
+  const terms = stored('swap terms', row.terms, (value) => Value.Decode(Terms, value));
   const status = present(enumeration(row.status, SWAP_STATUSES), 'swap status');
   const allocationCids = readAllocations(row.allocation_cids);
   const canWithdraw =
@@ -136,7 +73,7 @@ function toPending(row: SwapRow & PreparationColumns): Pending {
     preparationId: row.preparation_id,
     commandId: row.command_id,
     action: row.action,
-    signing: stored('swap signing', row.signing, readSigning),
+    signing: stored('swap signing', row.signing, (value) => Value.Decode(SigningPayload, value)),
     signature: row.signature,
     beginOffset: row.begin_offset ?? 0n,
   };
@@ -175,7 +112,7 @@ export class SwapStore implements SwapProgress, SwapHistory {
       .where('account_id', '=', caller.id)
       .executeTakeFirst();
     if (!row) throw new NotFound();
-    return stored('swap quote', row.payload, readQuote);
+    return stored('swap quote', row.payload, (value) => Value.Decode(Quote, value));
   }
 
   async preparedQuote(quoteId: string, caller: Account, db: Executor = this.db): Promise<Pending | undefined> {

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Account } from '../../../src/iam/accounts.js';
 import { KINDS } from '../../../src/liquidity/model.js';
-import type { Family } from '../../../src/platform/database.js';
+import type { Family } from '../../../src/platform/families.js';
 import { instantText } from '../../../src/platform/time.js';
 import {
   FAMILIES,

@@ -1,37 +1,33 @@
 import { createHash } from 'node:crypto';
+import type { StaticDecode } from 'typebox';
+import { storedNullableText, storedObject, storedText } from '../platform/stored.js';
 import { numericUnits, sameNumeric } from '../platform/decimal.js';
 import { InvalidRequest } from '../platform/errors.js';
 import { isBreakingWhitespace } from '../platform/request.js';
-import type { Instrument, RegisteredInstrument } from '../tokens/model.js';
+import { Instrument, type RegisteredInstrument } from '../tokens/model.js';
 
-export interface ReserveAccount {
-  readonly owner: string;
-  readonly provider: string | null;
-  readonly id: string;
-}
+export const ReserveAccount = storedObject({ owner: storedText, provider: storedNullableText, id: storedText });
+export type ReserveAccount = StaticDecode<typeof ReserveAccount>;
+
+const PAIR = { dvo: storedText, baseInstrumentId: Instrument, quoteInstrumentId: Instrument };
 
 /** A pair and a whole-bps fee, as a proposal states them. */
-export interface ProposalTerms {
-  readonly dvo: string;
-  readonly baseInstrumentId: Instrument;
-  readonly quoteInstrumentId: Instrument;
-  readonly feeBps: string;
-}
+export const ProposalTerms = storedObject({ ...PAIR, feeBps: storedText });
+export type ProposalTerms = StaticDecode<typeof ProposalTerms>;
 
 /** Pool settings and reserves; decimals keep the ledger's Numeric 10 text. */
-export interface Terms {
-  readonly dvo: string;
-  readonly baseInstrumentId: Instrument;
-  readonly quoteInstrumentId: Instrument;
-  readonly baseAccount: ReserveAccount;
-  readonly quoteAccount: ReserveAccount;
-  readonly lpTokenInstrumentId: Instrument;
-  readonly feeBps: string;
-  readonly baseReserve: string;
-  readonly quoteReserve: string;
-  readonly lpTokenSupply: string;
-  readonly initialRatio: string;
-}
+export const Terms = storedObject({
+  ...PAIR,
+  baseAccount: ReserveAccount,
+  quoteAccount: ReserveAccount,
+  lpTokenInstrumentId: Instrument,
+  feeBps: storedText,
+  baseReserve: storedText,
+  quoteReserve: storedText,
+  lpTokenSupply: storedText,
+  initialRatio: storedText,
+});
+export type Terms = StaticDecode<typeof Terms>;
 
 /** POST /v1/admin/pool-proposals. */
 export interface CreateProposal {

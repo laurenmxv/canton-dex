@@ -1,11 +1,6 @@
-import { InvalidRequest } from '../platform/errors.js';
+import { invalidBody } from '../platform/errors.js';
 import { enumeration, instant, int, notBlank, text, uuid, type JsonObject } from '../platform/request.js';
 import { DIRECTIONS, MAX_SLIPPAGE_BPS, type PrepareInput, type QuoteInput, type Submission } from './model.js';
-
-/** A body that fails validation; every such failure is the generic 400 answer. */
-export function invalidBody(): InvalidRequest {
-  return new InvalidRequest('Invalid request fields or request body');
-}
 
 /** A primitive `int` field: missing or null is 0. */
 export function slippage(value: unknown): number {

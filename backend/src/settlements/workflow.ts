@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { FastifyBaseLogger } from 'fastify';
 import { requireRole, type Account } from '../iam/accounts.js';
 import { isDepositTerms } from '../liquidity/model.js';
-import type { Family } from '../platform/database.js';
+import type { Family } from '../platform/families.js';
 import { numericUnits } from '../platform/decimal.js';
 import { Conflict } from '../platform/errors.js';
 import { clockNanos } from '../platform/time.js';

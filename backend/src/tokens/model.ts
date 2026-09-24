@@ -1,13 +1,24 @@
+import type { StaticDecode } from 'typebox';
 import type { PartyPreparation } from '../onboarding/model.js';
 import { InvalidRequest } from '../platform/errors.js';
-import { onlyWhitespace, object, present, strictBase64, text } from '../platform/request.js';
+import { onlyWhitespace, strictBase64 } from '../platform/request.js';
+import { storedInt, storedObject, storedText } from '../platform/stored.js';
 import { epochNanos } from '../platform/time.js';
 
 /** An instrument: its administrator and that administrator's own identifier for it. */
-export interface Instrument {
-  readonly admin: string;
-  readonly id: string;
-}
+export const Instrument = storedObject({ admin: storedText, id: storedText });
+export type Instrument = StaticDecode<typeof Instrument>;
+
+/** The opaque transaction stays in the backend; the wallet signs the participant's hash. */
+export const SigningPayload = storedObject({
+  preparedTransaction: storedText,
+  preparedTransactionHash: storedText,
+  hashingSchemeVersion: storedInt,
+  partyId: storedText,
+  publicKeyFingerprint: storedText,
+  expiresAt: storedText,
+});
+export type SigningPayload = StaticDecode<typeof SigningPayload>;
 
 /**
  * An instrument the venue registers. The administrator and its identifier name it together: two
@@ -18,12 +29,6 @@ export interface RegisteredInstrument {
   readonly id: string;
   readonly symbol: string;
   readonly decimals: number;
-}
-
-/** An instrument in JSON that a store wrote. */
-export function storedInstrument(value: unknown): Instrument {
-  const fields = present(object(value), 'instrument');
-  return { admin: present(text(fields.admin), 'instrument admin'), id: present(text(fields.id), 'instrument id') };
 }
 
 /** Every registered instrument, for the modules that read against the whole set. */

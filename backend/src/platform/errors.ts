@@ -6,6 +6,13 @@
 /** Invalid request fields or body; the answer is the generic 400 detail. */
 export class InvalidRequest extends Error {}
 
+export const INVALID_REQUEST = 'Invalid request fields or request body';
+
+/** A body that fails validation; every such failure has the generic 400 answer. */
+export function invalidBody(): InvalidRequest {
+  return new InvalidRequest(INVALID_REQUEST);
+}
+
 /** A missing resource, or one that belongs to another account. */
 export class NotFound extends Error {
   constructor() {

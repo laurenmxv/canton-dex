@@ -1,11 +1,20 @@
-import type { Request as LiquidityRequest } from '../liquidity/model.js';
-import type { Family } from '../platform/database.js';
+import { Type, type StaticDecode } from 'typebox';
+import { DepositResult, WithdrawalResult, type Request as LiquidityRequest } from '../liquidity/model.js';
+import {
+  storedEnum,
+  storedList,
+  storedLong,
+  storedNullableText,
+  storedObject,
+  storedText,
+} from '../platform/stored.js';
+import { FAMILIES, type Family } from '../platform/families.js';
 import { InvalidRequest } from '../platform/errors.js';
 import { onlyWhitespace } from '../platform/request.js';
 import type { Swap } from '../swaps/model.js';
-import type { Instrument } from '../tokens/model.js';
+import { Instrument } from '../tokens/model.js';
 
-export const FAMILIES: readonly Family[] = ['swap', 'deposit', 'withdraw'];
+export { FAMILIES } from '../platform/families.js';
 export const SETTLEMENT_STATUSES = [
   'PREPARING',
   'SUBMITTING',
@@ -24,6 +33,7 @@ export const BATCH_IN_FLIGHT = 'BATCH_IN_FLIGHT';
 export const IDEMPOTENCY_CONFLICT = 'IDEMPOTENCY_CONFLICT';
 export const RETRY_NOT_ALLOWED = 'RETRY_NOT_ALLOWED';
 export const REQUEST_NOT_READY = 'REQUEST_NOT_READY';
+export const INCOMPLETE_SELECTION = 'Incomplete settlement selection';
 /** A pool can settle when it is funded, or when it is empty and awaits initialization. */
 export const SETTLEABLE_HEALTH = new Set(['READY', 'EMPTY']);
 
@@ -50,10 +60,8 @@ export interface UpdatePolicy {
   readonly expectedVersion: bigint;
 }
 
-export interface RequestRef {
-  readonly type: Family;
-  readonly requestId: string;
-}
+export const RequestRef = storedObject({ type: storedEnum(FAMILIES), requestId: storedText });
+export type RequestRef = StaticDecode<typeof RequestRef>;
 
 export function sameRef(left: RequestRef, right: RequestRef): boolean {
   return left.type === right.type && left.requestId === right.requestId;
@@ -70,13 +78,14 @@ export function sameRefs(left: readonly RequestRef[], right: readonly RequestRef
 }
 
 /** The requests a manual run or retry settles, frozen against one pool state and policy version. */
-export interface Selection {
-  readonly type: Family;
-  readonly retryOf: string | null;
-  readonly stateVersion: string;
-  readonly policyVersion: bigint;
-  readonly requests: readonly RequestRef[];
-}
+export const Selection = storedObject({
+  type: storedEnum(FAMILIES),
+  retryOf: storedNullableText,
+  stateVersion: storedText,
+  policyVersion: storedLong,
+  requests: storedList(RequestRef),
+});
+export type Selection = StaticDecode<typeof Selection>;
 
 /** A selection of one family's distinct requests. */
 export function selection(
@@ -86,7 +95,7 @@ export function selection(
   policyVersion: bigint,
   requests: readonly RequestRef[],
 ): Selection {
-  if (onlyWhitespace(stateVersion)) throw new InvalidRequest('Incomplete settlement selection');
+  if (onlyWhitespace(stateVersion)) throw new InvalidRequest(INCOMPLETE_SELECTION);
   const keys = new Set(requests.map((ref) => `${ref.type}:${ref.requestId}`));
   if (requests.some((ref) => ref.type !== type) || keys.size !== requests.length) {
     throw new InvalidRequest('Invalid settlement membership');
@@ -140,13 +149,14 @@ export function settlementDeadlineOf(queued: QueueRequest): string {
 }
 
 /** A pool state's reserves; decimals are trimmed text. */
-export interface Reserves {
-  readonly stateId: string;
-  readonly baseReserve: string;
-  readonly quoteReserve: string;
-  readonly spotPrice: string | null;
-  readonly invariant: string;
-}
+export const Reserves = storedObject({
+  stateId: storedText,
+  baseReserve: storedText,
+  quoteReserve: storedText,
+  spotPrice: storedNullableText,
+  invariant: storedText,
+});
+export type Reserves = StaticDecode<typeof Reserves>;
 
 /** The pool as one ledger read shows it, with its health for settlement. */
 export interface Snapshot {
@@ -162,29 +172,17 @@ export interface Snapshot {
   readonly initialRatio: string;
 }
 
-export type Fill =
-  | {
-      readonly requestId: string;
-      readonly amountOut: string;
-      readonly outputInstrument: Instrument;
-      readonly type: 'swap';
-    }
-  | {
-      readonly requestId: string;
-      readonly actualBaseIn: string;
-      readonly actualQuoteIn: string;
-      readonly actualBaseRefund: string;
-      readonly actualQuoteRefund: string;
-      readonly actualLpOut: string;
-      readonly type: 'deposit';
-    }
-  | {
-      readonly requestId: string;
-      readonly actualLpBurned: string;
-      readonly actualBaseOut: string;
-      readonly actualQuoteOut: string;
-      readonly type: 'withdraw';
-    };
+export const Fill = Type.Union([
+  storedObject({
+    requestId: storedText,
+    amountOut: storedText,
+    outputInstrument: Instrument,
+    type: Type.Literal('swap'),
+  }),
+  storedObject({ requestId: storedText, ...DepositResult.properties, type: Type.Literal('deposit') }),
+  storedObject({ requestId: storedText, ...WithdrawalResult.properties, type: Type.Literal('withdraw') }),
+]);
+export type Fill = StaticDecode<typeof Fill>;
 
 export function fillRef(fill: Fill): RequestRef {
   return { type: fill.type, requestId: fill.requestId };

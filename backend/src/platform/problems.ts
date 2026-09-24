@@ -5,6 +5,7 @@ import {
   CodedFailure,
   Conflict,
   InvalidRequest,
+  INVALID_REQUEST,
   LedgerUnavailable,
   NotFound,
   Unavailable,
@@ -13,7 +14,6 @@ import { isUniqueViolation } from './database.js';
 import { jsonText } from './json.js';
 
 export const PROBLEM_JSON = 'application/problem+json';
-export const INVALID_REQUEST = 'Invalid request fields or request body';
 export const TOKEN_REQUIRED = 'A valid access token is required';
 export const FORBIDDEN = 'This account cannot perform that operation';
 export const REQUEST_FAILED = 'The request could not be completed';

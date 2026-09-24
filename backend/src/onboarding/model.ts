@@ -1,3 +1,13 @@
+import { Type, type StaticDecode } from 'typebox';
+import { long, present } from '../platform/request.js';
+import {
+  storedBool,
+  storedEnum,
+  storedList,
+  storedNullableText,
+  storedObject,
+  storedText,
+} from '../platform/stored.js';
 import { Conflict, InvalidRequest } from '../platform/errors.js';
 
 export const DOCUMENT_CATEGORIES = ['IDENTITY', 'ADDRESS', 'OTHER'] as const;
@@ -7,24 +17,28 @@ export const ATTESTATION_STEP = 'attestation';
 export const ACCESS_STEP_PREFIX = 'access:';
 
 export type Decision = (typeof DECISIONS)[number];
-export type PartyStatus = 'PREPARED' | 'SUBMITTING' | 'CONFIRMED' | 'UNRESOLVED' | 'CONFLICT';
-export type StepStatus = 'PENDING' | 'SUBMITTING' | 'CONFIRMED' | 'UNRESOLVED';
+export const PARTY_STATUSES = ['PREPARED', 'SUBMITTING', 'CONFIRMED', 'UNRESOLVED', 'CONFLICT'] as const;
+export type PartyStatus = (typeof PARTY_STATUSES)[number];
+export const STEP_STATUSES = ['PENDING', 'SUBMITTING', 'CONFIRMED', 'UNRESOLVED'] as const;
+export type StepStatus = (typeof STEP_STATUSES)[number];
 
-export interface OnboardingDocument {
-  readonly id: string;
-  readonly category: (typeof DOCUMENT_CATEGORIES)[number];
-  readonly fileName: string;
-  readonly mediaType: string;
-  readonly sizeBytes: number;
-  readonly simulated: boolean;
-}
+export const OnboardingDocument = storedObject({
+  id: storedText,
+  category: storedEnum(DOCUMENT_CATEGORIES),
+  fileName: storedText,
+  mediaType: storedText,
+  sizeBytes: Type.Decode(Type.Unknown(), (value) => Number(present(long(value), 'sizeBytes'))),
+  simulated: storedBool,
+});
+export type OnboardingDocument = StaticDecode<typeof OnboardingDocument>;
 
-export interface OnboardingApplication {
-  readonly legalName: string;
-  readonly countryCode: string;
-  readonly documentReferences: readonly string[];
-  readonly documents: readonly OnboardingDocument[];
-}
+export const OnboardingApplication = storedObject({
+  legalName: storedText,
+  countryCode: storedText,
+  documentReferences: storedList(storedText, []),
+  documents: storedList(OnboardingDocument, []),
+});
+export type OnboardingApplication = StaticDecode<typeof OnboardingApplication>;
 
 export interface ReviewDecision {
   readonly decision: Decision;
@@ -53,14 +67,15 @@ export interface PartyPreparation {
   readonly topologyTransactions: readonly string[];
 }
 
-export interface LedgerStep {
-  readonly key: string;
-  readonly commandId: string;
-  readonly status: StepStatus;
-  readonly contractId: string | null;
-  readonly updateId: string | null;
-  readonly issuer: string | null;
-}
+export const LedgerStep = storedObject({
+  key: storedText,
+  commandId: storedText,
+  status: storedEnum(STEP_STATUSES),
+  contractId: storedNullableText,
+  updateId: storedNullableText,
+  issuer: storedNullableText,
+});
+export type LedgerStep = StaticDecode<typeof LedgerStep>;
 
 /** The public onboarding record; the field order is the JSON order of the API. */
 export interface Onboarding {

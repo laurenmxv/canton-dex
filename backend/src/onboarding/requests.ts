@@ -1,4 +1,4 @@
-import { InvalidRequest } from '../platform/errors.js';
+import { invalidBody } from '../platform/errors.js';
 import { bool, enumeration, list, long, notBlank, object, text, uuid, type JsonObject } from '../platform/request.js';
 import {
   DECISIONS,
@@ -18,17 +18,13 @@ export interface PartySubmission {
   readonly signature: string;
 }
 
-function invalid(): never {
-  throw new InvalidRequest('Invalid request fields or request body');
-}
-
 function boundedText(value: string | null, max: number): string {
-  if (!notBlank(value) || value.length > max) invalid();
+  if (!notBlank(value) || value.length > max) throw invalidBody();
   return value;
 }
 
 function required<T>(value: T | null): T {
-  if (value === null) invalid();
+  if (value === null) throw invalidBody();
   return value;
 }
 
@@ -43,7 +39,7 @@ function onboardingDocument(value: unknown): OnboardingDocument {
     simulated: bool(fields.simulated),
   };
   const sizeBytes = required(document.sizeBytes);
-  if (sizeBytes < 0n || sizeBytes > MAX_DOCUMENT_BYTES || document.simulated !== true) invalid();
+  if (sizeBytes < 0n || sizeBytes > MAX_DOCUMENT_BYTES || document.simulated !== true) throw invalidBody();
   return {
     id: required(document.id),
     category: required(document.category),
@@ -74,7 +70,7 @@ export function onboardingApplication(body: JsonObject): OnboardingApplication {
     countryCode === null ||
     !COUNTRY_CODE.test(countryCode)
   ) {
-    invalid();
+    throw invalidBody();
   }
   return {
     legalName: boundedText(legalName, 120),
@@ -88,10 +84,13 @@ export function reviewDecision(body: JsonObject): ReviewDecision {
   const decision = enumeration(body.decision, DECISIONS);
   const approvedPoolIds = list(body.approvedPoolIds, text);
   const partyHint = text(body.partyHint);
-  if (approvedPoolIds === null || approvedPoolIds.length > MAX_APPROVED_POOLS) invalid();
+  if (approvedPoolIds === null || approvedPoolIds.length > MAX_APPROVED_POOLS) throw invalidBody();
   return {
     decision: required(decision),
-    approvedPoolIds: approvedPoolIds.map((id) => (notBlank(id) ? id : invalid())),
+    approvedPoolIds: approvedPoolIds.map((id) => {
+      if (!notBlank(id)) throw invalidBody();
+      return id;
+    }),
     partyHint,
   };
 }

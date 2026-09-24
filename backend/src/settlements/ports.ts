@@ -1,4 +1,4 @@
-import type { Family } from '../platform/database.js';
+import type { Family } from '../platform/families.js';
 import type {
   Confirmation,
   Fill,

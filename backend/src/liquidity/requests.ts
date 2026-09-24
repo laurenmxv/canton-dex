@@ -1,5 +1,6 @@
 import { instant, notBlank, text, uuid, type JsonObject } from '../platform/request.js';
-import { invalidBody, slippage } from '../swaps/requests.js';
+import { invalidBody } from '../platform/errors.js';
+import { slippage } from '../swaps/requests.js';
 import type { DepositQuoteInput, PrepareDepositInput, PrepareWithdrawalInput, WithdrawalQuoteInput } from './model.js';
 
 /** POST /v1/lp/deposit/quote. */

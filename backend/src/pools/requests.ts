@@ -1,4 +1,4 @@
-import { InvalidRequest } from '../platform/errors.js';
+import { invalidBody } from '../platform/errors.js';
 import { notBlank, object, text, type JsonObject } from '../platform/request.js';
 import type { Instrument } from '../tokens/model.js';
 import type { CreateProposal } from './model.js';
@@ -7,12 +7,8 @@ const MAX_NAME = 120;
 const MAX_ADMIN = 255;
 const MAX_ID = 128;
 
-function invalid(): never {
-  throw new InvalidRequest('Invalid request fields or request body');
-}
-
 function bounded(value: string | null, max: number): string {
-  if (!notBlank(value) || value.length > max) invalid();
+  if (!notBlank(value) || value.length > max) throw invalidBody();
   return value;
 }
 
@@ -28,6 +24,6 @@ export function createProposal(body: JsonObject): CreateProposal {
   const baseInstrumentId = instrument(body.baseInstrumentId);
   const quoteInstrumentId = instrument(body.quoteInstrumentId);
   const feeBps = text(body.feeBps);
-  if (baseInstrumentId === null || quoteInstrumentId === null || feeBps === null) invalid();
+  if (baseInstrumentId === null || quoteInstrumentId === null || feeBps === null) throw invalidBody();
   return { name: bounded(name, MAX_NAME), baseInstrumentId, quoteInstrumentId, feeBps };
 }

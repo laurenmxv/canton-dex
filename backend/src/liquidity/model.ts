@@ -1,5 +1,7 @@
-import type { Family } from '../platform/database.js';
-import type { Instrument } from '../tokens/model.js';
+import type { StaticDecode } from 'typebox';
+import type { Family } from '../platform/families.js';
+import { storedEnum, storedInt, storedList, storedNullableText, storedObject, storedText } from '../platform/stored.js';
+import { Instrument, SigningPayload as ParticipantSigningPayload } from '../tokens/model.js';
 
 export const KINDS = ['DEPOSIT', 'WITHDRAW'] as const;
 export type Kind = (typeof KINDS)[number];
@@ -38,56 +40,59 @@ export interface WithdrawalQuoteInput {
   readonly slippageBps: number;
 }
 
-export interface DepositTerms {
-  readonly poolId: string;
-  readonly poolName: string;
-  readonly trader: string;
-  readonly baseInstrument: Instrument;
-  readonly quoteInstrument: Instrument;
-  readonly lpInstrument: Instrument;
-  readonly mode: Mode;
-  readonly maxBaseAmount: string;
-  readonly maxQuoteAmount: string;
-  readonly expectedBaseAmount: string;
-  readonly expectedQuoteAmount: string;
-  readonly expectedBaseRefund: string;
-  readonly expectedQuoteRefund: string;
-  readonly expectedLpOut: string;
-  readonly minLpOut: string;
-  readonly minRatio: string;
-  readonly maxRatio: string;
+const POOL = {
+  poolId: storedText,
+  poolName: storedText,
+  trader: storedText,
+  baseInstrument: Instrument,
+  quoteInstrument: Instrument,
+  lpInstrument: Instrument,
+};
+
+const DEPOSIT = {
+  ...POOL,
+  mode: storedEnum(MODES),
+  maxBaseAmount: storedText,
+  maxQuoteAmount: storedText,
+  expectedBaseAmount: storedText,
+  expectedQuoteAmount: storedText,
+  expectedBaseRefund: storedText,
+  expectedQuoteRefund: storedText,
+  expectedLpOut: storedText,
+  minLpOut: storedText,
+  minRatio: storedText,
+  maxRatio: storedText,
   /** LP locked in the pool and never minted; null on a proportional deposit. */
-  readonly initialMinimumLp: string | null;
-  readonly settlementDeadline: string;
-}
+  initialMinimumLp: storedNullableText,
+};
 
-export interface WithdrawalTerms {
-  readonly poolId: string;
-  readonly poolName: string;
-  readonly trader: string;
-  readonly baseInstrument: Instrument;
-  readonly quoteInstrument: Instrument;
-  readonly lpInstrument: Instrument;
-  readonly lpAmount: string;
-  readonly expectedBaseOut: string;
-  readonly expectedQuoteOut: string;
-  readonly minBaseOut: string;
-  readonly minQuoteOut: string;
-  readonly settlementDeadline: string;
-}
+const WITHDRAWAL = {
+  ...POOL,
+  lpAmount: storedText,
+  expectedBaseOut: storedText,
+  expectedQuoteOut: storedText,
+  minBaseOut: storedText,
+  minQuoteOut: storedText,
+};
 
+export const DepositTerms = storedObject({ ...DEPOSIT, settlementDeadline: storedText });
+export type DepositTerms = StaticDecode<typeof DepositTerms>;
+export const WithdrawalTerms = storedObject({ ...WITHDRAWAL, settlementDeadline: storedText });
+export type WithdrawalTerms = StaticDecode<typeof WithdrawalTerms>;
 export type Terms = DepositTerms | WithdrawalTerms;
 
-interface QuoteFields {
-  readonly quoteId: string;
-  readonly slippageBps: number;
-  readonly stateId: string;
-  readonly quoteExpiresAt: string;
-}
+const QUOTE = {
+  slippageBps: storedInt,
+  stateId: storedText,
+  quoteExpiresAt: storedText,
+  settlementDeadline: storedText,
+};
 
 /** Expected figures are estimates; the minimums and ratio bounds are what the trader signs. */
-export type DepositQuote = DepositTerms & QuoteFields;
-export type WithdrawalQuote = WithdrawalTerms & QuoteFields;
+export const DepositQuote = storedObject({ quoteId: storedText, ...DEPOSIT, ...QUOTE });
+export type DepositQuote = StaticDecode<typeof DepositQuote>;
+export const WithdrawalQuote = storedObject({ quoteId: storedText, ...WITHDRAWAL, ...QUOTE });
+export type WithdrawalQuote = StaticDecode<typeof WithdrawalQuote>;
 
 export interface PrepareDepositInput {
   readonly quoteId: string;
@@ -106,39 +111,37 @@ export interface PrepareWithdrawalInput {
   readonly settlementDeadline: bigint;
 }
 
-export interface DepositResult {
-  readonly actualBaseIn: string;
-  readonly actualQuoteIn: string;
-  readonly actualBaseRefund: string;
-  readonly actualQuoteRefund: string;
-  readonly actualLpOut: string;
-}
+export const DepositResult = storedObject({
+  actualBaseIn: storedText,
+  actualQuoteIn: storedText,
+  actualBaseRefund: storedText,
+  actualQuoteRefund: storedText,
+  actualLpOut: storedText,
+});
+export type DepositResult = StaticDecode<typeof DepositResult>;
 
-export interface WithdrawalResult {
-  readonly actualLpBurned: string;
-  readonly actualBaseOut: string;
-  readonly actualQuoteOut: string;
-}
-
+export const WithdrawalResult = storedObject({
+  actualLpBurned: storedText,
+  actualBaseOut: storedText,
+  actualQuoteOut: storedText,
+});
+export type WithdrawalResult = StaticDecode<typeof WithdrawalResult>;
 export type Result = DepositResult | WithdrawalResult;
 
-export interface RecoveryEffect {
-  readonly allocationCid: string;
-  readonly instrument: Instrument;
-  readonly amount: string;
-  readonly kind: RecoveryKind;
-}
+export const RecoveryEffect = storedObject({
+  allocationCid: storedText,
+  instrument: Instrument,
+  amount: storedText,
+  kind: storedEnum(RECOVERY_KINDS),
+});
+export type RecoveryEffect = StaticDecode<typeof RecoveryEffect>;
 
 /** The opaque transaction remains in the backend; wallets sign its participant hash. */
-export interface SigningPayload {
-  readonly preparedTransaction: string;
-  readonly preparedTransactionHash: string;
-  readonly hashingSchemeVersion: number;
-  readonly partyId: string;
-  readonly publicKeyFingerprint: string;
-  readonly expiresAt: string;
-  readonly recoveryEffects: readonly RecoveryEffect[];
-}
+export const SigningPayload = storedObject({
+  ...ParticipantSigningPayload.properties,
+  recoveryEffects: storedList(RecoveryEffect),
+});
+export type SigningPayload = StaticDecode<typeof SigningPayload>;
 
 export interface Preparation {
   readonly preparationId: string;

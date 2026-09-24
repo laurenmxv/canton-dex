@@ -5,7 +5,7 @@ import type { Account } from '../../src/iam/accounts.js';
 import type { Kind, Request, Terms as LiquidityTerms } from '../../src/liquidity/model.js';
 import { LiquidityStore } from '../../src/liquidity/store.js';
 import { OperatorCommandStore, type PreparedCommand } from '../../src/operations/commands.js';
-import type { Family } from '../../src/platform/database.js';
+import type { Family } from '../../src/platform/families.js';
 import { CodedFailure, Conflict, InvalidRequest, NotFound } from '../../src/platform/errors.js';
 import { jsonText } from '../../src/platform/json.js';
 import { clockNanos, instantText } from '../../src/platform/time.js';

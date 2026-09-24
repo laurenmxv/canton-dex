@@ -51,17 +51,6 @@ export function present<T>(value: T | null, field: string): T {
   return value;
 }
 
-/** Reads JSON that a store wrote. A value it cannot read is a server error, not a bad request. */
-export function stored<T>(column: string, json: string, read: (value: unknown) => T | null): T {
-  try {
-    const value = read(parseJson(json));
-    if (value !== null) return value;
-  } catch (error) {
-    throw new Error(`Stored ${column} is invalid`, { cause: error });
-  }
-  throw new Error(`Stored ${column} is missing`);
-}
-
 /** The API reads `application/json` and `application/*+json` bodies. */
 function isJsonMediaType(contentType: string | undefined): boolean {
   const mediaType = contentType?.split(';')[0]?.trim().toLowerCase() ?? '';

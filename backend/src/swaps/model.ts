@@ -1,4 +1,8 @@
-import type { Instrument } from '../tokens/model.js';
+import type { StaticDecode } from 'typebox';
+import { storedEnum, storedInt, storedObject, storedText } from '../platform/stored.js';
+import { Instrument, type SigningPayload } from '../tokens/model.js';
+
+export { SigningPayload } from '../tokens/model.js';
 
 export const DIRECTIONS = ['BaseToQuote', 'QuoteToBase'] as const;
 export type Direction = (typeof DIRECTIONS)[number];
@@ -32,23 +36,29 @@ export interface QuoteInput {
   readonly slippageBps: number;
 }
 
-export interface Quote {
-  readonly quoteId: string;
-  readonly poolId: string;
-  readonly poolName: string;
-  readonly trader: string;
-  readonly direction: Direction;
-  readonly inputInstrument: Instrument;
-  readonly outputInstrument: Instrument;
-  readonly amountIn: string;
-  readonly expectedOut: string;
-  readonly feeAmount: string;
-  readonly minOut: string;
-  readonly slippageBps: number;
-  readonly stateId: string;
-  readonly quoteExpiresAt: string;
-  readonly settlementDeadline: string;
-}
+/** The fields that a quote and the terms it approves share. */
+const TRADE = {
+  poolId: storedText,
+  poolName: storedText,
+  trader: storedText,
+  direction: storedEnum(DIRECTIONS),
+  inputInstrument: Instrument,
+  outputInstrument: Instrument,
+  amountIn: storedText,
+  expectedOut: storedText,
+  feeAmount: storedText,
+  minOut: storedText,
+};
+
+export const Quote = storedObject({
+  quoteId: storedText,
+  ...TRADE,
+  slippageBps: storedInt,
+  stateId: storedText,
+  quoteExpiresAt: storedText,
+  settlementDeadline: storedText,
+});
+export type Quote = StaticDecode<typeof Quote>;
 
 export interface PrepareInput {
   readonly quoteId: string;
@@ -63,29 +73,8 @@ export interface Submission {
 }
 
 /** The immutable terms a preparation binds. */
-export interface Terms {
-  readonly poolId: string;
-  readonly poolName: string;
-  readonly trader: string;
-  readonly direction: Direction;
-  readonly inputInstrument: Instrument;
-  readonly outputInstrument: Instrument;
-  readonly amountIn: string;
-  readonly expectedOut: string;
-  readonly feeAmount: string;
-  readonly minOut: string;
-  readonly settlementDeadline: string;
-}
-
-/** The opaque transaction stays in the backend; the wallet signs the participant's hash. */
-export interface SigningPayload {
-  readonly preparedTransaction: string;
-  readonly preparedTransactionHash: string;
-  readonly hashingSchemeVersion: number;
-  readonly partyId: string;
-  readonly publicKeyFingerprint: string;
-  readonly expiresAt: string;
-}
+export const Terms = storedObject({ ...TRADE, settlementDeadline: storedText });
+export type Terms = StaticDecode<typeof Terms>;
 
 export interface Preparation {
   readonly preparationId: string;
@@ -100,20 +89,9 @@ export interface Preparation {
   readonly expiresAt: string;
 }
 
-export interface Swap {
+export interface Swap extends Terms {
   readonly swapId: string;
   readonly quoteId: string;
-  readonly poolId: string;
-  readonly poolName: string;
-  readonly trader: string;
-  readonly direction: Direction;
-  readonly inputInstrument: Instrument;
-  readonly outputInstrument: Instrument;
-  readonly amountIn: string;
-  readonly expectedOut: string;
-  readonly feeAmount: string;
-  readonly minOut: string;
-  readonly settlementDeadline: string;
   readonly status: SwapStatus;
   readonly arrivalSequence: bigint | null;
   readonly createdAt: string;

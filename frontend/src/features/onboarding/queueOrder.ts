@@ -34,8 +34,8 @@ const COLLATOR = new Intl.Collator('en', { sensitivity: 'base', numeric: true })
 /**
  * One instant as two comparable parts: the whole seconds, then the fraction.
  *
- * The venue serialises `createdAt` from a `java.time.Instant`, which carries
- * nanoseconds and which Jackson writes without a fraction when it is zero. So
+ * The venue serialises `createdAt` with up to nanosecond precision, and
+ * without a fraction when it is zero. So
  * one list holds `…:00Z` beside `…:00.500Z` beside `…:00.500001Z`. `Date.parse`
  * stops at the millisecond, and comparing the text collates `.5` above `.25`,
  * so neither answers alone.

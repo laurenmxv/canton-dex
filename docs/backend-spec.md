@@ -119,7 +119,7 @@ to that contract. Initial quotes expose the permanent `initialMinimumLp`.
 
 LP math uses exact integer units, including an integer square root for initial
 supply. The pinned LF 2.3 target does not support `BigNumeric`: Daml uses
-`Numeric 0`/`Numeric 20` with overflow rejection, and Java enforces the same bounds.
+`Numeric 0`/`Numeric 20` with overflow rejection, and the backend enforces the same bounds.
 
 Positions come from actual LP holdings, current reserves and supply. `EXPIRED`
 means recovery is available, not that funds were unlocked. `RECOVERED` requires

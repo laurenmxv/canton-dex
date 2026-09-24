@@ -1,0 +1,42 @@
+{
+  "name": "@canton-dex/backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "generate": "openapi-typescript src/canton/ledger-api/openapi.yaml -o src/canton/generated/ledger-api.ts",
+    "dev": "npm run generate && tsx watch src/main.ts",
+    "build": "npm run generate && tsc -p tsconfig.build.json",
+    "start": "node dist/main.js",
+    "typecheck": "npm run generate && tsc -p tsconfig.json",
+    "lint": "eslint . && depcruise src",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run --project unit",
+    "test:integration": "vitest run --project integration"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "2.15.0",
+    "async-mutex": "0.5.0",
+    "fastify": "5.12.5",
+    "jose": "6.2.12",
+    "kysely": "0.29.6",
+    "pg": "8.23.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.13.6",
+    "@types/pg": "8.23.1",
+    "dependency-cruiser": "18.4.0",
+    "eslint": "10.11.0",
+    "openapi-typescript": "7.13.0",
+    "prettier": "3.9.9",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.70.1",
+    "vitest": "3.2.7"
+  }
+}

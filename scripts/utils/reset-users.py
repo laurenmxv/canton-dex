@@ -19,7 +19,7 @@ KEYCLOAK_URL = "http://localhost:18082"
 REALM = "Dex"
 ISSUER = f"{KEYCLOAK_URL}/realms/{REALM}"
 OPERATOR_SUBJECT = "00000000-0000-0000-0000-000000000003"
-# The backend uses Spring's default JwtTimestampValidator clock tolerance.
+# The backend's JWT clock tolerance (backend/src/iam/authentication.ts).
 JWT_CLOCK_SKEW_SECONDS = 60
 
 

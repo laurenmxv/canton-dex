@@ -4,17 +4,6 @@ include:
       - ./.deps/cn-localnet/infra/compose.yaml
       - ./docker/participant-onboarding.yaml
 
-x-java: &java
-  image: canton-dex-tools:3.5.7-java21
-  build: ./docker/tools
-  working_dir: /workspace/backend
-  volumes:
-    - ./backend:/workspace/backend
-    - ./contracts:/workspace/contracts
-    - ./contracts/dars:/workspace/contracts/dars:ro
-    - gradle-cache:/root/.gradle
-  env_file: ./docker/backend.env
-
 services:
   app-db:
     image: postgres:14
@@ -29,25 +18,45 @@ services:
       interval: 3s
       timeout: 3s
       retries: 30
+  contract-builder:
+    image: canton-dex-daml-tools:3.5.7
+    build: ./docker/tools
+    command: [build-contracts]
+    volumes:
+      - ./contracts:/contracts:ro
+      - contract-dars:/dars
+  # The sole schema initializer. It also uploads the built DARs and creates the development
+  # identities and fixtures, then exits; the API starts after it succeeds.
   contract-bootstrap:
-    <<: *java
+    image: canton-dex-backend:local
+    build:
+      context: ./backend
+      target: runtime
+    command: [node, dist/bootstrap/main.js]
     env_file: [./docker/backend.env, ./docker/bootstrap.env]
     environment:
-      GRADLE_USER_HOME: /root/.gradle/bootstrap
-      DEX_BUILD_DIR: build/bootstrap
-    command: ['./gradlew', '--project-cache-dir', '/root/.gradle/bootstrap/project-cache', '--console=plain', 'bootstrap']
+      DEX_DAR_DIRECTORY: /dars
+    volumes:
+      - contract-dars:/dars:ro
     depends_on:
       app-db: {condition: service_healthy}
       application-participant: {condition: service_healthy}
+      contract-builder: {condition: service_completed_successfully}
   backend:
-    <<: *java
+    image: canton-dex-backend:local
+    build:
+      context: ./backend
+      target: runtime
+    env_file: ./docker/backend.env
     environment:
-      GRADLE_USER_HOME: /root/.gradle/backend
       DEX_DEVELOPMENT_TOKENS_ENABLED: "true"
-    command: ['./gradlew', '--project-cache-dir', '/root/.gradle/backend/project-cache', '--console=plain', 'bootRun']
     ports: ['127.0.0.1:18080:8080']
     healthcheck:
-      test: [CMD, curl, -fsS, 'http://localhost:8080/actuator/health/readiness']
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:8080/actuator/health/readiness').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
       interval: 5s
       timeout: 3s
       retries: 90
@@ -85,19 +94,21 @@ services:
     depends_on:
       backend: {condition: service_healthy}
   backend-tests:
-    <<: *java
+    image: canton-dex-backend-tests:local
+    build:
+      context: ./backend
+      target: test
     profiles: [test]
     env_file: [./docker/backend.env, ./docker/bootstrap.env]
     environment:
-      GRADLE_USER_HOME: /root/.gradle/tests
       DEX_TEST_BASE_URL: http://backend:8080
-      DEX_SETTLEMENT_TEST_DATABASE_URL: jdbc:postgresql://app-db:5432/dex?user=dex&password=dex-local
-      DEX_TOKEN_TEST_DATABASE_URL: jdbc:postgresql://app-db:5432/dex?user=dex&password=dex-local
-      DEX_BUILD_DIR: build/integration
-      DEX_RESTART_STATE: ${DEX_RESTART_STATE:-/workspace/backend/build/restart-unused}
-    command: ['./gradlew', '--project-cache-dir', '/root/.gradle/tests/project-cache', '--console=plain', 'integrationTest']
+      DEX_SETTLEMENT_TEST_DATABASE_URL: postgres://dex:dex-local@app-db:5432/dex
+      DEX_TOKEN_TEST_DATABASE_URL: postgres://dex:dex-local@app-db:5432/dex
+      DEX_RESTART_STATE: ${DEX_RESTART_STATE:-/app/build/restart-unused}
+    volumes:
+      - ./backend/build:/app/build
 volumes:
-  gradle-cache:
+  contract-dars:
   application-postgres:
   frontend-node-modules:
   client-node-modules:

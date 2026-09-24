@@ -8,10 +8,10 @@ case "$scenario" in
 esac
 
 make --no-print-directory prepare-localnet
+docker compose build backend-tests
 
 run_scenario() {
-  docker compose run --rm --no-deps backend-tests ./gradlew \
-    --project-cache-dir /root/.gradle/tests/project-cache --console=plain integrationTest "-Pscenario=$1"
+  docker compose run --rm --no-deps -e "DEX_SCENARIO=$1" backend-tests
 }
 
 if [[ "$scenario" != restart ]]; then
@@ -21,7 +21,7 @@ if [[ "$scenario" == restart || "$scenario" == all ]]; then
   mkdir -p backend/build
   restart_state="$(mktemp backend/build/restart-XXXXXX)"
   chmod 600 "$restart_state"
-  export DEX_RESTART_STATE="/workspace/$restart_state"
+  export DEX_RESTART_STATE="/app/build/${restart_state#backend/build/}"
   cleanup_restart() {
     local result=$?
     trap - EXIT

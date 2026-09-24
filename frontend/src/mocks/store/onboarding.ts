@@ -29,7 +29,7 @@ import {
 
 // ---------------------------------------------------------------- onboarding
 
-/** Mirrors `OnboardingStore.status` in the Java backend, condition for condition. */
+/** Mirrors the backend's onboarding status, condition for condition. */
 export function deriveStatus(onboarding: Onboarding): OnboardingStatus {
   const party = onboarding.party;
   const bound = party?.confirmed === true;

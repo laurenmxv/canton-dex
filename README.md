@@ -1,6 +1,6 @@
 # Canton DEX
 
-**Daml contracts · Java backend · TypeScript client · React app**
+**Daml contracts · TypeScript backend · TypeScript client · React app**
 
 [Quickstart](#quickstart) · [Onboarding](#onboarding-and-creating-users) · [Pool creation](#pool-creation) · [Swaps](#swaps) · [Liquidity](#liquidity) · [Development](#development)
 
@@ -10,7 +10,7 @@
 
 - **Docker** with Compose 2.27+.
 - **CLI tools:** Make and tar.
-- **DPM and Java** installed locally to run Daml tests with `make test`.
+- **DPM and Java** installed locally to run Daml tests with `make test`; DPM needs a JDK.
 - **[MetaMask Flask](https://docs.metamask.io/snaps/get-started/install-flask/)** for signing in this local development setup.
 
 ## Quickstart
@@ -78,6 +78,6 @@ Withdrawals and recovery require current pool access and KYC. The initial `0.000
 
 | Task | Command |
 | --- | --- |
-| Refresh frontend and backend | `docker compose restart frontend backend` |
+| Rebuild the backend and refresh the frontend | `docker compose up -d --build backend && docker compose restart frontend` |
 | Backend integration tests (Docker stack running) | `make test-backend` |
 | Daml tests (local DPM and Java required) | `make test` |

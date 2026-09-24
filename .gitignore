@@ -1,6 +1,5 @@
 .daml/
 .idea/
-.gradle/
 build/
 __pycache__/
 *.pyc

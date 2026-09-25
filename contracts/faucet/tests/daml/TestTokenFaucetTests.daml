@@ -2,8 +2,8 @@ module TestTokenFaucetTests where
 
 import Test.Errors
 import Daml.Script
-import Test.Assertions
 import TestTokenFaucet.Errors
+import DA.Assert ((===))
 import DA.Foldable (forA_)
 import DA.Optional (isNone)
 import DA.Time (days, minutes)
@@ -114,8 +114,9 @@ rejectsWrongRegistryAndOwner = script do
   registryOwnerGrantCid <- submit issuer $ createCmd grant with
     recipient = otherIssuer
     account = HoldingV2.Account (Some otherIssuer) None ""
-  submitFailsWith eRegistryIssuerMismatch (actAs otherIssuer) $
+  FailureStatusError status <- submitWithError (actAs otherIssuer) $
     exerciseCmd registryOwnerGrantCid TestTokenGrant_Claim
+  status.message === eRegistryIssuerMismatch
   Some _ <- queryContractId otherIssuer registryOwnerGrantCid
   [] <- query @TokenHolding otherIssuer
   submitMustFail issuer $ createCmd grant with

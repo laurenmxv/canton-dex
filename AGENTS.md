@@ -5,7 +5,7 @@ Start with `README.md` for setup; `docs/user-stories.md` and `docs/flows/` descr
 
 ## Architecture
 
-- `contracts/`: Daml ledger rules and settlement; `tests/` contains Daml Script tests, `test-faucet/` local test tokens.
+- `contracts/`: Daml ledger rules and settlement; `tests/` contains DEX Daml Script tests, `faucet/` local test tokens with their own tests in `faucet/tests/`.
 - `backend/`: Node 24 / TypeScript API, workflows and PostgreSQL persistence (`src/`, `test/`, base schema in `db/schema.sql`). Business modules expose ledger ports; `canton/` implements them over the JSON Ledger API. Keep Ledger API wire and generated types inside `canton/` and module dependencies acyclic; `npm run lint` checks these rules.
 - `client/`: typed HTTP API client (`@canton-dex/client`), consumed by the frontend.
 - `frontend/`: React / Vite app and trader wallet signing through MetaMask Flask; operator commands run through the backend.

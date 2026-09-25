@@ -1,5 +1,6 @@
 sdk-version: 3.5.7
 packages:
   - .
-  - test-faucet
+  - faucet
+  - faucet/tests
   - tests

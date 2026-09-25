@@ -9,5 +9,5 @@ tar -C /contracts --exclude=.daml -cf - . | tar -C "$work/contracts" -xf -
 cd "$work/contracts"
 unset DAML_PACKAGE
 dpm build --all
-install -m 0644 .daml/dist/canton-dex-ri-0.1.0.dar test-faucet/.daml/dist/canton-dex-test-faucet-0.1.0.dar /dars/
+install -m 0644 .daml/dist/canton-dex-ri-0.1.0.dar faucet/.daml/dist/canton-dex-test-faucet-0.1.0.dar /dars/
 sha256sum /dars/*.dar

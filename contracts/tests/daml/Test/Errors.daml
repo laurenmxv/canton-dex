@@ -49,53 +49,6 @@ eFeeMustIncreaseReserveProduct = "A positive fee must increase the reserve produ
 eOutputMustRemainBelowReserve : Text
 eOutputMustRemainBelowReserve = "Output must remain below the output reserve"
 
--- Faucet assertions
-
-eExpectedRecipientAuthorizationFailure : Text
-eExpectedRecipientAuthorizationFailure = "Claiming a grant requires recipient authority"
-
-eExpectedOperatorAuthorizationFailure : Text
-eExpectedOperatorAuthorizationFailure = "Issuing a grant requires operator authority"
-
-eGrantHoldingCountMismatch : Text
-eGrantHoldingCountMismatch = "one holding per granted instrument"
-
-eGrantAmountMismatch : Text
-eGrantAmountMismatch = "minted amount matches grant"
-
-eGrantInstrumentMismatch : Text
-eGrantInstrumentMismatch = "minted instrument matches grant"
-
-eGrantAccountMismatch : Text
-eGrantAccountMismatch = "minted owner account matches grant"
-
-eGrantedTokensNotSpendable : Text
-eGrantedTokensNotSpendable = "claimed tokens are spendable"
-
-eReceiptGrantIdMismatch : Text
-eReceiptGrantIdMismatch = "receipt preserves grant identity"
-
-eReceiptHoldingsMismatch : Text
-eReceiptHoldingsMismatch = "receipt preserves exact holdings"
-
-eReplayMintedAgain : Text
-eReplayMintedAgain = "replay did not mint again"
-
-eFaucetRegistryMismatch : Text
-eFaucetRegistryMismatch = "factory uses exact configured registry"
-
-eFaucetAmountsMismatch : Text
-eFaucetAmountsMismatch = "factory uses exact configured amounts"
-
-eFaucetAccountMismatch : Text
-eFaucetAccountMismatch = "factory uses the recipient's default account"
-
-ePoolFundingAccountMismatch : Text
-ePoolFundingAccountMismatch = "pool funding stays in its named account"
-
-ePoolFundingReserveMismatch : Text
-ePoolFundingReserveMismatch = "pool funding matches its exact reserve"
-
 -- Submission assertions
 
 eExpectedContractError : Text

@@ -8,7 +8,6 @@ dependencies:
   - daml-script
 data-dependencies:
   - ../.daml/dist/canton-dex-ri-0.1.0.dar
-  - ../test-faucet/.daml/dist/canton-dex-test-faucet-0.1.0.dar
   - ../dars/openzeppelin-tokenCIP112-v1-0.1.0.dar
 build-options:
   - --target=2.3

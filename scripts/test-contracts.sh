@@ -35,5 +35,6 @@ printf '\nBuilding contracts and tests...\n'
 "$dpm_bin" build --all
 
 DAML_PACKAGE=tests "$dpm_bin" test
+DAML_PACKAGE=faucet/tests "$dpm_bin" test
 
 printf '\nTests passed.\n'

@@ -1,3 +1,4 @@
+-- | Tests swaps backed by reserve accounts owned by dvo and provided by the operator.
 module PoolAccountTests where
 
 import DA.Assert ((===))
@@ -12,6 +13,7 @@ import Splice.Api.Token.HoldingV2 qualified as H
 
 providerAccountsSupportFundedSwap : Script ()
 providerAccountsSupportFundedSwap = script do
+  -- Settle a swap and check each base reserve holding belongs to the pool's base account.
   f <- setup ()
   Some pool <- queryContractId f.parties.dvo f.pool.poolCid
   pool.baseAccount.owner === Some f.parties.dvo
@@ -24,6 +26,7 @@ providerAccountsSupportFundedSwap = script do
   forA_ state.baseHoldingCids $ \cid -> do
     Some holding <- queryInterfaceContractId @H.Holding f.parties.venueOperator cid
     holding.account === pool.baseAccount
+  -- Reject backing that has the right owner but omits the account provider.
   wrongBase <- mint f.baseRulesCid f.parties.baseRegistrar (pool.baseAccount with provider = None) "BASE" state.baseReserve
   wrongState <- submit f.parties.dvo $ createCmd (state with baseHoldingCids = [wrongBase])
   nextRequest <- prepare f trader "wrong-provider" BaseToQuote 1.0 0.0

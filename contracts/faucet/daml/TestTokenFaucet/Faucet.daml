@@ -1,5 +1,4 @@
 -- | Gives developers test tokens through an issuer-approved grant.
--- The recipient claims the grant; a receipt records what was minted.
 module TestTokenFaucet.Faucet where
 
 import TestTokenFaucet.Errors
@@ -29,6 +28,7 @@ template TestTokenFaucet with
     observer operator
     ensure validAmounts amounts
 
+    -- | Issue a recipient grant for the faucet's configured token bundle.
     nonconsuming choice TestTokenFaucet_IssueGrant : ContractId TestTokenGrant
       with
         recipient : Party
@@ -59,6 +59,7 @@ template TestTokenGrant with
       && isNone account.provider
       && validAmounts amounts
 
+    -- | Consume the grant, mint its tokens to the recipient and record a receipt.
     choice TestTokenGrant_Claim : TestTokenClaim
       controller recipient
       do

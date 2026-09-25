@@ -1,5 +1,4 @@
--- | Creates pools with approval from the pool authority (dvo).
--- The operator proposes the settings; token backing is added separately.
+-- | Creates pools from operator proposals accepted by the pool authority (dvo).
 module PoolFactory where
 
 import Errors
@@ -36,6 +35,7 @@ template PoolFactory
     observer venueOperator
     ensure dvo /= venueOperator
 
+    -- | Validate the operator's pool settings and submit them for dvo approval.
     nonconsuming choice PoolFactory_ProposePool : ContractId PoolProposal
       with settings : PoolSettings
       controller venueOperator
@@ -48,6 +48,7 @@ template PoolFactory
           accepted = False
           initialRatio = None
 
+    -- | Consume an accepted proposal and create the pool, configuration and empty reserve state.
     nonconsuming choice PoolFactory_CreatePool : PoolContracts
       with proposalCid : ContractId PoolProposal
       controller dvo, venueOperator
@@ -106,6 +107,7 @@ template PoolProposal
     ensure validSettings settings && settings.dvo /= venueOperator
       && (if accepted then optional False (> 0.0) initialRatio else initialRatio == None)
 
+    -- | Accept the proposal at dvo's chosen ratio and create the pool.
     choice PoolProposal_Accept : PoolContracts
       with initialRatio : Decimal
       controller settings.dvo
@@ -116,10 +118,12 @@ template PoolProposal
         proposalCid <- create this with accepted = True; initialRatio = Some initialRatio
         exercise factoryCid PoolFactory_CreatePool with proposalCid
 
+    -- | Let dvo discard a pending proposal.
     choice PoolProposal_Reject : ()
       controller settings.dvo
       do assertMsg ePoolProposalAlreadyAccepted (not accepted)
 
+    -- | Let the operator cancel a pending proposal.
     choice PoolProposal_Withdraw : ()
       controller venueOperator
       do assertMsg ePoolProposalAlreadyAccepted (not accepted)

@@ -1,3 +1,4 @@
+-- | Tests faucet grant authorization, exact minting, replay rejection and account isolation.
 module TestTokenFaucetTests where
 
 import Test.Errors
@@ -21,6 +22,7 @@ testAmounts =
 
 ownerClaimsExactGrantOnce : Script ()
 ownerClaimsExactGrantOnce = script do
+  -- Create an issuer-approved grant for the trader's default account.
   issuer <- allocateParty "Issuer"
   operator <- allocateParty "Operator"
   trader <- allocateParty "Trader"
@@ -32,6 +34,7 @@ ownerClaimsExactGrantOnce = script do
   grantCid <- submit issuer $ createCmd TestTokenGrant with
     issuer; operator; rulesCid; recipient = trader; account
     grantId = "trader-onboarding"; amounts = testAmounts
+  -- Reject claims by the operator or a stranger.
   submitMustFail (actAs operator <> discloseMany [rulesDisclosure]) $
     exerciseCmd grantCid TestTokenGrant_Claim
   rejected <- trySubmit (actAs stranger <> readAs issuer <> discloseMany [rulesDisclosure]) $
@@ -39,6 +42,7 @@ ownerClaimsExactGrantOnce = script do
   case rejected of
     Left AuthorizationError {} -> pure ()
     _ -> abort eExpectedRecipientAuthorizationFailure
+  -- Claim as the recipient and verify every token, amount and spendable holding.
   result <- submit (actAs trader <> discloseMany [rulesDisclosure]) $
     exerciseCmd grantCid TestTokenGrant_Claim
   assertMsg eGrantHoldingCountMismatch (length result.holdingCids == 3)
@@ -49,6 +53,7 @@ ownerClaimsExactGrantOnce = script do
       (actual.holding.instrumentId == HoldingV2.InstrumentId issuer expected.instrumentId)
     assertMsg eGrantAccountMismatch (actual.holding.account == account)
     assertMsg eGrantedTokensNotSpendable (isNone actual.holding.lock)
+  -- Reject replay and check receipt visibility without minting extra tokens.
   submitMustFail (actAs trader <> discloseMany [rulesDisclosure]) $
     exerciseCmd grantCid TestTokenGrant_Claim
   None <- queryContractId trader grantCid
@@ -65,6 +70,7 @@ ownerClaimsExactGrantOnce = script do
 
 operatorIssuesOnlyConfiguredBundle : Script ()
 operatorIssuesOnlyConfiguredBundle = script do
+  -- Configure a reusable faucet with the issuer's fixed token bundle.
   issuer <- allocateParty "FaucetIssuer"
   operator <- allocateParty "FaucetOperator"
   trader <- allocateParty "FaucetTrader"
@@ -72,6 +78,7 @@ operatorIssuesOnlyConfiguredBundle = script do
     admin = issuer; maxTTL = days 1; lockGrace = minutes 1
   faucetCid <- submit issuer $ createCmd TestTokenFaucet with
     issuer; operator; rulesCid; amounts = testAmounts
+  -- Reject trader-issued grants, then verify the operator's grant matches the faucet.
   rejected <- trySubmit (actAs trader <> readAs issuer) $
     exerciseCmd faucetCid TestTokenFaucet_IssueGrant with
       recipient = trader; grantId = "unauthorized"
@@ -85,6 +92,7 @@ operatorIssuesOnlyConfiguredBundle = script do
   assertMsg eFaucetAmountsMismatch (grant.amounts == testAmounts)
   assertMsg eFaucetAccountMismatch
     (grant.account == HoldingV2.Account (Some trader) None "")
+  -- Reject an empty grant ID and keep the faucet available for future grants.
   submitMustFail operator $ exerciseCmd faucetCid TestTokenFaucet_IssueGrant with
     recipient = trader; grantId = ""
   Some _ <- queryContractId operator faucetCid
@@ -92,6 +100,7 @@ operatorIssuesOnlyConfiguredBundle = script do
 
 rejectsWrongRegistryAndOwner : Script ()
 rejectsWrongRegistryAndOwner = script do
+  -- Create a grant that points at another issuer's token registry.
   issuer <- allocateParty "ExpectedIssuer"
   otherIssuer <- allocateParty "WrongIssuer"
   operator <- allocateParty "ValidationOperator"
@@ -109,8 +118,7 @@ rejectsWrongRegistryAndOwner = script do
     exerciseCmd grantCid TestTokenGrant_Claim
   Some _ <- queryContractId trader grantCid
   [] <- query @TokenHolding trader
-  -- Making the registry owner the recipient authorizes the fetch, so the
-  -- issuer mismatch itself must reject the claim before any minting occurs.
+  -- Authorize the registry fetch as its owner, then reject the grant's issuer mismatch.
   registryOwnerGrantCid <- submit issuer $ createCmd grant with
     recipient = otherIssuer
     account = HoldingV2.Account (Some otherIssuer) None ""
@@ -119,6 +127,7 @@ rejectsWrongRegistryAndOwner = script do
   status.message === eRegistryIssuerMismatch
   Some _ <- queryContractId otherIssuer registryOwnerGrantCid
   [] <- query @TokenHolding otherIssuer
+  -- Reject invalid owners, provider accounts and empty, zero or duplicate token amounts.
   submitMustFail issuer $ createCmd grant with
     account = HoldingV2.Account (Some otherOwner) None ""
   submitMustFail issuer $ createCmd grant with
@@ -130,6 +139,7 @@ rejectsWrongRegistryAndOwner = script do
 
 isolatesNamedPoolAccounts : Script ()
 isolatesNamedPoolAccounts = script do
+  -- Create two named accounts owned by the same pool authority.
   issuer <- allocateParty "PoolIssuer"
   operator <- allocateParty "PoolOperator"
   dvo <- allocateParty "PoolOwner"
@@ -137,6 +147,7 @@ isolatesNamedPoolAccounts = script do
     admin = issuer; maxTTL = days 1; lockGrace = minutes 1
   let accountA = HoldingV2.Account (Some dvo) None "pool-a"
       accountB = HoldingV2.Account (Some dvo) None "pool-b"
+  -- Claim each grant and check its tokens stay in the named account at the exact amount.
   forA_ [("pool-a-bootstrap", accountA, 100.0), ("pool-b-bootstrap", accountB, 200.0)] $
     \(grantId, account, amount) -> do
       grantCid <- submit issuer $ createCmd TestTokenGrant with

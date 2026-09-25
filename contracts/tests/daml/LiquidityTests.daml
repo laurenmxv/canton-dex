@@ -1,3 +1,4 @@
+-- | Tests LP minting, deposits, withdrawals, batch rollback and access checks.
 module LiquidityTests where
 
 import DA.Assert ((===))
@@ -31,6 +32,7 @@ emptyPool ratio = do
 
 prepareRedemption : FundedFixture -> Party -> Text -> Decimal -> Script (WithdrawalRequest Pool)
 prepareRedemption f trader requestId lpAmount = do
+  -- Gather the trader's spendable LP holdings and current pool access.
   accessCid <- currentAccess f trader
   Some pool <- queryContractId f.parties.dvo f.pool.poolCid
   holdings <- query @TokenHolding trader
@@ -42,6 +44,7 @@ prepareRedemption f trader requestId lpAmount = do
         requestId; lpAmount; minBaseOut = 0.0; minQuoteOut = 0.0
         settlementDeadline = addRelTime requestedAt (minutes 10)
   disclosures <- rulesDisclosures f
+  -- Reserve LP tokens for a withdrawal with signed minimum payouts.
   submit (actAs trader <> discloseMany disclosures) $
     exerciseCmd accessCid PoolAccess_RequestLiquidityWithdrawal with
       terms; requestedAt; lpHoldingCids
@@ -59,6 +62,7 @@ redeem f stateCid request = do
 
 lifecycleMintsRefundsAndBurns : Script ()
 lifecycleMintsRefundsAndBurns = script do
+  -- Initialize the pool and keep the minimum LP supply permanently unredeemable.
   f <- emptyPool 1.0
   alice <- allocateParty "InitialProvider"
   bob <- allocateParty "SecondProvider"
@@ -69,6 +73,7 @@ lifecycleMintsRefundsAndBurns = script do
   state0 <- assertBacking f initial.stateCid
   state0.lpTokenSupply === 100.0
   availableBalance alice pool.lpToken.instrument >>= (=== initial.lpAmount)
+  -- Add a proportional deposit and refund the unused quote tokens.
   (bobAccess, second) <- prepareDeposit f bob "proportional" Proportional 50.0 60.0
   added <- settleDeposit f initial.stateCid bobAccess second
   (added.baseAmount, added.quoteAmount, added.lpAmount) === (50.0, 50.0, 50.0)
@@ -76,12 +81,14 @@ lifecycleMintsRefundsAndBurns = script do
   availableBalance bob pool.lpToken.instrument >>= (=== 50.0)
   state1 <- assertBacking f added.stateCid
   (length state1.baseHoldingCids, length state1.quoteHoldingCids) === (1, 1)
+  -- Burn the second provider's LP tokens and return both deposited assets.
   request <- prepareRedemption f bob "redeem-second" 50.0
   removed <- redeem f added.stateCid request
   (removed.baseAmount, removed.quoteAmount, removed.lpAmount) === (50.0, 50.0, 50.0)
   availableBalance bob pool.lpToken.instrument >>= (=== 0.0)
   availableBalance bob pool.baseToken.instrument >>= (=== 50.0)
   availableBalance bob pool.quoteToken.instrument >>= (=== 60.0)
+  -- Redeem all remaining circulating LP and check the minimum reserves and receipts.
   lastRequest <- prepareRedemption f alice "redeem-all-circulating" initial.lpAmount
   drained <- redeem f removed.stateCid lastRequest
   final <- assertBacking f drained.stateCid
@@ -96,6 +103,7 @@ lifecycleMintsRefundsAndBurns = script do
 
 depositBatchesSettleSequentiallyAndAtomically : Script ()
 depositBatchesSettleSequentiallyAndAtomically = script do
+  -- Lock two proportional deposits against a funded pool.
   f <- setupWithReserves 3.0 7.0
   alice <- allocateParty "BatchProviderAlice"
   bob <- allocateParty "BatchProviderBob"
@@ -110,6 +118,7 @@ depositBatchesSettleSequentiallyAndAtomically = script do
       options = actAs f.parties.venueOperator <> discloseMany disclosures
   before <- queryContractId f.parties.dvo f.pool.stateCid
   receiptsBefore <- query @LiquidityReceipt f.parties.venueOperator
+  -- Reject invalid batches, access mismatches and an unmet minimum output.
   submitFailsWith eInvalidBatchSize options $ exerciseCmd f.delegationCid (args with requests = [])
   submitFailsWith eInvalidBatchSize options $ exerciseCmd f.delegationCid (args with requests = replicate 21 firstItem)
   submitFailsWith eDuplicateAllocation options $ exerciseCmd f.delegationCid (args with requests = [firstItem, firstItem])
@@ -117,6 +126,7 @@ depositBatchesSettleSequentiallyAndAtomically = script do
     (args with requests = [firstItem, depositItem aliceAccess second])
   submitFailsWith eDepositBelowMinimumOutput options $ exerciseCmd f.delegationCid
     (args with requests = [firstItem, depositItem bobAccess (second with terms = second.terms with minLpOut = 1.0)])
+  -- Check failed batches preserve state, receipts and all three allocations per request.
   queryContractId f.parties.dvo f.pool.stateCid >>= (=== before)
   query @LiquidityReceipt f.parties.venueOperator >>= (=== receiptsBefore)
   forA_ [first, second] $ \request -> do
@@ -124,6 +134,7 @@ depositBatchesSettleSequentiallyAndAtomically = script do
     forA_ [request.baseAllocation, request.quoteAllocation, request.lpAllocation] $ \cid -> do
       Some _ <- queryInterfaceContractId @A.Allocation request.trader cid
       pure ()
+  -- Settle both deposits in order and check exact LP amounts, refunds and backing.
   result <- settleDepositBatch f f.pool.stateCid [firstItem, secondItem]
   result.outcomes ===
     [ DepositOutcome 1.0 2.333334 0.0 0.666666 1.5275252316
@@ -146,6 +157,7 @@ depositBatchesSettleSequentiallyAndAtomically = script do
 
 withdrawalBatchesSettleSequentiallyAndAtomically : Script ()
 withdrawalBatchesSettleSequentiallyAndAtomically = script do
+  -- Fund two providers and reserve LP tokens for two withdrawals.
   f <- emptyPool 7.0
   alice <- allocateParty "BatchWithdrawalAlice"
   bob <- allocateParty "BatchWithdrawalBob"
@@ -164,6 +176,7 @@ withdrawalBatchesSettleSequentiallyAndAtomically = script do
       options = actAs f.parties.venueOperator <> discloseMany disclosures
   before <- queryContractId f.parties.dvo added.stateCid
   receiptsBefore <- query @LiquidityReceipt f.parties.venueOperator
+  -- Reject invalid batches, access mismatches and an unmet withdrawal minimum.
   submitFailsWith eInvalidBatchSize options $ exerciseCmd f.delegationCid (args with requests = [])
   submitFailsWith eInvalidBatchSize options $ exerciseCmd f.delegationCid
     (args with requests = replicate (maxSettlementBatchSize + 1) firstItem)
@@ -173,6 +186,7 @@ withdrawalBatchesSettleSequentiallyAndAtomically = script do
     (args with requests = [firstItem, withdrawalItem aliceAccess second])
   submitFailsWith eWithdrawalBelowMinimumOutput options $ exerciseCmd f.delegationCid
     (args with requests = [firstItem, withdrawalItem bobAccess (second with terms = second.terms with minQuoteOut = 7.0)])
+  -- Check failed batches preserve state, receipts and every pending allocation.
   queryContractId f.parties.dvo added.stateCid >>= (=== before)
   query @LiquidityReceipt f.parties.venueOperator >>= (=== receiptsBefore)
   forA_ [first, second] $ \request -> do
@@ -181,6 +195,7 @@ withdrawalBatchesSettleSequentiallyAndAtomically = script do
     forA_ [request.baseAllocation, request.quoteAllocation, request.lpAllocation] $ \cid -> do
       Some _ <- queryInterfaceContractId @A.Allocation request.trader cid
       pure ()
+  -- Settle in order and check payouts, burned LP, receipts and consumed allocations.
   result <- settleWithdrawalBatch f added.stateCid [firstItem, secondItem]
   result.outcomes ===
     [ WithdrawalOutcome 0.037796 0.264575 0.1
@@ -202,6 +217,7 @@ withdrawalBatchesSettleSequentiallyAndAtomically = script do
   availableBalance bob pool.lpToken.instrument >>= (=== added.lpAmount - 1.5)
   queryContractId f.parties.dvo added.stateCid >>= (=== None)
   submitMustFail options $ exerciseCmd f.delegationCid args
+  -- Redeem both remaining positions while preserving the permanent minimum supply.
   lastAlice <- prepareRedemption f alice "withdraw-batch-last-alice" (seeded.lpAmount - 0.1)
   lastBob <- prepareRedemption f bob "withdraw-batch-last-bob" (added.lpAmount - 1.5)
   drained <- settleWithdrawalBatch f result.stateCid
@@ -214,6 +230,7 @@ withdrawalBatchesSettleSequentiallyAndAtomically = script do
 
 settlementChecksSignedTermsAndAuthorization : Script ()
 settlementChecksSignedTermsAndAuthorization = script do
+  -- Prepare an initial deposit signed by the liquidity provider.
   f <- emptyPool 4.0
   alice <- allocateParty "LiquiditySigner"
   (accessCid, request) <- prepareDeposit f alice "signed-deposit" InitializeOnly 100.0 400.0
@@ -222,10 +239,12 @@ settlementChecksSignedTermsAndAuthorization = script do
       args = Pool_AddLiquidity with
         configCid = f.pool.configCid; stateCid = f.pool.stateCid; requests = [item]
       joint = actAs [f.parties.dvo, f.parties.venueOperator] <> discloseMany disclosures
+  -- Reject missing dvo authority, altered terms and substituted allocations.
   submitMustFail (actAs f.parties.venueOperator <> discloseMany disclosures) $ exerciseCmd f.pool.poolCid args
   submitMustFail joint $ exerciseCmd f.pool.poolCid (args with requests = [item with request = request with terms = request.terms with minLpOut = 100.0])
   submitMustFail joint $ exerciseCmd f.pool.poolCid (args with requests = [item with request = request with terms = request.terms with mode = Proportional])
   submitMustFail joint $ exerciseCmd f.pool.poolCid (args with requests = [item with request = request with lpAllocation = request.baseAllocation])
+  -- Check the request survives rejection, settles once and cannot be replayed.
   Some before <- queryContractId f.parties.dvo f.pool.stateCid
   before.lpTokenSupply === 0.0
   forA_ [request.baseAllocation, request.quoteAllocation, request.lpAllocation] $ \cid -> do
@@ -237,6 +256,7 @@ settlementChecksSignedTermsAndAuthorization = script do
 
 liquidityRequiresSignedMinimumMetadata : Script ()
 liquidityRequiresSignedMinimumMetadata = script do
+  -- Reject an LP receipt allocation with missing or altered minimum metadata.
   f <- emptyPool 1.0
   trader <- allocateParty "LiquidityMinimumMetadataTrader"
   (accessCid, deposit) <- prepareDeposit f trader "deposit-minimum-metadata" InitializeOnly 100.0 100.0
@@ -253,6 +273,7 @@ liquidityRequiresSignedMinimumMetadata = script do
     Some _ <- queryInterfaceContractId @A.Allocation trader deposit.baseAllocation
     pure ()
   seeded <- settleDeposit f f.pool.stateCid accessCid deposit
+  -- Repeat the metadata checks for both assets returned by a withdrawal.
   withdrawal <- prepareRedemption f trader "withdrawal-minimum-metadata" 10.0
   withdrawalDisclosures <- settlementDisclosures f seeded.stateCid
   seededState <- queryContractId f.parties.dvo seeded.stateCid
@@ -270,22 +291,26 @@ liquidityRequiresSignedMinimumMetadata = script do
       queryContractId f.parties.dvo seeded.stateCid >>= (=== seededState)
       Some _ <- queryInterfaceContractId @A.Allocation trader withdrawal.lpAllocation
       pure ()
+  -- Settle the original withdrawal with its unchanged signed minimums.
   result <- redeem f seeded.stateCid withdrawal
   (result.baseAmount, result.quoteAmount) === (10.0, 10.0)
 
 initialRequestsDoNotBecomeProportional : Script ()
 initialRequestsDoNotBecomeProportional = script do
+  -- Prepare two initialization requests while the pool is empty.
   f <- emptyPool 1.0
   alice <- allocateParty "FirstInitializer"
   bob <- allocateParty "SecondInitializer"
   (aliceAccess, first) <- prepareDeposit f alice "first-init" InitializeOnly 10.0 10.0
   (bobAccess, second) <- prepareDeposit f bob "second-init" InitializeOnly 10.0 10.0
   initialDisclosures <- settlementDisclosures f f.pool.stateCid
+  -- Reject batched initialization, then initialize with the first request alone.
   submitFailsWith eInitialLiquidityBatch (actAs f.parties.venueOperator <> discloseMany initialDisclosures) $
     exerciseCmd f.delegationCid VenueDelegation_AddLiquidity with
       configCid = f.pool.configCid; stateCid = f.pool.stateCid
       requests = [depositItem aliceAccess first, depositItem bobAccess second]
   initialized <- settleDeposit f f.pool.stateCid aliceAccess first
+  -- Reject the second initialization without converting it into a proportional deposit.
   disclosures <- settlementDisclosures f initialized.stateCid
   submitMustFail (actAs f.parties.venueOperator <> discloseMany disclosures) $
     exerciseCmd f.delegationCid VenueDelegation_AddLiquidity with
@@ -296,6 +321,7 @@ initialRequestsDoNotBecomeProportional = script do
 
 expiredLiquidityRecoveryRequiresAccess : Script ()
 expiredLiquidityRecoveryRequiresAccess = script do
+  -- Lock a deposit and reject recovery before its deadline.
   f <- emptyPool 1.0
   trader <- allocateParty "ExpiredProvider"
   stranger <- allocateParty "RecoveryStranger"
@@ -305,6 +331,7 @@ expiredLiquidityRecoveryRequiresAccess = script do
       recover = PoolAccess_RecoverAllocations with withdrawals = map withdrawal allCids
       traderOptions = actAs trader <> discloseMany disclosures
   submitMustFail traderOptions $ exerciseCmd accessCid recover
+  -- Revoke access and delegation; expiry alone must not restore DEX recovery.
   Some access <- queryContractId f.parties.venueOperator accessCid
   submit f.parties.venueOperator $ archiveCmd accessCid
   submit f.parties.dvo $ exerciseCmd f.delegationCid VenueDelegation_Revoke
@@ -313,6 +340,7 @@ expiredLiquidityRecoveryRequiresAccess = script do
   -- A self-issued grant cannot impersonate this pool's operator.
   (_, forgedAccess) <- accessFixture trader trader f.pool.poolCid
   submitMustFail traderOptions $ exerciseCmd forgedAccess recover
+  -- Restore real access and recover the remaining allocations after a direct withdrawal.
   restored <- submit f.parties.venueOperator $ createCmd access
   submitMustFail (actAs stranger <> readAs trader <> discloseMany disclosures) $ exerciseCmd restored recover
   _ <- submit trader $ exerciseCmd request.baseAllocation A.Allocation_Withdraw with actors = [trader]; extraArgs = emptyArgs
@@ -324,6 +352,7 @@ expiredLiquidityRecoveryRequiresAccess = script do
 
 swapsPreserveLPBacking : Script ()
 swapsPreserveLPBacking = script do
+  -- Seed the pool, then execute a swap without changing LP supply.
   f <- emptyPool 1.0
   lp <- allocateParty "FeeProvider"
   trader <- allocateParty "FeeTrader"
@@ -333,6 +362,7 @@ swapsPreserveLPBacking = script do
   swapped <- settle f initial.stateCid "fee-swap" [swap]
   state <- assertBacking f swapped.stateCid
   state.lpTokenSupply === 100.0
+  -- Redeem half the LP supply against the reserves left by the swap.
   redemption <- prepareRedemption f lp "partial-after-fees" 50.0
   result <- redeem f swapped.stateCid redemption
   result.baseAmount === 55.0
@@ -342,10 +372,12 @@ swapsPreserveLPBacking = script do
 
 oversizedInitializationRollsBack : Script ()
 oversizedInitializationRollsBack = script do
+  -- Lock a deposit large enough to overflow the initial LP supply calculation.
   f <- emptyPool 1.0
   trader <- allocateParty "OversizedProvider"
   (accessCid, request) <- prepareDeposit f trader "oversized" InitializeOnly 1000000000.0 1000000000.0
   disclosures <- settlementDisclosures f f.pool.stateCid
+  -- Reject settlement while keeping zero LP supply and the input allocation.
   submitMustFail (actAs f.parties.venueOperator <> discloseMany disclosures) $
     exerciseCmd f.delegationCid VenueDelegation_AddLiquidity with
       configCid = f.pool.configCid; stateCid = f.pool.stateCid; requests = [depositItem accessCid request]
@@ -356,6 +388,7 @@ oversizedInitializationRollsBack = script do
 
 withdrawalRequiresAccessAtRequestAndSettlement : Script ()
 withdrawalRequiresAccessAtRequestAndSettlement = script do
+  -- Repeat the withdrawal flow with revoked access and with revoked KYC.
   forA_ [True, False] $ \revokeAccess -> do
     f <- emptyPool 1.0
     trader <- allocateParty "RevokedLiquidityProvider"
@@ -378,10 +411,12 @@ withdrawalRequiresAccessAtRequestAndSettlement = script do
           requests = [withdrawalItem accessCid request]
         traderOptions = actAs trader <> discloseMany disclosures
         operatorOptions = actAs f.parties.venueOperator <> discloseMany disclosures
+    -- Revoke approval and reject both new requests and the pending settlement.
     if revokeAccess then submit f.parties.venueOperator $ archiveCmd accessCid
     else submit f.parties.venueOperator $ archiveCmd access.attestationCid
     submitMustFail traderOptions $ exerciseCmd accessCid requestArgs
     submitMustFail operatorOptions $ exerciseCmd f.delegationCid settleArgs
+    -- Expiry must not allow DEX recovery after approval is revoked.
     setTime (addRelTime request.terms.settlementDeadline (seconds 1))
     submitMustFail traderOptions $ exerciseCmd accessCid PoolAccess_RecoverAllocations with
       withdrawals = map withdrawal [request.baseAllocation, request.quoteAllocation, request.lpAllocation]

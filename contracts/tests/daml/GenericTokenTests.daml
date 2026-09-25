@@ -1,3 +1,4 @@
+-- | Tests token interface adapters, issuer context forwarding and allocation ownership.
 module GenericTokenTests where
 
 import Test.Errors
@@ -23,8 +24,7 @@ import Lib.Swap
 import SwapRequestTests (prepareArgs)
 import VenueDelegation
 
--- These adapters exercise strict iterated allocations and context forwarding.
--- The original OZ registry remains responsible for token issuance and settlement.
+-- | Checks allocation context and iteration funding before forwarding to the token registry.
 template ContextAllocationFactory
   with
     admin : Party
@@ -42,6 +42,7 @@ template ContextAllocationFactory
           (null arg.allocation.transferLegSides || isNone arg.allocation.nextIterationFunding)
         exercise delegate arg
 
+-- | Checks settlement context before forwarding the batch to the token registry.
 template ContextSettlementFactory
   with
     admin : Party
@@ -57,7 +58,7 @@ template ContextSettlementFactory
         assertMsg eSettlementContextMismatch (arg.extraArgs == expectedArgs)
         exercise delegate arg
 
--- A withdrawal-only interface fixture; it does not represent a funded token.
+-- | Simulates completed or pending withdrawals without holding real tokens.
 template ContextAllocation
   with
     owner : Party
@@ -90,6 +91,7 @@ contextArgs label = ExtraArgs with
 
 strictFactoriesSupportSwapLiquidityAndContext : Script ()
 strictFactoriesSupportSwapLiquidityAndContext = script do
+  -- Wrap the token factories with adapters that require exact issuer context.
   f <- setup ()
   originalSettings <- settingsFor f.parties
   let baseAllocationArgs = contextArgs "base-allocation"
@@ -121,6 +123,7 @@ strictFactoriesSupportSwapLiquidityAndContext = script do
         settlementFactory = toInterfaceContractId @A.SettlementFactory quoteSettlementFactory
   let settings = originalSettings with
         baseToken; quoteToken; lpAllocationFactory = toInterfaceContractId @AI.AllocationFactory lpAllocationFactory
+  -- Create and fund a pool using the adapters for allocation and settlement.
   (_, pool) <- poolFixtureWithSettings f.parties settings
   empty0 <- emptyFixture f.parties pool settings
   let empty = empty0 with
@@ -149,6 +152,7 @@ strictFactoriesSupportSwapLiquidityAndContext = script do
   let stateCid = initialized.stateCid
       delegationCid = empty.delegationCid
       candidate = empty with pool = pool with stateCid
+  -- Reject a swap request with missing allocation context, then submit the correct context.
   trader <- allocateParty "ContextTrader"
   (accessCid, args) <- prepareArgs candidate trader "context-swap"
   candidateRules <- rulesDisclosures candidate
@@ -163,12 +167,14 @@ strictFactoriesSupportSwapLiquidityAndContext = script do
         inputSettlementArgs = baseSettlementArgs; outputSettlementArgs = quoteSettlementArgs
       operatorOptions = actAs f.parties.venueOperator <> discloseMany (adapterDisclosures <> disclosures)
   Some before <- queryContractId f.parties.dvo stateCid
+  -- Reject missing settlement context without consuming the request or changing reserves.
   submitFailsWith eSettlementContextMismatch operatorOptions $ exerciseCmd delegationCid VenueDelegation_SettleBatch with
     configCid = pool.configCid; stateCid; batchId = "missing-context"
     requests = [SettlementRequest with accessCid; request = (batch with outputSettlementArgs = emptyArgs)]
   queryContractId f.parties.dvo stateCid >>= (=== Some before)
   Some _ <- queryInterfaceContractId @A.Allocation trader request.inputAllocation
   availableBalance trader quoteToken.instrument >>= (=== 0.0)
+  -- Forward all issuer context and verify the swap payout and backing.
   result <- submit operatorOptions $ exerciseCmd delegationCid VenueDelegation_SettleBatch with
     configCid = pool.configCid; stateCid; batchId = "forwarded-context"; requests = [SettlementRequest with accessCid; request = batch]
   result.amountsOut === [9.900990]
@@ -198,6 +204,7 @@ strictFactoriesSupportSwapLiquidityAndContext = script do
   quoteRefund === 20.0 - addedOutcome.quoteAmount
   addedState <- assertBacking candidate added.stateCid
   (length addedState.baseHoldingCids, length addedState.quoteHoldingCids) === (1, 1)
+  -- Withdraw liquidity through the same adapters and check both assets and LP burn.
   Some poolValue <- queryContractId f.parties.dvo pool.poolCid
   lpBefore <- availableBalance seeder poolValue.lpToken.instrument
   lpHoldings <- query @TokenHolding seeder
@@ -223,6 +230,7 @@ strictFactoriesSupportSwapLiquidityAndContext = script do
 
 genericAllocationReceivesWithdrawalContext : Script ()
 genericAllocationReceivesWithdrawalContext = script do
+  -- Create an expired withdrawal fixture that requires issuer-specific context.
   f <- setup ()
   trader <- allocateParty "WithdrawalContextTrader"
   prepared <- prepare f trader "withdrawal-context" BaseToQuote 10.0 0.0
@@ -237,9 +245,11 @@ genericAllocationReceivesWithdrawalContext = script do
   disclosures <- rulesDisclosures f
   let allocationCid = toInterfaceContractId @A.Allocation cid
       options = actAs trader <> discloseMany disclosures
+  -- Reject missing context while preserving the fixture.
   submitFailsWith eWithdrawalContextMismatch options $ exerciseCmd prepared.accessCid PoolAccess_RecoverAllocations with
     withdrawals = [AllocationWithdrawal with allocationCid; extraArgs = emptyArgs]
   queryInterfaceContractId @A.Allocation trader allocationCid >>= (=== Some allocationView)
+  -- Forward the required context and consume only the fixture allocation.
   results <- submit options $ exerciseCmd prepared.accessCid PoolAccess_RecoverAllocations with
     withdrawals = [AllocationWithdrawal with allocationCid; extraArgs = expectedArgs]
   map (.output) results === [A.AllocationResult_Withdrawn]
@@ -248,6 +258,7 @@ genericAllocationReceivesWithdrawalContext = script do
 
 pendingWithdrawalPreservesAllocation : Script ()
 pendingWithdrawalPreservesAllocation = script do
+  -- Create an expired fixture whose withdrawal returns a pending continuation.
   f <- setup ()
   trader <- allocateParty "PendingWithdrawalTrader"
   prepared <- prepare f trader "pending-withdrawal" BaseToQuote 10.0 0.0
@@ -262,6 +273,7 @@ pendingWithdrawalPreservesAllocation = script do
   setTime (addRelTime request.terms.settlementDeadline (seconds 1))
   before <- query @ContextAllocation trader
   disclosures <- rulesDisclosures f
+  -- Reject incomplete recovery and roll back the fixture's replacement.
   submitFailsWith eTokenWithdrawalIncomplete (actAs trader <> discloseMany disclosures) $
     exerciseCmd prepared.accessCid PoolAccess_RecoverAllocations with
       withdrawals = [withdrawal allocationCid]
@@ -277,6 +289,7 @@ pendingWithdrawalPreservesAllocation = script do
 
 settlementRejectsAnotherTraderAllocation : Script ()
 settlementRejectsAnotherTraderAllocation = script do
+  -- Prepare matching swap terms for two traders and substitute the second trader's input.
   f <- setup ()
   alice <- allocateParty "AllocationOwnerAlice"
   bob <- allocateParty "AllocationOwnerBob"
@@ -299,5 +312,6 @@ settlementRejectsAnotherTraderAllocation = script do
   queryInterfaceContractId @A.Allocation bob secondRequest.inputAllocation >>= (=== Some secondView)
   availableBalance alice f.route.quoteToken.instrument >>= (=== 0.0)
   availableBalance bob f.route.quoteToken.instrument >>= (=== 0.0)
+  -- Settle the first trader's unchanged request.
   result <- settle f f.pool.stateCid "matching-authorizer" [first]
   result.amountsOut === [9.900990]

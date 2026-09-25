@@ -1,3 +1,4 @@
+-- | Tests expired swap recovery, partial withdrawals and allocation ownership checks.
 module SwapWithdrawalTests where
 
 import DA.Assert ((===))
@@ -25,6 +26,7 @@ withdraw f trader allocationCids = do
 
 partialWalletWithdrawalRecoversRemainingAllocation : Script ()
 partialWalletWithdrawalRecoversRemainingAllocation = script do
+  -- Expire a swap and withdraw its input allocation directly through the token.
   f <- setup ()
   trader <- allocateParty "PartialWithdrawalTrader"
   prepared <- prepare f trader "partial-withdrawal" BaseToQuote 10.0 0.0
@@ -34,6 +36,7 @@ partialWalletWithdrawalRecoversRemainingAllocation = script do
     actors = [trader]; extraArgs = emptyArgs
   inputResult.output === A.AllocationResult_Withdrawn
   availableBalance trader f.route.baseToken.instrument >>= (=== 10.0)
+  -- Recover only the remaining output allocation without returning the input twice.
   results <- withdraw f trader [request.outputAllocation]
   map (.output) results === [A.AllocationResult_Withdrawn]
   queryInterfaceContractId @A.Allocation trader request.inputAllocation >>= (=== None)
@@ -43,6 +46,7 @@ partialWalletWithdrawalRecoversRemainingAllocation = script do
 
 withdrawalRejectsPrematureRecovery : Script ()
 withdrawalRejectsPrematureRecovery = script do
+  -- Snapshot both allocations before their settlement deadline.
   f <- setup ()
   trader <- allocateParty "PrematureWithdrawalTrader"
   prepared <- prepare f trader "premature-withdrawal" BaseToQuote 10.0 0.0
@@ -50,12 +54,14 @@ withdrawalRejectsPrematureRecovery = script do
   inputBefore <- queryInterfaceContractId @A.Allocation trader request.inputAllocation
   outputBefore <- queryInterfaceContractId @A.Allocation trader request.outputAllocation
   disclosures <- rulesDisclosures f
+  -- Reject early recovery and keep the input funds locked.
   submitMustFail (actAs trader <> discloseMany disclosures) $
     exerciseCmd prepared.accessCid PoolAccess_RecoverAllocations with
       withdrawals = map withdrawal [request.inputAllocation, request.outputAllocation]
   queryInterfaceContractId @A.Allocation trader request.inputAllocation >>= (=== inputBefore)
   queryInterfaceContractId @A.Allocation trader request.outputAllocation >>= (=== outputBefore)
   availableBalance trader f.route.baseToken.instrument >>= (=== 0.0)
+  -- Move past expiry and recover both allocations.
   setTime (addRelTime request.terms.settlementDeadline (seconds 1))
   results <- withdraw f trader [request.inputAllocation, request.outputAllocation]
   map (.output) results === [A.AllocationResult_Withdrawn, A.AllocationResult_Withdrawn]
@@ -63,6 +69,7 @@ withdrawalRejectsPrematureRecovery = script do
 
 withdrawalRejectsOtherOwnerWithDisclosure : Script ()
 withdrawalRejectsOtherOwnerWithDisclosure = script do
+  -- Give another trader visibility of the owner's expired allocation and holdings.
   f <- setup ()
   owner <- allocateParty "WithdrawalOwner"
   stranger <- allocateParty "WithdrawalStranger"
@@ -84,11 +91,13 @@ withdrawalRejectsOtherOwnerWithDisclosure = script do
   queryInterfaceContractId @A.Allocation owner request.inputAllocation >>= (=== Some inputView)
   availableBalance owner f.route.baseToken.instrument >>= (=== 0.0)
   availableBalance stranger f.route.baseToken.instrument >>= (=== 0.0)
+  -- Confirm the actual owner can still recover the full input.
   _ <- withdraw f owner [request.inputAllocation, request.outputAllocation]
   availableBalance owner f.route.baseToken.instrument >>= (=== 10.0)
 
 withdrawalRejectsAllocationFromAnotherPool : Script ()
 withdrawalRejectsAllocationFromAnotherPool = script do
+  -- Prepare an expired allocation belonging to a second pool.
   f <- setup ()
   trader <- allocateParty "ForeignPoolAllocationTrader"
   (_, ownAccess) <- accessFixture f.parties.venueOperator trader f.pool.poolCid
@@ -99,16 +108,19 @@ withdrawalRejectsAllocationFromAnotherPool = script do
   before <- queryInterfaceContractId @A.Allocation trader request.inputAllocation
   setTime (addRelTime request.terms.settlementDeadline (seconds 1))
   disclosures <- rulesDisclosures f
+  -- Reject recovery through the first pool's access without changing the allocation.
   submitFailsWith eWithdrawalPoolMismatch (actAs trader <> discloseMany disclosures) $
     exerciseCmd ownAccess PoolAccess_RecoverAllocations with
       withdrawals = [withdrawal request.inputAllocation]
   queryInterfaceContractId @A.Allocation trader request.inputAllocation >>= (=== before)
   availableBalance trader f.route.baseToken.instrument >>= (=== 0.0)
+  -- Recover through access to the correct pool.
   _ <- withdraw candidate trader [request.inputAllocation, request.outputAllocation]
   availableBalance trader f.route.baseToken.instrument >>= (=== 10.0)
 
 withdrawalRejectsInvalidAllocationLists : Script ()
 withdrawalRejectsInvalidAllocationLists = script do
+  -- Prepare expired requests in both swap directions.
   f <- setup ()
   trader <- allocateParty "WithdrawalListTrader"
   first <- prepare f trader "list-first" BaseToQuote 10.0 0.0
@@ -118,6 +130,7 @@ withdrawalRejectsInvalidAllocationLists = script do
   inputBefore <- queryInterfaceContractId @A.Allocation trader firstRequest.inputAllocation
   setTime (addRelTime firstRequest.terms.settlementDeadline (seconds 1))
   disclosures <- rulesDisclosures f
+  -- Reject empty and duplicate allocation lists while preserving both requests.
   forA_
     [ ([], eInvalidWithdrawalSize)
     , ([firstRequest.inputAllocation, firstRequest.inputAllocation], eDuplicateWithdrawalAllocation)
@@ -130,6 +143,7 @@ withdrawalRejectsInvalidAllocationLists = script do
   queryInterfaceContractId @A.Allocation trader firstRequest.inputAllocation >>= (=== inputBefore)
   availableBalance trader f.route.baseToken.instrument >>= (=== 0.0)
   availableBalance trader f.route.quoteToken.instrument >>= (=== 0.0)
+  -- Recover all four distinct allocations and return both input token amounts.
   results <- withdraw f trader [firstRequest.inputAllocation, firstRequest.outputAllocation, secondRequest.inputAllocation, secondRequest.outputAllocation]
   map (.output) results === replicate 4 A.AllocationResult_Withdrawn
   availableBalance trader f.route.baseToken.instrument >>= (=== 10.0)

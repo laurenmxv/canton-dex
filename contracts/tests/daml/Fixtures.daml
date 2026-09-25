@@ -1,3 +1,4 @@
+-- | Shared parties, token registries, pools and access grants for DEX tests.
 module Fixtures where
 
 import Daml.Script
@@ -29,6 +30,7 @@ allocateParties () = do
 
 settingsFor : Parties -> Script PoolSettings
 settingsFor parties = do
+  -- Create a pool identity and registries for base, quote and LP tokens.
   identity <- allocateParty "PoolIdentity"
   let rules admin = TokenRules with admin; maxTTL = days 1; lockGrace = hours 1
   baseRules <- submit parties.baseRegistrar $ createCmd (rules parties.baseRegistrar)
@@ -58,10 +60,12 @@ poolFixtureWithSettings parties settings = poolFixtureAtRatio parties settings 1
 
 poolFixtureAtRatio : Parties -> PoolSettings -> Decimal -> Script (ContractId PoolFactory, PoolContracts)
 poolFixtureAtRatio parties settings initialRatio = do
+  -- Let the operator propose a pool through a dvo-owned factory.
   factoryCid <- submit parties.dvo $ createCmd PoolFactory with
     dvo = parties.dvo; venueOperator = parties.venueOperator
   proposalCid <- submit parties.venueOperator $
     exerciseCmd factoryCid PoolFactory_ProposePool with settings
+  -- Accept as dvo with visibility of both token registries.
   contracts <- submit (actAs parties.dvo <> readAs [parties.baseRegistrar, parties.quoteRegistrar]) $
     exerciseCmd proposalCid PoolProposal_Accept with initialRatio
   pure (factoryCid, contracts)
@@ -69,6 +73,7 @@ poolFixtureAtRatio parties settings initialRatio = do
 accessFixture : Party -> Party -> ContractId Pool
   -> Script (ContractId KycAttestation, ContractId PoolAccess)
 accessFixture venueOperator trader poolCid = do
+  -- Issue KYC approval and link the trader's access to it.
   attestationCid <- submit venueOperator $ createCmd KycAttestation with
     venueOperator; trader; pools = [poolCid]
   accessCid <- submit venueOperator $ createCmd PoolAccess with

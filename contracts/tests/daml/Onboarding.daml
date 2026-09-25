@@ -1,3 +1,4 @@
+-- | Checks that a trader can see the operator's KYC approval and pool access grant.
 module Onboarding where
 
 import DA.Assert ((===))
@@ -8,6 +9,7 @@ import PoolAccess
 
 main : Script ()
 main = script do
+  -- Prepare a pool and a trader party.
   parties <- allocateParties ()
   (_, pool) <- poolFixture parties
   alice <- allocateParty "Alice"
@@ -22,6 +24,7 @@ main = script do
         poolCid = pool.poolCid; attestationCid
   accessCid <- submit parties.venueOperator $ createCmd access
 
+  -- Check the grant is visible to both parties and KYC is visible to the trader.
   aliceAccess <- queryContractId alice accessCid
   operatorAccess <- queryContractId parties.venueOperator accessCid
   aliceAccess === Some access

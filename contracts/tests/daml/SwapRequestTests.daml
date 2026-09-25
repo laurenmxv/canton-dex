@@ -1,3 +1,4 @@
+-- | Tests signed swap requests, callback authority, allocation binding and revoked approvals.
 module SwapRequestTests where
 
 import Test.Errors
@@ -22,10 +23,12 @@ import Splice.Api.Token.MetadataV1 (emptyMetadata)
 import Splice.TokenStandard.Utils (basicAccount, senderSide, toAnyContractId)
 import Lib.Swap
 
+-- | Detects whether a callback can create a contract requiring operator authority.
 template OperatorMarker
   with operator : Party
   where signatory operator
 
+-- | Tries to use operator authority inside a trader's token withdrawal callback.
 template HostileAllocation
   with
     owner : Party
@@ -45,7 +48,7 @@ template HostileAllocation
         pure (A.AllocationResult with
           output = A.AllocationResult_Withdrawn; authorizerHoldingCids = TextMap.empty; meta = emptyMetadata)
 
--- Only the trader signs this test factory. Its views do not grant the operator's authority.
+-- | Tries to use operator authority during token lookup or allocation under a trader-only signature.
 template HostileFactory
   with
     owner : Party
@@ -90,6 +93,7 @@ prepareArgs f trader requestId = do
 
 requestRequiresTraderAndUsesOneExerciseRoot : Script ()
 requestRequiresTraderAndUsesOneExerciseRoot = script do
+  -- Reject operator submission and create both allocations through one trader exercise.
   f <- setup ()
   trader <- allocateParty "RequestTrader"
   (accessCid, args) <- prepareArgs f trader "request-roundtrip"
@@ -101,6 +105,7 @@ requestRequiresTraderAndUsesOneExerciseRoot = script do
   request.trader === trader
   request.poolCid === f.pool.poolCid
   availableBalance trader f.route.baseToken.instrument >>= (=== 0.0)
+  -- After expiry, recover through one trader exercise and preserve the pool access grant.
   setTime (addRelTime request.terms.settlementDeadline (seconds 1))
   let withdrawArgs = PoolAccess_RecoverAllocations with
         withdrawals = map withdrawal [request.inputAllocation, request.outputAllocation]
@@ -117,11 +122,13 @@ requestRequiresTraderAndUsesOneExerciseRoot = script do
 
 requestRejectsAnotherOperatorRoute : Script ()
 requestRejectsAnotherOperatorRoute = script do
+  -- Replace the route's operator while keeping the trader's original access grant.
   f <- setup ()
   trader <- allocateParty "WrongRouteTrader"
   otherOperator <- allocateParty "OtherOperator"
   (accessCid, args) <- prepareArgs f trader "wrong-route"
   disclosures <- rulesDisclosures f
+  -- Reject the mismatched route without locking funds, then accept the original route.
   submitFailsWith eSwapRouteMismatch (actAs trader <> discloseMany disclosures) $
     exerciseCmd accessCid (args with route = (args.route with venueOperator = otherOperator))
   availableBalance trader f.route.baseToken.instrument >>= (=== 10.0)
@@ -137,6 +144,7 @@ requestDropsOperatorBeforeAllocate = hostileCallbackNeedsOperator False
 
 hostileCallbackNeedsOperator : Bool -> Script ()
 hostileCallbackNeedsOperator attackOnFetch = do
+  -- Substitute a factory that tries to create an operator-signed marker.
   f <- setup ()
   trader <- allocateParty "CallbackTrader"
   (accessCid, args) <- prepareArgs f trader "callback-authority"
@@ -149,6 +157,7 @@ hostileCallbackNeedsOperator attackOnFetch = do
         allocationFactory = factory; settlementFactory = toInterfaceContractId @A.SettlementFactory hostile
       hostileArgs = args with route = (args.route with baseToken = hostileToken)
   rules <- rulesDisclosures f
+  -- Expect an authorization error because the callback lacks operator authority.
   rejected <- trySubmit (actAs trader <> discloseMany rules) $ exerciseCmd accessCid hostileArgs
   case rejected of
     Left AuthorizationError {} -> pure ()
@@ -177,6 +186,7 @@ hostileCallbackNeedsOperator attackOnFetch = do
 
 withdrawalDropsAccessAuthorityBeforeTokenCallback : Script ()
 withdrawalDropsAccessAuthorityBeforeTokenCallback = script do
+  -- Replace an expired allocation with a callback that tries to act as the operator.
   f <- setup ()
   trader <- allocateParty "WithdrawalCallbackTrader"
   let operator = f.parties.venueOperator
@@ -187,6 +197,7 @@ withdrawalDropsAccessAuthorityBeforeTokenCallback = script do
   hostile <- submit trader $ createCmd HostileAllocation with owner = trader; operator; allocationView
   disclosures <- rulesDisclosures f
   let allocation = toInterfaceContractId @A.Allocation hostile
+  -- Check the failed withdrawal leaves no marker and preserves both allocations.
   rejected <- trySubmit (actAs trader <> discloseMany disclosures) $
     exerciseCmd prepared.accessCid PoolAccess_RecoverAllocations with
       withdrawals = [AllocationWithdrawal with allocationCid = allocation; extraArgs = emptyArgs]
@@ -196,6 +207,7 @@ withdrawalDropsAccessAuthorityBeforeTokenCallback = script do
   query @OperatorMarker operator >>= (=== [])
   queryInterfaceContractId @A.Allocation trader allocation >>= (=== Some allocationView)
   queryInterfaceContractId @A.Allocation trader request.inputAllocation >>= (=== Some allocationView)
+  -- Confirm the same callback works when the operator explicitly authorizes it.
   result <- submit (actAs trader <> actAs operator) $
     exerciseCmd allocation A.Allocation_Withdraw with actors = [trader, operator]; extraArgs = emptyArgs
   result.output === A.AllocationResult_Withdrawn
@@ -211,6 +223,7 @@ repeatedRequestIdKeepsAllocationsSeparate = script do
   second <- prepare f trader "same-request-id" BaseToQuote 10.0 0.0
   assertMsg eInputAllocationsMustDiffer (first.request.inputAllocation /= second.request.inputAllocation)
   assertMsg eOutputAllocationsMustDiffer (first.request.outputAllocation /= second.request.outputAllocation)
+  -- Settle both requests and match each receipt to its own consumed allocation pair.
   result <- settle f f.pool.stateCid "shared-anchor" [first, second]
   length result.receiptCids === 2
   forA_ [first.request, second.request] $ \request -> do
@@ -224,6 +237,7 @@ repeatedRequestIdKeepsAllocationsSeparate = script do
 
 signedAllocationsRejectAlteredTerms : Script ()
 signedAllocationsRejectAlteredTerms = script do
+  -- Check the native allocations contain the trader's signed settlement, funding and minimum.
   f <- setup ()
   trader <- allocateParty "SignedTermsTrader"
   prepared <- prepare f trader "signed-terms" BaseToQuote 1000.0 490.0
@@ -239,6 +253,7 @@ signedAllocationsRejectAlteredTerms = script do
     [] (iterationFunding f.route.quoteToken 0.0) emptyMetadata
   disclosures <- settlementDisclosures f f.pool.stateCid
   before <- queryContractId f.parties.dvo f.pool.stateCid
+  -- Alter each signed term and require rejection without consuming either allocation.
   forA_
     [ (terms with requestId = "changed-label")
     , (terms with direction = QuoteToBase)
@@ -252,6 +267,7 @@ signedAllocationsRejectAlteredTerms = script do
           requests = [settlementRequest (prepared with request = (request with terms = changed))]
       queryContractId f.parties.dvo f.pool.stateCid >>= (=== before)
       assertPending prepared
+  -- Reject a different pool or trader even when the original token allocations are supplied.
   (_, otherPool) <- poolFixture f.parties
   stranger <- allocateParty "AlteredTrader"
   forA_
@@ -263,18 +279,21 @@ signedAllocationsRejectAlteredTerms = script do
           configCid = f.pool.configCid; stateCid = f.pool.stateCid; batchId = "changed-route"
           requests = [settlementRequest (prepared with request = changed)]
       assertPending prepared
+  -- Settle the unchanged signed request and check the trader's payout.
   result <- settle f f.pool.stateCid "signed-original" [prepared]
   result.amountsOut === [500.0]
   availableBalance trader f.route.quoteToken.instrument >>= (=== 500.0)
 
 swapRequiresSignedMinimumMetadata : Script ()
 swapRequiresSignedMinimumMetadata = script do
+  -- Lock a swap with a nonzero signed minimum output.
   f <- setup ()
   trader <- allocateParty "SwapMinimumMetadataTrader"
   prepared <- prepare f trader "minimum-metadata" BaseToQuote 10.0 1.0
   let request = prepared.request
   disclosures <- settlementDisclosures f f.pool.stateCid
   before <- queryContractId f.parties.dvo f.pool.stateCid
+  -- Reject replacement inputs with missing or lower minimum metadata.
   forA_ [emptyMetadata, minimumMetadata minOutKey 0.0] $ \meta -> do
     input <- mint f.baseRulesCid f.parties.baseRegistrar (basicAccount trader) "BASE" 10.0
     replacement <- allocationWithMetadata f trader f.route.baseToken request.inputAllocation meta [input]
@@ -284,11 +303,13 @@ swapRequiresSignedMinimumMetadata = script do
         requests = [settlementRequest (prepared with request = request with inputAllocation = replacement)]
     queryContractId f.parties.dvo f.pool.stateCid >>= (=== before)
     assertPending prepared
+  -- Settle with the original allocation and signed minimum.
   result <- settle f f.pool.stateCid "valid-minimum-metadata" [prepared]
   result.amountsOut === [9.900990]
 
 settlementUsesStablePoolAndOneStateSuccessor : Script ()
 settlementUsesStablePoolAndOneStateSuccessor = script do
+  -- Capture the delegated settlement transaction for one funded request.
   f <- setup ()
   trader <- allocateParty "StablePoolTrader"
   prepared <- prepare f trader "stable-pool" BaseToQuote 1000.0 500.0
@@ -298,6 +319,7 @@ settlementUsesStablePoolAndOneStateSuccessor = script do
     exerciseCmd f.delegationCid VenueDelegation_SettleBatch with
       configCid = f.pool.configCid; stateCid = f.pool.stateCid; batchId = "one-successor"
       requests = [settlementRequest prepared]
+  -- Check one pool exercise creates one successor state and preserves the pool contract.
   [ExercisedEvent root] <- pure tree.rootEvents
   root.choice === "VenueDelegation_SettleBatch"
   let poolCalls = [event | ExercisedEvent event <- root.childEvents, event.choice == "Pool_Swap"]
@@ -320,11 +342,13 @@ settlementUsesStablePoolAndOneStateSuccessor = script do
 
 revokedAccessPreventsSettlementAndDexRecovery : Script ()
 revokedAccessPreventsSettlementAndDexRecovery = script do
+  -- Revoke access after the trader has locked a swap request.
   f <- setup ()
   trader <- allocateParty "RevokedAccessTrader"
   prepared <- prepare f trader "revoked-access" BaseToQuote 10.0 0.0
   submit f.parties.venueOperator $ archiveCmd prepared.accessCid
   disclosures <- settlementDisclosures f f.pool.stateCid
+  -- Reject both delegated settlement and expired recovery through revoked access.
   submitMustFail (actAs f.parties.venueOperator <> discloseMany disclosures) $
     exerciseCmd f.delegationCid VenueDelegation_SettleBatch with
       configCid = f.pool.configCid; stateCid = f.pool.stateCid; batchId = "revoked-access"
@@ -334,6 +358,7 @@ revokedAccessPreventsSettlementAndDexRecovery = script do
   submitMustFail (actAs trader <> discloseMany disclosures) $
     exerciseCmd prepared.accessCid PoolAccess_RecoverAllocations with
       withdrawals = map withdrawal [prepared.request.inputAllocation, prepared.request.outputAllocation]
+  -- Recover directly through the token allocations as their owner.
   forA_ [prepared.request.inputAllocation, prepared.request.outputAllocation] $ \cid -> do
     result <- submit trader $ exerciseCmd cid A.Allocation_Withdraw with actors = [trader]; extraArgs = emptyArgs
     result.output === A.AllocationResult_Withdrawn
@@ -341,18 +366,21 @@ revokedAccessPreventsSettlementAndDexRecovery = script do
 
 settlementIdCommitsEverySignedTerm : Script ()
 settlementIdCommitsEverySignedTerm = script do
+  -- Check canonical term encoding for ordinary and maximum-size decimal amounts.
   f <- setup ()
   trader <- allocateParty "CanonicalIdTrader"
   prepared <- prepare f trader "request" BaseToQuote 10.0 0.5
   settlementId prepared.request.terms === "swap:request:BaseToQuote:100000000000:5000000000:1767226200000000"
   settlementId (prepared.request.terms with amountIn = 9999999999999999999999999999.9999999999; minOut = 1000000000.0)
     === "swap:request:BaseToQuote:99999999999999999999999999999999999999:10000000000000000000:1767226200000000"
+  -- Check signed minimum metadata uses canonical decimal text.
   forA_ [(0.0, "0"), (1.0, "1"), (0.5, "0.5")] $ \(amount, text) ->
     (minimumMetadata minOutKey amount).values
       === TextMap.singleton "dex.reference.openzeppelin.com/min-out-amount" text
 
 allocationPairCannotMixDifferentSignedTerms : Script ()
 allocationPairCannotMixDifferentSignedTerms = script do
+  -- Mix allocations from two requests and lower the first request's minimum output.
   f <- setup ()
   trader <- allocateParty "AllocationPairTrader"
   expensive <- prepare f trader "same-label" BaseToQuote 10.0 900.0
@@ -374,12 +402,14 @@ allocationPairCannotMixDifferentSignedTerms = script do
   availableBalance trader f.route.baseToken.instrument >>= (=== 0.0)
   availableBalance trader f.route.quoteToken.instrument >>= (=== 0.0)
   query @SwapReceipt trader >>= (=== [])
+  -- Settle the untouched cheap request while the expensive request remains pending.
   result <- settle f f.pool.stateCid "original-cheap" [cheap]
   length result.amountsOut === 1
   assertPending expensive
 
 revokedAttestationPreventsRequestsAndSettlement : Script ()
 revokedAttestationPreventsRequestsAndSettlement = script do
+  -- Revoke KYC after preparing a request and reject its settlement.
   f <- setup ()
   trader <- allocateParty "RevokedKycTrader"
   prepared <- prepare f trader "before-kyc-revocation" BaseToQuote 10.0 0.0
@@ -391,6 +421,7 @@ revokedAttestationPreventsRequestsAndSettlement = script do
       configCid = f.pool.configCid; stateCid = f.pool.stateCid; batchId = "revoked-kyc"
       requests = [settlementRequest prepared]
   assertPending prepared
+  -- Revoke a fresh grant's KYC and reject its new request before locking funds.
   (accessCid, args) <- prepareArgs f trader "after-kyc-revocation"
   Some nextAccess <- queryContractId trader accessCid
   submit f.parties.venueOperator $ archiveCmd nextAccess.attestationCid

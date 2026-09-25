@@ -1,3 +1,4 @@
+-- | Shared funded-pool fixtures and tests for swap settlement, rollback and expiry.
 module FundedSwaps where
 
 import DA.Action ((>=>))
@@ -48,12 +49,14 @@ setup () = setupWithReserves 997.0 1000.0
 
 setupWithReserves : Decimal -> Decimal -> Script FundedFixture
 setupWithReserves baseReserve quoteReserve = do
+  -- Create an empty pool at a fixed test time and the requested reserve ratio.
   setTime (time (date 2026 Jan 1) 0 0 0)
   parties <- allocateParties ()
   settings <- settingsFor parties
   let ratio = liquidityRatio 10 Numeric.RoundingFloor quoteReserve 1.0 baseReserve
   (_, pool) <- poolFixtureAtRatio parties settings ratio
   f <- emptyFixture parties pool settings
+  -- Fund it through the same deposit flow used by traders.
   seeder <- allocateParty "InitialLP"
   (accessCid, request) <- prepareDeposit f seeder "initial-liquidity" InitializeOnly baseReserve quoteReserve
   result <- settleDeposit f pool.stateCid accessCid request
@@ -82,6 +85,7 @@ liquidityArgs = LiquidityTokenArgs with
 prepareDeposit : FundedFixture -> Party -> Text -> DepositMode -> Decimal -> Decimal
   -> Script (ContractId PoolAccess, DepositRequest Pool)
 prepareDeposit f trader requestId mode maxBaseAmount maxQuoteAmount = do
+  -- Grant access and mint both deposit tokens to the trader.
   (_, accessCid) <- accessFixture f.parties.venueOperator trader f.pool.poolCid
   base <- mint f.baseRulesCid f.parties.baseRegistrar (basicAccount trader) "BASE" maxBaseAmount
   quote <- mint f.quoteRulesCid f.parties.quoteRegistrar (basicAccount trader) "QUOTE" maxQuoteAmount
@@ -91,6 +95,7 @@ prepareDeposit f trader requestId mode maxBaseAmount maxQuoteAmount = do
         minRatio = 0.0000000001; maxRatio = 1000000.0
         settlementDeadline = addRelTime requestedAt (minutes 10)
   disclosures <- rulesDisclosures f
+  -- Lock the deposit under the trader's signed terms.
   request <- submit (actAs trader <> discloseMany disclosures) $
     exerciseCmd accessCid PoolAccess_RequestLiquidityDeposit with
       terms; requestedAt; baseHoldingCids = [base]; quoteHoldingCids = [quote]
@@ -185,6 +190,7 @@ mint rulesCid admin account instrumentId amount = do
 
 prepare : FundedFixture -> Party -> Text -> SwapDirection -> Decimal -> Decimal -> Script PreparedRequest
 prepare f trader requestId direction amountIn minOut = do
+  -- Grant access and mint the token used as swap input.
   (_, accessCid) <- accessFixture f.parties.venueOperator trader f.pool.poolCid
   let (rulesCid, token) = case direction of
         BaseToQuote -> (f.baseRulesCid, f.route.baseToken)
@@ -195,6 +201,7 @@ prepare f trader requestId direction amountIn minOut = do
         requestId; direction; amountIn; minOut
         settlementDeadline = addRelTime requestedAt (minutes 10)
   disclosures <- rulesDisclosures f
+  -- Lock the input and create the paired output allocation as the trader.
   request <- submit (actAs trader <> discloseMany disclosures) $
     exerciseCmd accessCid (PoolAccess_RequestSwap with
       route = f.route; terms; requestedAt; inputHoldingCids = [input]
@@ -249,6 +256,7 @@ assertBacking f stateCid = do
 
 sequentialFundedBatch : Script ()
 sequentialFundedBatch = script do
+  -- Lock two swaps against the same initial reserves.
   f <- setup ()
   alice <- allocateParty "Alice"
   bob <- allocateParty "Bob"
@@ -256,8 +264,8 @@ sequentialFundedBatch = script do
   second <- prepare f bob "bob-swap" BaseToQuote 1000.0 160.0
   availableBalance alice f.route.baseToken.instrument >>= (=== 0.0)
   availableBalance bob f.route.baseToken.instrument >>= (=== 0.0)
+  -- Price the second swap using the reserves left by the first.
   result <- settle f f.pool.stateCid "batch-two" [first, second]
-  -- Both users saw an initial quote of 500; execution prices the second on new reserves.
   result.amountsOut === [500.0, 166.499665]
   state <- assertBacking f result.stateCid
   state.baseReserve === 2997.0
@@ -266,6 +274,7 @@ sequentialFundedBatch = script do
   availableBalance bob f.route.quoteToken.instrument >>= (=== 166.499665)
   availableBalance alice f.route.baseToken.instrument >>= (=== 0.0)
   availableBalance bob f.route.baseToken.instrument >>= (=== 0.0)
+  -- Check allocations are consumed and each trader sees only their own receipt.
   forA_ [first, second] $ \prepared ->
     forA_ [prepared.request.inputAllocation, prepared.request.outputAllocation]
       (queryInterfaceContractId @A.Allocation prepared.request.trader >=> (=== None))
@@ -281,10 +290,12 @@ sequentialFundedBatch = script do
 
 reverseDirectionMovesTokens : Script ()
 reverseDirectionMovesTokens = script do
+  -- Swap quote tokens for base tokens.
   f <- setup ()
   trader <- allocateParty "ReverseTrader"
   request <- prepare f trader "quote-to-base" QuoteToBase 500.0 330.0
   result <- settle f f.pool.stateCid "reverse-batch" [request]
+  -- Check the payout and both reserve changes are backed by real holdings.
   result.amountsOut === [331.668001]
   state <- assertBacking f result.stateCid
   state.baseReserve === 665.331999
@@ -305,11 +316,13 @@ operatorRequiresDvoDelegation = script do
       configCid = f.pool.configCid; stateCid = f.pool.stateCid; batchId = "no-delegation"
       requests = [batchRequest request.request]
   queryContractId f.parties.dvo f.pool.stateCid >>= (=== Some state)
+  -- Retry through the dvo delegation and receive the expected output.
   result <- settle f f.pool.stateCid "delegated" [request]
   result.amountsOut === [500.0]
 
 duplicateAllocationLeavesBackingUnchanged : Script ()
 duplicateAllocationLeavesBackingUnchanged = script do
+  -- Snapshot the backing before submitting the same request twice.
   f <- setup ()
   trader <- allocateParty "DuplicateTrader"
   request <- prepare f trader "once-only" BaseToQuote 1000.0 500.0
@@ -317,6 +330,7 @@ duplicateAllocationLeavesBackingUnchanged = script do
   beforeQuote <- query @TokenHolding f.parties.quoteRegistrar
   beforeState <- queryContractId f.parties.dvo f.pool.stateCid
   disclosures <- settlementDisclosures f f.pool.stateCid
+  -- Reject duplicate allocations and check the transaction leaves no changes.
   submitFailsWith eDuplicateAllocation (actAs f.parties.venueOperator <> discloseMany disclosures) $
     exerciseCmd f.delegationCid VenueDelegation_SettleBatch with
       configCid = f.pool.configCid; stateCid = f.pool.stateCid; batchId = "duplicate"
@@ -325,15 +339,18 @@ duplicateAllocationLeavesBackingUnchanged = script do
   query @TokenHolding f.parties.quoteRegistrar >>= (=== beforeQuote)
   queryContractId f.parties.dvo f.pool.stateCid >>= (=== beforeState)
   query @SwapReceipt trader >>= (=== [])
+  -- Settle the request once to confirm it remains usable.
   result <- settle f f.pool.stateCid "single" [request]
   result.amountsOut === [500.0]
 
 largeAmountsSettle : Script ()
 largeAmountsSettle = script do
+  -- Settle a swap with input and reserves above one million tokens.
   f <- setupWithReserves 2991000.0 5982000.0
   trader <- allocateParty "LargeSwapTrader"
   request <- prepare f trader "large-swap" BaseToQuote 3000000.0 2991000.0
   result <- settle f f.pool.stateCid "large-batch" [request]
+  -- Check the exact payout, remaining reserves and spent input.
   result.amountsOut === [2991000.0]
   state <- assertBacking f result.stateCid
   state.baseReserve === 5991000.0
@@ -343,12 +360,14 @@ largeAmountsSettle = script do
 
 batchReservesCanExceedOneMillion : Script ()
 batchReservesCanExceedOneMillion = script do
+  -- Follow a small swap with a large input in the same batch.
   f <- setup ()
   alice <- allocateParty "FirstTrader"
   bob <- allocateParty "LargeInputTrader"
   first <- prepare f alice "first" BaseToQuote 1000.0 500.0
   second <- prepare f bob "large-input" BaseToQuote 1999000.0 0.0
   result <- settle f f.pool.stateCid "large-reserve-batch" [first, second]
+  -- Check sequential pricing and backing after reserves cross one million.
   result.amountsOut === [500.0, 499.499498]
   state <- assertBacking f result.stateCid
   state.baseReserve === 2000997.0
@@ -358,6 +377,7 @@ batchReservesCanExceedOneMillion = script do
 
 secondSlippageRollsBack : Script ()
 secondSlippageRollsBack = script do
+  -- Lock two swaps whose minimums cannot both be met in one batch.
   f <- setup ()
   alice <- allocateParty "Alice"
   bob <- allocateParty "Bob"
@@ -367,10 +387,12 @@ secondSlippageRollsBack = script do
   beforeQuote <- query @TokenHolding f.parties.quoteRegistrar
   beforeState <- queryContractId f.parties.dvo f.pool.stateCid
   disclosures <- settlementDisclosures f f.pool.stateCid
+  -- Reject the second swap and roll back the whole batch.
   submitFailsWith eSwapBelowMinimumOutput (actAs f.parties.venueOperator <> discloseMany disclosures) $
       exerciseCmd f.delegationCid VenueDelegation_SettleBatch with
         configCid = f.pool.configCid; stateCid = f.pool.stateCid; batchId = "atomic-failure"
         requests = map settlementRequest [first, second]
+  -- Check backing, pending allocations and receipts remain unchanged.
   query @TokenHolding f.parties.baseRegistrar >>= (=== beforeBase)
   query @TokenHolding f.parties.quoteRegistrar >>= (=== beforeQuote)
   queryContractId f.parties.dvo f.pool.stateCid >>= (=== beforeState)
@@ -386,6 +408,7 @@ secondSlippageRollsBack = script do
 
 expiryReturnsFundsWithoutVenue : Script ()
 expiryReturnsFundsWithoutVenue = script do
+  -- Prepare requests for recovery through pool access and directly through the token.
   f <- setup ()
   alice <- allocateParty "Alice"
   stranger <- allocateParty "Stranger"
@@ -395,14 +418,17 @@ expiryReturnsFundsWithoutVenue = script do
   let withdrawWrapped = PoolAccess_RecoverAllocations with
         withdrawals = map withdrawal [wrapped.request.inputAllocation, wrapped.request.outputAllocation]
       aliceOptions = actAs alice <> discloseMany disclosures
+  -- Reject early recovery and recovery by another trader.
   submitMustFail aliceOptions $ exerciseCmd wrapped.accessCid withdrawWrapped
   submitMustFail alice $ exerciseCmd direct.request.inputAllocation A.Allocation_Withdraw with
     actors = [alice]; extraArgs = emptyArgs
   submitMustFail (actAs stranger <> readAs alice <> discloseMany disclosures) $
     exerciseCmd wrapped.accessCid withdrawWrapped
+  -- Revoke delegation and direct-request access, then expire both requests.
   submit f.parties.dvo $ exerciseCmd f.delegationCid VenueDelegation_Revoke
   submit f.parties.venueOperator $ archiveCmd direct.accessCid
   setTime (addRelTime wrapped.request.terms.settlementDeadline (seconds 1))
+  -- Recover through each path without venue authority and keep pool reserves intact.
   results <- submit aliceOptions $ exerciseCmd wrapped.accessCid withdrawWrapped
   length results === 2
   forA_ [direct.request.inputAllocation, direct.request.outputAllocation] $ \cid -> do
@@ -417,11 +443,13 @@ expiryReturnsFundsWithoutVenue = script do
 
 expiredRequestCannotSettle : Script ()
 expiredRequestCannotSettle = script do
+  -- Advance a funded request past its settlement deadline.
   f <- setup ()
   trader <- allocateParty "ExpiredTrader"
   request <- prepare f trader "expired-swap" BaseToQuote 1000.0 500.0
   setTime (addRelTime request.request.terms.settlementDeadline (seconds 1))
   disclosures <- settlementDisclosures f f.pool.stateCid
+  -- Reject settlement, keep the allocations pending and allow the trader to recover.
   submitMustFail (actAs f.parties.venueOperator <> discloseMany disclosures) $
     exerciseCmd f.delegationCid VenueDelegation_SettleBatch with
       configCid = f.pool.configCid; stateCid = f.pool.stateCid; batchId = "expired"
@@ -435,6 +463,7 @@ expiredRequestCannotSettle = script do
 
 unfundedPoolsCannotSettleRequests : Script ()
 unfundedPoolsCannotSettleRequests = script do
+  -- Lock a valid request before the pool receives its first deposit.
   f <- setup ()
   settings <- settingsFor f.parties
   (_, pool) <- poolFixtureWithSettings f.parties settings
@@ -444,12 +473,14 @@ unfundedPoolsCannotSettleRequests = script do
   Some before <- queryContractId f.parties.dvo pool.stateCid
   before.baseReserve === 0.0
   disclosures <- rulesDisclosures candidate
+  -- Reject settlement without consuming the request or changing the empty pool.
   submitFailsWith ePoolNotFunded (actAs f.parties.venueOperator <> discloseMany disclosures) $
     exerciseCmd candidate.delegationCid VenueDelegation_SettleBatch with
       configCid = pool.configCid; stateCid = pool.stateCid
       requests = [settlementRequest request]; batchId = "unfunded"
   queryContractId f.parties.dvo pool.stateCid >>= (=== Some before)
   assertPending request
+  -- Add initial liquidity and settle the original request successfully.
   seeder <- allocateParty "DeferredInitialLP"
   (accessCid, deposit) <- prepareDeposit candidate seeder "fund-later" InitializeOnly 997.0 1000.0
   funded <- settleDeposit candidate pool.stateCid accessCid deposit

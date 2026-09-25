@@ -1,5 +1,4 @@
 -- | Lets the operator settle swaps and liquidity with permission from dvo.
--- Every settlement rechecks the trader's access and KYC.
 module VenueDelegation where
 
 import Errors
@@ -25,6 +24,7 @@ data WithdrawalSettlementRequest = WithdrawalSettlementRequest with
     request : WithdrawalBatchRequest Pool
   deriving (Eq, Show)
 
+-- | Grants the operator dvo's settlement authority for one pool, subject to access and KYC checks.
 template VenueDelegation
   with
     dvo : Party
@@ -47,6 +47,7 @@ template VenueDelegation
         validateDelegatedRequests this requests
         exercise poolCid Pool_Swap with configCid; stateCid; requests = map (.request) requests; batchId
 
+    -- | Recheck each trader's access and KYC, then settle their deposits through the pool.
     nonconsuming choice VenueDelegation_AddLiquidity : AddLiquidityBatchResult
       with
         configCid : ContractId PoolConfig
@@ -59,6 +60,7 @@ template VenueDelegation
           validateRequestAccess this item.request.request.trader item.accessCid
         exercise poolCid Pool_AddLiquidity with configCid; stateCid; requests = map (.request) requests
 
+    -- | Recheck each trader's access and KYC, then settle their withdrawals through the pool.
     nonconsuming choice VenueDelegation_WithdrawLiquidity : WithdrawLiquidityBatchResult
       with
         configCid : ContractId PoolConfig

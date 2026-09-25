@@ -1,9 +1,9 @@
--- | Records the operator's KYC approval for a trader and a set of pools.
--- Pool access and settlement check that this approval is still active.
+-- | Defines the operator's KYC approvals used for pool access and settlement.
 module KycAttestation where
 
 import Pool
 
+-- | Records KYC approval for one trader and the pools they may access.
 template KycAttestation
   with
     venueOperator : Party

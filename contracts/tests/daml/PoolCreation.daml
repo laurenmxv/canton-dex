@@ -1,3 +1,4 @@
+-- | Tests pool proposal approval, initial configuration and factory authorization.
 module PoolCreation where
 
 import DA.Assert ((===))
@@ -11,6 +12,7 @@ import PoolFactory
 
 main : Script ()
 main = script do
+  -- Submit an operator proposal and check that it starts without dvo approval.
   parties <- allocateParties ()
   settings <- settingsFor parties
   trader <- allocateParty "Trader"
@@ -20,11 +22,13 @@ main = script do
   pending.accepted === False
   pending.initialRatio === None
   signatory pending === [parties.venueOperator]
+  -- Reject other approvers and a zero initial ratio.
   let dvoOptions = actAs parties.dvo <> readAs [parties.baseRegistrar, parties.quoteRegistrar]
   forA_ [parties.venueOperator, trader] $ \actor ->
     submitMustFail (actAs actor <> readAs parties.dvo) $
       exerciseCmd proposal PoolProposal_Accept with initialRatio = 2.0
   submitMustFail dvoOptions $ exerciseCmd proposal PoolProposal_Accept with initialRatio = 0.0
+  -- Accept once and check the pool starts with empty reserves and LP supply.
   (contracts, tx) <- submitResultAndTree dvoOptions $
     exerciseCmd proposal PoolProposal_Accept with initialRatio = 2.0
   length tx.rootEvents === 1
@@ -45,19 +49,23 @@ main = script do
   (state.baseReserve, state.quoteReserve, state.lpTokenSupply) === (0.0, 0.0, 0.0)
   state.baseHoldingCids === []
   state.quoteHoldingCids === []
+  -- Check separate pools get distinct LP tokens and reserve accounts.
   (_, second) <- poolFixtureWithSettings parties (settings with poolId = settings.poolId <> "-second")
   Some secondPool <- queryContractId parties.dvo second.poolCid
   assertMsg "LP identity must be unique per pool" (pool.lpToken.instrument /= secondPool.lpToken.instrument)
   assertMsg "reserve accounts must be unique per pool" (pool.baseAccount /= secondPool.baseAccount)
+  -- Check both pool parties can see all three components.
   forA_ [parties.dvo, parties.venueOperator] $ \reader -> do
     queryContractId reader contracts.poolCid >>= (=== Some pool)
     queryContractId reader contracts.stateCid >>= (=== Some state)
     queryContractId reader contracts.configCid >>= (=== Some config)
+  -- Reject one proposal, withdraw another and check that both are archived.
   rejected <- submit parties.venueOperator $ exerciseCmd factoryCid PoolFactory_ProposePool with settings
   submit parties.dvo $ exerciseCmd rejected PoolProposal_Reject
   withdrawn <- submit parties.venueOperator $ exerciseCmd factoryCid PoolFactory_ProposePool with settings
   submit parties.venueOperator $ exerciseCmd withdrawn PoolProposal_Withdraw
   forA_ [rejected, withdrawn] $ \cid -> queryContractId parties.venueOperator cid >>= (=== None)
+  -- Reject invalid settings and reserve accounts without the operator as provider.
   forA_ [(settings with feeBps = -1.0), (settings with quoteToken = settings.baseToken)] $ \invalid ->
     submitFailsWith eInvalidPoolSettings (actAs parties.venueOperator) $
       exerciseCmd factoryCid PoolFactory_ProposePool with settings = invalid
@@ -65,6 +73,7 @@ main = script do
 
 factoryRequiresApproval : Script ()
 factoryRequiresApproval = script do
+  -- Prepare two factories and an approval tied to the first one.
   parties <- allocateParties ()
   settings <- settingsFor parties
   let factory = PoolFactory parties.dvo parties.venueOperator
@@ -75,6 +84,7 @@ factoryRequiresApproval = script do
         factoryCid; venueOperator = parties.venueOperator; settings
         accepted = True; initialRatio = Some 1.0
       joint = actAs [parties.dvo, parties.venueOperator] <> readAs [parties.baseRegistrar, parties.quoteRegistrar]
+  -- Reject pending proposals, single-party approvals and the wrong factory.
   submitFailsWith ePoolProposalNotAccepted joint $
     exerciseCmd factoryCid PoolFactory_CreatePool with proposalCid = pending
   forA_ [parties.dvo, parties.venueOperator] $ \actor -> submitMustFail actor $ createCmd approval
@@ -82,6 +92,7 @@ factoryRequiresApproval = script do
   submitFailsWith eFactoryProposalMismatch joint $
     exerciseCmd otherFactory PoolFactory_CreatePool with proposalCid = approvedCid
   queryContractId parties.dvo approvedCid >>= (=== Some approval)
+  -- Create through the approved factory and reject reuse of the consumed approval.
   result <- submit joint $ exerciseCmd factoryCid PoolFactory_CreatePool with proposalCid = approvedCid
   queryContractId parties.dvo result.poolCid >>= \pool -> assertMsg "pool created" (isSome pool)
   queryContractId parties.dvo approvedCid >>= (=== None)
@@ -89,12 +100,14 @@ factoryRequiresApproval = script do
 
 factoryChecksApprovedParties : Script ()
 factoryChecksApprovedParties = script do
+  -- Point another operator's proposal at this factory.
   parties <- allocateParties ()
   settings <- settingsFor parties
   stranger <- allocateParty "WrongOperator"
   factoryCid <- submit parties.dvo $ createCmd PoolFactory with dvo = parties.dvo; venueOperator = parties.venueOperator
   let proposal = PoolProposal with factoryCid; venueOperator = stranger; settings; accepted = False; initialRatio = None
   cid <- submit stranger $ createCmd proposal
+  -- Reject the operator mismatch and preserve the pending proposal.
   submitFailsWith eFactoryOperatorMismatch (actAs parties.dvo <> readAs parties.venueOperator) $
     exerciseCmd cid PoolProposal_Accept with initialRatio = 1.0
   queryContractId stranger cid >>= (=== Some proposal)

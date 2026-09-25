@@ -1,5 +1,4 @@
 -- | Defines the pool, its fee and reserves, and receipts for swaps and liquidity.
--- Connects reserves to token holdings and settles each batch as one transaction.
 module Pool where
 
 import Errors
@@ -82,6 +81,7 @@ template Pool
         nextCid <- create next
         pure SwapBatchResult with stateCid = nextCid; receiptCids = receipts; amountsOut
 
+    -- | Settle deposits atomically, mint LP tokens and replace the reserve state.
     nonconsuming choice Pool_AddLiquidity : AddLiquidityBatchResult
       with
         configCid : ContractId PoolConfig
@@ -97,6 +97,7 @@ template Pool
         nextCid <- create next
         pure AddLiquidityBatchResult with stateCid = nextCid; receiptCids = receipts; outcomes
 
+    -- | Settle withdrawals atomically, burn LP tokens and return the underlying assets.
     nonconsuming choice Pool_WithdrawLiquidity : WithdrawLiquidityBatchResult
       with
         configCid : ContractId PoolConfig
@@ -125,6 +126,7 @@ template PoolConfig
     observer venueOperator
     ensure dvo /= venueOperator && validFee feeBps && initialRatio > 0.0
 
+    -- | Replace the configuration with a valid swap fee chosen by dvo.
     choice PoolConfig_Update : ContractId PoolConfig
       with newFeeBps : Decimal
       controller dvo

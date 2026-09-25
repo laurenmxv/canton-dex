@@ -18,6 +18,7 @@ import Splice.Api.Token.HoldingV2 qualified as H
 import Splice.Api.Token.MetadataV1 (ExtraArgs, emptyMetadata)
 import Splice.TokenStandard.Utils (basicAccount, toAnyContractId)
 
+-- | Links a trader's pool access to the operator's KYC approval.
 template PoolAccess
   with
     venueOperator : Party
@@ -28,7 +29,7 @@ template PoolAccess
     signatory venueOperator
     observer trader
 
-    -- | Check access and lock the trader's CIP-0112 legs before returning the request record.
+    -- | Check access, reserve the swap input and create its output allocation.
     nonconsuming choice PoolAccess_RequestSwap : SwapRequest Pool
       with
         route : SwapRoute Pool
@@ -49,6 +50,7 @@ template PoolAccess
           requestedAt terms.settlementDeadline [] (iterationFunding outputToken 0.0) emptyMetadata [] outputAllocationArgs
         pure SwapRequest with poolCid; trader; terms; inputAllocation; outputAllocation
 
+    -- | Check access, reserve both deposit tokens and create the LP output allocation.
     nonconsuming choice PoolAccess_RequestLiquidityDeposit : DepositRequest Pool
       with
         terms : DepositTerms
@@ -64,6 +66,7 @@ template PoolAccess
         requestDeposit (liquidityRoute pool poolCid) trader terms requestedAt baseHoldingCids quoteHoldingCids
           baseAllocationArgs quoteAllocationArgs lpAllocationArgs
 
+    -- | Check access, reserve LP tokens and create the base and quote output allocations.
     nonconsuming choice PoolAccess_RequestLiquidityWithdrawal : WithdrawalRequest Pool
       with
         terms : WithdrawalTerms
@@ -78,6 +81,7 @@ template PoolAccess
         requestWithdrawal (liquidityRoute pool poolCid) trader terms requestedAt lpHoldingCids
           baseAllocationArgs quoteAllocationArgs lpAllocationArgs
 
+    -- | Recover the trader's expired allocations for this pool while access and KYC remain active.
     nonconsuming choice PoolAccess_RecoverAllocations : [A.AllocationResult]
       with withdrawals : [AllocationWithdrawal]
       controller trader

@@ -1,3 +1,4 @@
+-- | Tests swap pricing, amount validation and conservative rounding for swaps and liquidity.
 module MathTests where
 
 import Test.Errors
@@ -21,6 +22,7 @@ referenceVectors = script do
 
 dustAndQuantumBoundaries : Script ()
 dustAndQuantumBoundaries = script do
+  -- Check dust rounds down at six, eight and ten decimal places.
   swapOutputAtScale 6 30.0 1.0 1.0 0.000001 === 0.0
   swapOutputAtScale 8 30.0 1.0 1.0 0.000001 === 0.00000099
   swapOutputAtScale 10 30.0 1.0 1.0 0.000001 === 0.0000009969
@@ -31,9 +33,11 @@ dustAndQuantumBoundaries = script do
 
 inputValidation : Script ()
 inputValidation = script do
+  -- Accept supported scales, whole basis-point fees and positive amounts.
   forA_ [0, 6, 8, 10] $ \scale ->
     validSwapInputs scale 9999.0 1000000.0 1000000.0 1000000.0 === True
   validSwapInputs 10 30.0 1000000.0000000001 2000000.0 1000000000.0 === True
+  -- Reject unsupported scales, invalid fees and nonpositive reserves or input.
   forA_ [-1, 11] $ \scale ->
     validSwapInputs scale 30.0 1.0 1.0 1.0 === False
   forA_ [-1.0, 30.5, 10000.0] $ \fee ->
@@ -45,6 +49,7 @@ inputValidation = script do
 
 feePreservesCurve : Script ()
 feePreservesCurve = script do
+  -- Check each trade increases the reserve product and pays less than the output reserve.
   forA_
     [ (1000.0, 1000.0, 10.0)
     , (1000000.0, 500.0, 1000.0)
@@ -59,17 +64,20 @@ feePreservesCurve = script do
 
 largeAmounts : Script ()
 largeAmounts = script do
+  -- Price large reserves and inputs without imposing an artificial amount cap.
   swapOutput 0.0 2000000.0 6000000.0 2000000.0 === 3000000.0
   swapOutput 30.0 2991000.0 6000000.0 3000000.0 === 3000000.0
   swapOutputAtScale 6 30.0 997.0 1000.0 1000000000.0 === 999.999
 
 liquidityRounding : Script ()
 liquidityRounding = script do
+  -- Floor initial LP supply and check both directions of proportional rounding.
   initialLpSupply 100.0 400.0 === 200.0
   initialLpSupply 1.0 2.0 === 1.4142135623
   initialLpSupply 0.000001 0.000001 === 0.000001
   liquidityRatio 6 Numeric.RoundingFloor 1.0 1.0 3.0 === 0.333333
   liquidityRatio 6 Numeric.RoundingCeiling 1.0 1.0 3.0 === 0.333334
+  -- Preserve the final decimal unit when rounding large liquidity amounts.
   initialLpSupply 999999999.0 999999999.0 === 999999999.0
   initialLpSupply 999999999.9999999999 999999999.9999999999 === 999999999.9999999999
   liquidityRatio 10 Numeric.RoundingFloor 999999999.9999999999 999999999.9999999999 1164153218269348144.5847505093

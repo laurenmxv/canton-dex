@@ -1,3 +1,4 @@
+-- | Tests fee updates and rejects configuration or state from the wrong pool or authority.
 module PoolComponents where
 
 import DA.Assert ((===))
@@ -16,6 +17,7 @@ feeUpdatesRequireDvo = script do
   f <- setup ()
   trader <- allocateParty "FeeTrader"
   Some config <- queryContractId f.parties.dvo f.pool.configCid
+  -- Reject unauthorized updates and invalid fees without replacing the configuration.
   forA_ [f.parties.venueOperator, trader] $ \actor ->
     submitMustFail (actAs actor <> readAs f.parties.dvo) $
       exerciseCmd f.pool.configCid PoolConfig_Update with newFeeBps = 50.0
@@ -23,6 +25,7 @@ feeUpdatesRequireDvo = script do
     submitFailsWith eInvalidFee (actAs f.parties.dvo) $
       exerciseCmd f.pool.configCid PoolConfig_Update with newFeeBps = fee
   queryContractId f.parties.dvo f.pool.configCid >>= (=== Some config)
+  -- Apply a valid dvo update and check the old configuration is archived.
   next <- submit f.parties.dvo $
     exerciseCmd f.pool.configCid PoolConfig_Update with newFeeBps = 50.0
   queryContractId f.parties.venueOperator next >>= (=== Some (config with feeBps = 50.0))
@@ -30,6 +33,7 @@ feeUpdatesRequireDvo = script do
 
 settlementRejectsMismatchedComponents : Script ()
 settlementRejectsMismatchedComponents = script do
+  -- Prepare a funded swap and components with mismatched pools or parties.
   f <- setup ()
   trader <- allocateParty "ComponentTrader"
   request <- prepare f trader "component-swap" BaseToQuote 10.0 0.0
@@ -43,6 +47,7 @@ settlementRejectsMismatchedComponents = script do
   wrongOperatorConfig <- submit f.parties.dvo $ createCmd (config with venueOperator = otherOperator)
   wrongOperatorState <- submit f.parties.dvo $ createCmd (state with venueOperator = otherOperator)
   disclosures <- settlementDisclosures f f.pool.stateCid
+  -- Reject each mismatch without changing reserves, configuration or the trader's balance.
   forA_
     [ (otherPool.configCid, f.pool.stateCid, eConfigurationPoolMismatch)
     , (f.pool.configCid, otherPool.stateCid, eStatePoolMismatch)
@@ -58,5 +63,6 @@ settlementRejectsMismatchedComponents = script do
       queryContractId f.parties.dvo f.pool.stateCid >>= (=== Some state)
       queryContractId f.parties.dvo f.pool.configCid >>= (=== Some config)
       availableBalance trader f.route.quoteToken.instrument >>= (=== 0.0)
+  -- Settle the same request with the original components.
   _ <- settle f f.pool.stateCid "valid-components" [request]
   pure ()

@@ -1,3 +1,4 @@
+-- | Tests reserve holding counts across batches and the trader's input holding limit.
 module HoldingBoundsTests where
 
 import DA.Assert ((===))
@@ -16,9 +17,11 @@ import Splice.Api.Token.AllocationV2 qualified as A
 
 sameDirectionBatchesPreserveBacking : Script ()
 sameDirectionBatchesPreserveBacking = script do
+  -- Run three batches of five swaps in the same direction.
   f <- setup ()
   trader <- allocateParty "RepeatedTrader"
   stateCid <- repeatBatches f trader f.pool.stateCid [1, 2, 3]
+  -- Check reserves stay backed, holdings stay bounded and token totals are conserved.
   state <- assertBacking f stateCid
   state.baseReserve === 1012.0
   assertMsg "base holdings remain bounded" (length state.baseHoldingCids <= 2)
@@ -39,6 +42,7 @@ repeatBatches f trader stateCid (batch :: remaining) = do
 
 traderInputLimitUsesDistinctRealHoldings : Script ()
 traderInputLimitUsesDistinctRealHoldings = script do
+  -- Fund the trader with seventeen separate input holdings.
   f <- setup ()
   trader <- allocateParty "ManyHoldingsTrader"
   (_, accessCid) <- accessFixture f.parties.venueOperator trader f.pool.poolCid
@@ -52,9 +56,11 @@ traderInputLimitUsesDistinctRealHoldings = script do
         route = f.route; terms; requestedAt; inputHoldingCids = inputs
         inputAllocationArgs = emptyArgs; outputAllocationArgs = emptyArgs
   disclosures <- rulesDisclosures f
+  -- Reject all seventeen inputs without locking any funds.
   submitFailsWith eSwapInputHoldingLimit (actAs trader <> discloseMany disclosures) $
     exerciseCmd accessCid preparation
   availableBalance trader f.route.baseToken.instrument >>= (=== 17.0)
+  -- Accept sixteen inputs and leave the remaining holding spendable.
   request <- submit (actAs trader <> discloseMany disclosures) $
     exerciseCmd accessCid (preparation with
       terms = (terms with requestId = "sixteen-inputs"; amountIn = 16.0)

@@ -3,15 +3,10 @@ module Lib.Swap where
 
 import Errors
 import DA.Assert (assertWithinDeadline)
-import DA.Date (date, Month(Jan))
-import DA.Numeric qualified as Numeric
-import DA.Time (time, subTime, convertRelTimeToMicroseconds)
-import DA.Text qualified as Text
-import DA.TextMap qualified as TextMap
 import Splice.Api.Token.AllocationV2 qualified as A
 import Splice.Api.Token.HoldingV2 qualified as H
-import Splice.Api.Token.MetadataV1 (ExtraArgs, Metadata, emptyMetadata)
-import Splice.TokenStandard.Utils (basicAccount, senderSide, receiverSide, toAnyContractId, nonIteratedAllocation)
+import Splice.Api.Token.MetadataV1 (ExtraArgs, emptyMetadata)
+import Splice.TokenStandard.Utils (basicAccount, senderSide, receiverSide, toAnyContractId)
 import Lib.Math
 import Lib.Tokens
 
@@ -67,16 +62,9 @@ data SwapResult = SwapResult with
     quoteHoldingCids : [ContractId H.Holding]
   deriving (Eq, Show)
 
-maxSwapInputHoldings : Int
-maxSwapInputHoldings = 16
-
 -- | Require a request ID, positive input and a nonnegative minimum output.
 validTerms : SwapTerms -> Bool
 validTerms terms = terms.requestId /= "" && terms.amountIn > 0.0 && terms.minOut >= 0.0
-
--- | Accept nonnegative amounts at the token's configured precision.
-validAmount : Token -> Decimal -> Bool
-validAmount token amount = amount >= 0.0 && quantized token amount
 
 -- | Return the tokens and pool accounts in the requested swap direction.
 directionRoute : SwapRoute pool -> SwapDirection -> (Token, Token, H.Account, H.Account)
@@ -88,10 +76,8 @@ directionRoute route direction = case direction of
 -- Fixed decimal units and epoch microseconds keep this encoding consistent across clients.
 settlementId : SwapTerms -> Text
 settlementId terms =
-  let units amount = Text.takeWhile (/= ".") (show (Numeric.shift @0 amount))
-      deadline = convertRelTimeToMicroseconds (terms.settlementDeadline `subTime` time (date 1970 Jan 1) 0 0 0)
-  in "swap:" <> terms.requestId <> ":" <> show terms.direction <> ":" <> units terms.amountIn
-      <> ":" <> units terms.minOut <> ":" <> show deadline
+  "swap:" <> terms.requestId <> ":" <> show terms.direction <> ":" <> amountText terms.amountIn
+    <> ":" <> amountText terms.minOut <> ":" <> deadlineText terms.settlementDeadline
 
 -- | Bind both allocations to this pool, complete swap terms and executor pair.
 swapSettlement : SwapRoute pool -> SwapTerms -> A.SettlementInfo
@@ -104,11 +90,6 @@ inputLeg : SwapRoute pool -> Party -> SwapTerms -> A.TransferLeg
 inputLeg route trader terms =
   let (token, _, poolInput, _) = directionRoute route terms.direction
   in transferLeg "input" (basicAccount trader) poolInput token terms.amountIn
-
--- | Construct a standard token transfer leg without DEX-specific metadata.
-transferLeg : Text -> H.Account -> H.Account -> Token -> Decimal -> A.TransferLeg
-transferLeg transferLegId sender receiver token amount = A.TransferLeg with
-  transferLegId; sender; receiver; amount; instrumentId = token.instrument.id; meta = emptyMetadata
 
 -- | Price and settle one previously locked request, verifying the resulting reserve deltas.
 -- Signed funding and metadata bind the request; finalization supplies the complete transfer legs.
@@ -126,9 +107,9 @@ settleRequest route feeBps baseReserve quoteReserve baseHoldings quoteHoldings b
       input = inputLeg route request.trader terms
       output = transferLeg "output" poolOutput (basicAccount request.trader) outputToken amountOut
   validateSettlementRequest route request amountOut
-  checkSwapAllocation inputToken settlement (basicAccount request.trader) terms.settlementDeadline
+  checkAllocation inputToken settlement (basicAccount request.trader) terms.settlementDeadline
     [] (iterationFunding inputToken terms.amountIn) (minimumMetadata minOutKey terms.minOut) request.inputAllocation
-  checkSwapAllocation outputToken settlement (basicAccount request.trader) terms.settlementDeadline
+  checkAllocation outputToken settlement (basicAccount request.trader) terms.settlementDeadline
     [] (iterationFunding outputToken 0.0) emptyMetadata request.outputAllocation
   requestedAt <- getTime
   -- Include existing reserves so the registry consolidates unused inputs.
@@ -136,8 +117,10 @@ settleRequest route feeBps baseReserve quoteReserve baseHoldings quoteHoldings b
     [receiverSide input] None emptyMetadata inputHoldings batchRequest.poolInputAllocationArgs
   (poolOutputAllocation, outputChange) <- allocate outputToken settlement poolOutput requestedAt terms.settlementDeadline
     [senderSide output] None emptyMetadata outputHoldings batchRequest.poolOutputAllocationArgs
-  receivedInput <- settleSwapLeg inputToken settlement [input] request.inputAllocation [senderSide input] poolInputAllocation batchRequest.inputSettlementArgs
-  receivedOutput <- settleSwapLeg outputToken settlement [output] request.outputAllocation [receiverSide output] poolOutputAllocation batchRequest.outputSettlementArgs
+  (_, receivedInput) <- settlePair inputToken settlement [input] request.inputAllocation [senderSide input]
+    poolInputAllocation [] batchRequest.inputSettlementArgs
+  (_, receivedOutput) <- settlePair outputToken settlement [output] request.outputAllocation [receiverSide output]
+    poolOutputAllocation [] batchRequest.outputSettlementArgs
   let nextInput = inputChange <> receivedInput
       nextOutput = outputChange <> receivedOutput
   inputTotal <- holdingTotal inputToken poolInput nextInput
@@ -159,7 +142,7 @@ validateSettlementRequest route request amountOut = do
   assertMsg eInvalidSwapTerms (validTerms terms)
   requireTraderDistinct route request.trader
   assertWithinDeadline settlementDeadlineLabel terms.settlementDeadline
-  assertMsg eInvalidSignedAmountPrecision (validAmount inputToken terms.amountIn && validAmount outputToken terms.minOut)
+  assertMsg eInvalidSignedAmountPrecision (quantized inputToken terms.amountIn && quantized outputToken terms.minOut)
   assertMsg eSwapBelowMinimumOutput (amountOut > 0.0 && amountOut >= terms.minOut)
 
 -- | Input/output holdings must reflect exactly the amounts traded.
@@ -172,39 +155,3 @@ validateReserveDeltas terms amountOut (reserveIn, reserveOut) (inputTotal, outpu
 requireTraderDistinct : SwapRoute pool -> Party -> Update ()
 requireTraderDistinct route trader =
   assertMsg eTraderIsPoolExecutor (trader /= route.dvo && trader /= route.venueOperator)
-
--- | Require a fresh trader allocation matching the expected settlement and terms.
--- Match the signed funding, minimum metadata and any fixed legs.
-checkSwapAllocation : Token -> A.SettlementInfo -> H.Account -> Time
-  -> [A.TransferLegSide] -> Optional (TextMap.TextMap Decimal) -> Metadata -> ContractId A.Allocation -> Update ()
-checkSwapAllocation token settlement account deadline sides reserve meta cid = do
-  a <- view <$> fetch cid
-  assertMsg eAllocationSettlementMismatch (a.settlement == settlement)
-  assertMsg eAllocationTermsMismatch
-    (a.allocation == allocationSpec token account deadline sides reserve meta)
-  assertMsg eAllocationAlreadyIterated (a.numIterations == 0)
-
--- | Settle one token's transfer legs and return the pool holdings produced by settlement.
--- Both allocations must finish with no continuation.
-settleSwapLeg : Token -> A.SettlementInfo -> [A.TransferLeg] -> ContractId A.Allocation
-  -> [A.TransferLegSide] -> ContractId A.Allocation -> ExtraArgs -> Update [ContractId H.Holding]
-settleSwapLeg token settlement legs traderAllocation extraSides poolAllocation extraArgs = do
-  let traderFinal = A.FinalizedAllocation with
-        allocationCid = traderAllocation
-        extraTransferLegSides = extraSides
-        nextIterationFunding = None
-  result <- exercise token.settlementFactory A.SettlementFactory_SettleBatch with
-    settlement; transferLegs = legs
-    allocations =
-      [traderFinal, nonIteratedAllocation poolAllocation]
-    actors = settlement.executors; extraArgs
-  requireSettledHoldings result.allocationSettleResults
-
--- | Both allocations must finish; only the pool's resulting holdings back reserves.
-requireSettledHoldings : [A.AllocationResult] -> Update [ContractId H.Holding]
-requireSettledHoldings results = case results of
-  [traderResult, poolResult] -> do
-    assertMsg eTraderAllocationIncomplete (traderResult.output == A.AllocationResult_Settled None)
-    assertMsg ePoolAllocationIncomplete (poolResult.output == A.AllocationResult_Settled None)
-    pure (concatMap snd (TextMap.toList poolResult.authorizerHoldingCids))
-  _ -> abort eUnexpectedSettlementResults

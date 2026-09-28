@@ -55,7 +55,7 @@ template VenueDelegation
         requests : [DepositSettlementRequest]
       controller venueOperator
       do
-        validateLiquidityDelegation this
+        validatePoolAuthority this
         forA_ requests $ \item ->
           validateRequestAccess this item.request.request.trader item.accessCid
         exercise poolCid Pool_AddLiquidity with configCid; stateCid; requests = map (.request) requests
@@ -68,7 +68,7 @@ template VenueDelegation
         requests : [WithdrawalSettlementRequest]
       controller venueOperator
       do
-        validateLiquidityDelegation this
+        validatePoolAuthority this
         forA_ requests $ \item ->
           validateRequestAccess this item.request.request.trader item.accessCid
         exercise poolCid Pool_WithdrawLiquidity with configCid; stateCid; requests = map (.request) requests
@@ -81,9 +81,7 @@ template VenueDelegation
 -- | Match the pool authority and every trader's active access before delegation.
 validateDelegatedRequests : VenueDelegation -> [SettlementRequest] -> Update ()
 validateDelegatedRequests delegation requests = do
-  pool <- fetch delegation.poolCid
-  assertMsg eDelegationAuthorityMismatch
-    (pool.dvo == delegation.dvo && pool.venueOperator == delegation.venueOperator)
+  validatePoolAuthority delegation
   forA_ requests $ \item ->
     validateRequestAccess delegation item.request.request.trader item.accessCid
 
@@ -95,7 +93,7 @@ validateRequestAccess delegation trader accessCid = do
       && access.venueOperator == delegation.venueOperator)
   validateAttestation access
 
-validateLiquidityDelegation : VenueDelegation -> Update ()
-validateLiquidityDelegation delegation = do
+validatePoolAuthority : VenueDelegation -> Update ()
+validatePoolAuthority delegation = do
   pool <- fetch delegation.poolCid
   assertMsg eDelegationAuthorityMismatch (pool.dvo == delegation.dvo && pool.venueOperator == delegation.venueOperator)

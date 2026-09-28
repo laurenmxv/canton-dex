@@ -266,10 +266,10 @@ settleDeposits pool poolCid initialRatio state (item :: rest) = do
       settlement = liquiditySettlement route (depositId terms)
   validateDepositAmounts initialRatio state.baseReserve state.quoteReserve terms outcome
   baseHoldingCids <- settleDepositAsset pool.baseToken pool.baseAccount request.trader settlement terms.settlementDeadline "base"
-    terms.maxBaseAmount outcome.baseRefund state.baseReserve state.baseHoldingCids request.baseAllocation
+    terms.maxBaseAmount outcome.baseAmount state.baseReserve state.baseHoldingCids request.baseAllocation
     tokenArgs.baseAllocationArgs tokenArgs.baseSettlementArgs
   quoteHoldingCids <- settleDepositAsset pool.quoteToken pool.quoteAccount request.trader settlement terms.settlementDeadline "quote"
-    terms.maxQuoteAmount outcome.quoteRefund state.quoteReserve state.quoteHoldingCids request.quoteAllocation
+    terms.maxQuoteAmount outcome.quoteAmount state.quoteReserve state.quoteHoldingCids request.quoteAllocation
     tokenArgs.quoteAllocationArgs tokenArgs.quoteSettlementArgs
   settleMint route request outcome.lpAmount tokenArgs.lpAllocationArgs tokenArgs.lpSettlementArgs
   let next = state with
@@ -289,7 +289,6 @@ liquidityRoute : Pool -> ContractId Pool -> LiquidityRoute Pool
 liquidityRoute pool poolCid = LiquidityRoute with
   poolCid; dvo = pool.dvo; venueOperator = pool.venueOperator
   baseToken = pool.baseToken; quoteToken = pool.quoteToken; lpToken = pool.lpToken
-  baseAccount = pool.baseAccount; quoteAccount = pool.quoteAccount
 
 settleWithdrawals : Pool -> ContractId Pool -> PoolState -> [WithdrawalBatchRequest Pool]
   -> Update (PoolState, [ContractId LiquidityReceipt], [WithdrawalOutcome])
@@ -302,8 +301,7 @@ settleWithdrawals pool poolCid state (item :: rest) = do
   assertMsg "withdrawal pool mismatch" (request.poolCid == poolCid)
   validateLiquidityTrader route request.trader
   validateWithdrawalTerms route terms
-  assertMsg "withdrawal exceeds circulating LP supply" (state.lpTokenSupply > minimumLiquidity
-    && terms.lpAmount <= state.lpTokenSupply - minimumLiquidity)
+  assertMsg "withdrawal exceeds circulating LP supply" (terms.lpAmount <= state.lpTokenSupply - minimumLiquidity)
   let outcome = withdrawalAmounts route state.baseReserve state.quoteReserve state.lpTokenSupply terms
       settlement = liquiditySettlement route (withdrawalId terms)
   assertMsg eWithdrawalBelowMinimumOutput (outcome.baseAmount > 0.0 && outcome.quoteAmount > 0.0

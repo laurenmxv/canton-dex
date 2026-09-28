@@ -9,7 +9,7 @@ export interface DamlName {
   readonly entity: string;
 }
 
-export const DEX_PACKAGE_ID = 'e9dd09a87b60db79a78d0992977435635742839b35b7d1180b95c8eb97e59803';
+export const DEX_PACKAGE_ID = '58899fa98fa85bdcf2d5db331c6ecde86bb760d07f84103a5dc5f2f13dd19c98';
 export const TOKEN_PACKAGE_ID = 'dbb1f220559dd1d2e505a56449ded609f5f49708678316cf74fc37760da27f6a';
 export const FAUCET_PACKAGE_ID = '6ea3cea5bef9bba35b5b136ad368cdc5a3cd70ab134387812c42770e4d3c7b91';
 const HOLDING_PACKAGE_ID = 'dcf74571dd11e678637924e9f10a61a15727801c83c0f21d3218656b7e6039f8';

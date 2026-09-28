@@ -2,10 +2,12 @@
 module Lib.Tokens where
 
 import Errors
+import DA.Date (date, Month(Jan))
 import DA.List (dedup)
 import DA.Numeric qualified as Numeric
 import DA.Text qualified as Text
 import DA.TextMap qualified as TextMap
+import DA.Time (time, subTime, convertRelTimeToMicroseconds)
 import Splice.Api.Token.AllocationV2 qualified as A
 import Splice.Api.Token.AllocationInstructionV2 qualified as AI
 import Splice.Api.Token.HoldingV2 qualified as H
@@ -23,6 +25,9 @@ data Token = Token with
 -- | Empty context and metadata, for issuers that require neither.
 emptyArgs : ExtraArgs
 emptyArgs = ExtraArgs with context = emptyChoiceContext; meta = emptyMetadata
+
+maxInputHoldings : Int
+maxInputHoldings = 16
 
 -- | Require supported precision and factories with the same admin as the instrument.
 validateToken : Party -> Token -> Update ()
@@ -69,6 +74,13 @@ minBaseOutKey = metadataPrefix <> "min-base-out-amount"
 minQuoteOutKey : Text
 minQuoteOutKey = metadataPrefix <> "min-quote-out-amount"
 
+-- | Fixed units make the signed settlement binding independent of decimal formatting.
+amountText : Decimal -> Text
+amountText amount = Text.takeWhile (/= ".") (show (Numeric.shift @0 amount))
+
+deadlineText : Time -> Text
+deadlineText deadline = show (convertRelTimeToMicroseconds (deadline `subTime` time (date 1970 Jan 1) 0 0 0))
+
 -- | Canonical decimal minima, checked against the signed request before settlement.
 minimumMetadata : Text -> Decimal -> Metadata
 minimumMetadata key amount =
@@ -88,6 +100,21 @@ allocationSpec token authorizer deadline transferLegSides nextIterationFunding m
   admin = token.instrument.admin; authorizer; transferLegSides; nextIterationFunding
   settlementDeadline = Some deadline; committed = True; meta
 
+-- | Construct a standard token transfer leg without DEX-specific metadata.
+transferLeg : Text -> H.Account -> H.Account -> Token -> Decimal -> A.TransferLeg
+transferLeg transferLegId sender receiver token amount = A.TransferLeg with
+  transferLegId; sender; receiver; amount; instrumentId = token.instrument.id; meta = emptyMetadata
+
+-- | Match a fresh allocation against its signed settlement, funding, metadata and fixed legs.
+checkAllocation : Token -> A.SettlementInfo -> H.Account -> Time
+  -> [A.TransferLegSide] -> Optional (TextMap.TextMap Decimal) -> Metadata -> ContractId A.Allocation -> Update ()
+checkAllocation token settlement account deadline sides reserve meta cid = do
+  a <- view <$> fetch cid
+  assertMsg eAllocationSettlementMismatch (a.settlement == settlement)
+  assertMsg eAllocationTermsMismatch
+    (a.allocation == allocationSpec token account deadline sides reserve meta)
+  assertMsg eAllocationAlreadyIterated (a.numIterations == 0)
+
 -- | Allocate through the issuer factory and return the allocation plus change holdings.
 -- Abort unless allocation completes synchronously.
 allocate : Token -> A.SettlementInfo -> H.Account -> Time -> Time
@@ -105,3 +132,21 @@ requireCompletedAllocation : AI.AllocationInstructionResult_Output -> Update (Co
 requireCompletedAllocation output = case output of
   AI.AllocationInstructionResult_Completed cid -> pure cid
   _ -> abort eTokenAllocationIncomplete
+
+-- | Settle exactly two allocations without continuations; return trader and pool holdings in order.
+settlePair : Token -> A.SettlementInfo -> [A.TransferLeg] -> ContractId A.Allocation -> [A.TransferLegSide]
+  -> ContractId A.Allocation -> [A.TransferLegSide] -> ExtraArgs -> Update ([ContractId H.Holding], [ContractId H.Holding])
+settlePair token settlement legs traderCid extraSides poolCid poolSides extraArgs = do
+  result <- exercise token.settlementFactory A.SettlementFactory_SettleBatch with
+    settlement; transferLegs = legs; actors = settlement.executors; extraArgs
+    allocations =
+      [ A.FinalizedAllocation with allocationCid = traderCid; extraTransferLegSides = extraSides; nextIterationFunding = None
+      , A.FinalizedAllocation with allocationCid = poolCid; extraTransferLegSides = poolSides; nextIterationFunding = None
+      ]
+  case result.allocationSettleResults of
+    [traderResult, poolResult] -> do
+      assertMsg eTraderAllocationIncomplete (traderResult.output == A.AllocationResult_Settled None)
+      assertMsg ePoolAllocationIncomplete (poolResult.output == A.AllocationResult_Settled None)
+      pure (concatMap snd (TextMap.toList traderResult.authorizerHoldingCids),
+        concatMap snd (TextMap.toList poolResult.authorizerHoldingCids))
+    _ -> abort eUnexpectedSettlementResults

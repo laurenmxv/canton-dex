@@ -129,13 +129,13 @@ validateSwapRequest access route terms requestedAt inputHoldingCids = do
   assertMsg eSwapRouteMismatch (route.poolCid == access.poolCid && route.venueOperator == access.venueOperator)
   assertMsg eInvalidSwapTerms (validTerms terms && requestedAt < terms.settlementDeadline)
   requireTraderDistinct route access.trader
-  assertMsg eSwapInputHoldingLimit (length inputHoldingCids <= maxSwapInputHoldings)
+  assertMsg eSwapInputHoldingLimit (length inputHoldingCids <= maxInputHoldings)
   assertWithinDeadline settlementDeadlineLabel terms.settlementDeadline
   validateToken access.trader route.baseToken
   validateToken access.trader route.quoteToken
   let (inputToken, outputToken, _, _) = directionRoute route terms.direction
-  assertMsg eInvalidInputAmount (validAmount inputToken terms.amountIn)
-  assertMsg eInvalidMinimumOutput (validAmount outputToken terms.minOut)
+  assertMsg eInvalidInputAmount (quantized inputToken terms.amountIn)
+  assertMsg eInvalidMinimumOutput (quantized outputToken terms.minOut)
 
 -- Before accepting a request, check that its KYC attestation is still active,
 -- was issued by this operator, and covers this trader and pool.

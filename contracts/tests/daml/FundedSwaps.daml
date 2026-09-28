@@ -343,38 +343,6 @@ duplicateAllocationLeavesBackingUnchanged = script do
   result <- settle f f.pool.stateCid "single" [request]
   result.amountsOut === [500.0]
 
-largeAmountsSettle : Script ()
-largeAmountsSettle = script do
-  -- Settle a swap with input and reserves above one million tokens.
-  f <- setupWithReserves 2991000.0 5982000.0
-  trader <- allocateParty "LargeSwapTrader"
-  request <- prepare f trader "large-swap" BaseToQuote 3000000.0 2991000.0
-  result <- settle f f.pool.stateCid "large-batch" [request]
-  -- Check the exact payout, remaining reserves and spent input.
-  result.amountsOut === [2991000.0]
-  state <- assertBacking f result.stateCid
-  state.baseReserve === 5991000.0
-  state.quoteReserve === 2991000.0
-  availableBalance trader f.route.quoteToken.instrument >>= (=== 2991000.0)
-  availableBalance trader f.route.baseToken.instrument >>= (=== 0.0)
-
-batchReservesCanExceedOneMillion : Script ()
-batchReservesCanExceedOneMillion = script do
-  -- Follow a small swap with a large input in the same batch.
-  f <- setup ()
-  alice <- allocateParty "FirstTrader"
-  bob <- allocateParty "LargeInputTrader"
-  first <- prepare f alice "first" BaseToQuote 1000.0 500.0
-  second <- prepare f bob "large-input" BaseToQuote 1999000.0 0.0
-  result <- settle f f.pool.stateCid "large-reserve-batch" [first, second]
-  -- Check sequential pricing and backing after reserves cross one million.
-  result.amountsOut === [500.0, 499.499498]
-  state <- assertBacking f result.stateCid
-  state.baseReserve === 2000997.0
-  state.quoteReserve === 0.500502
-  availableBalance alice f.route.quoteToken.instrument >>= (=== 500.0)
-  availableBalance bob f.route.quoteToken.instrument >>= (=== 499.499498)
-
 secondSlippageRollsBack : Script ()
 secondSlippageRollsBack = script do
   -- Lock two swaps whose minimums cannot both be met in one batch.

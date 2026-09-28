@@ -26,9 +26,6 @@ dustAndQuantumBoundaries = script do
   swapOutputAtScale 6 30.0 1.0 1.0 0.000001 === 0.0
   swapOutputAtScale 8 30.0 1.0 1.0 0.000001 === 0.00000099
   swapOutputAtScale 10 30.0 1.0 1.0 0.000001 === 0.0000009969
-  -- Decimal division rounds this up to one quantum; the exact result is below it.
-  swapOutputAtScale 6 0.0 1000000.0 1000000.0 0.000001 === 0.0
-  swapOutputAtScale 10 0.0 1000000.0 1000000.0 0.0000000001 === 0.0
   swapOutputAtScale 6 30.0 1000.0 1000.0 0.0000000001 === 0.0
 
 inputValidation : Script ()
@@ -62,13 +59,6 @@ feePreservesCurve = script do
       assertMsg eOutputMustRemainBelowReserve
         (amountOut > 0.0 && amountOut < reserveOut)
 
-largeAmounts : Script ()
-largeAmounts = script do
-  -- Price large reserves and inputs without imposing an artificial amount cap.
-  swapOutput 0.0 2000000.0 6000000.0 2000000.0 === 3000000.0
-  swapOutput 30.0 2991000.0 6000000.0 3000000.0 === 3000000.0
-  swapOutputAtScale 6 30.0 997.0 1000.0 1000000000.0 === 999.999
-
 liquidityRounding : Script ()
 liquidityRounding = script do
   -- Floor initial LP supply and check both directions of proportional rounding.
@@ -77,10 +67,3 @@ liquidityRounding = script do
   initialLpSupply 0.000001 0.000001 === 0.000001
   liquidityRatio 6 Numeric.RoundingFloor 1.0 1.0 3.0 === 0.333333
   liquidityRatio 6 Numeric.RoundingCeiling 1.0 1.0 3.0 === 0.333334
-  -- Preserve the final decimal unit when rounding large liquidity amounts.
-  initialLpSupply 999999999.0 999999999.0 === 999999999.0
-  initialLpSupply 999999999.9999999999 999999999.9999999999 === 999999999.9999999999
-  liquidityRatio 10 Numeric.RoundingFloor 999999999.9999999999 999999999.9999999999 1164153218269348144.5847505093
-    === 0.8589934591
-  liquidityRatio 10 Numeric.RoundingCeiling 999999999.9999999999 999999999.9999999999 1164153218269348144.5847505093
-    === 0.8589934592

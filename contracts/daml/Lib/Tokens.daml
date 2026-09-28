@@ -74,14 +74,15 @@ minBaseOutKey = metadataPrefix <> "min-base-out-amount"
 minQuoteOutKey : Text
 minQuoteOutKey = metadataPrefix <> "min-quote-out-amount"
 
--- | Fixed units make the signed settlement binding independent of decimal formatting.
+-- | Encode an amount as integer units of 10^-10 for settlement IDs independent of decimal formatting.
 amountText : Decimal -> Text
 amountText amount = Text.takeWhile (/= ".") (show (Numeric.shift @0 amount))
 
+-- | Encode the deadline as Unix-epoch microseconds for stable settlement IDs across clients.
 deadlineText : Time -> Text
 deadlineText deadline = show (convertRelTimeToMicroseconds (deadline `subTime` time (date 1970 Jan 1) 0 0 0))
 
--- | Canonical decimal minima, checked against the signed request before settlement.
+-- | Store a minimum output amount as canonical decimal text in allocation metadata.
 minimumMetadata : Text -> Decimal -> Metadata
 minimumMetadata key amount =
   let value = case Text.splitOn "." (show amount) of
@@ -89,11 +90,11 @@ minimumMetadata key amount =
         _ -> show amount
   in Metadata with values = TextMap.singleton key value
 
--- | Empty funding permits receipt; positive funding reserves the exact spending budget.
+-- | Build the next-iteration funding map: zero permits receipt; positive amounts set a spending budget.
 iterationFunding : Token -> Decimal -> Optional (TextMap.TextMap Decimal)
 iterationFunding token amount = Some (if amount == 0.0 then TextMap.empty else TextMap.singleton token.instrument.id amount)
 
--- | Build a committed allocation with a deadline and the supplied legs and funding.
+-- | Build the terms of a committed allocation: account, deadline, transfer legs and funding limits.
 allocationSpec : Token -> H.Account -> Time -> [A.TransferLegSide]
   -> Optional (TextMap.TextMap Decimal) -> Metadata -> A.AllocationSpecification
 allocationSpec token authorizer deadline transferLegSides nextIterationFunding meta = A.AllocationSpecification with
@@ -128,12 +129,13 @@ allocate token settlement authorizer requestedAt deadline sides reserve meta inp
   cid <- requireCompletedAllocation result.output
   pure (cid, concatMap snd (TextMap.toList result.authorizerChangeCids))
 
+-- | Require synchronous allocation completion so settlement can use the returned contract immediately.
 requireCompletedAllocation : AI.AllocationInstructionResult_Output -> Update (ContractId A.Allocation)
 requireCompletedAllocation output = case output of
   AI.AllocationInstructionResult_Completed cid -> pure cid
   _ -> abort eTokenAllocationIncomplete
 
--- | Settle exactly two allocations without continuations; return trader and pool holdings in order.
+-- | Settle two allocations without continuations and return each authorizer's holdings in input order.
 settlePair : Token -> A.SettlementInfo -> [A.TransferLeg] -> ContractId A.Allocation -> [A.TransferLegSide]
   -> ContractId A.Allocation -> [A.TransferLegSide] -> ExtraArgs -> Update ([ContractId H.Holding], [ContractId H.Holding])
 settlePair token settlement legs traderCid extraSides poolCid poolSides extraArgs = do

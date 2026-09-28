@@ -153,6 +153,7 @@ template PoolState
           && null baseHoldingCids && null quoteHoldingCids)
         || (baseReserve > 0.0 && quoteReserve > 0.0 && lpTokenSupply >= minimumLiquidity))
 
+-- | Cap the number of requests settled atomically in one pool transaction.
 maxSettlementBatchSize : Int
 maxSettlementBatchSize = 20
 
@@ -164,6 +165,7 @@ validateBatch batchId requests = do
   let allocationCids = concatMap (\item -> [item.request.inputAllocation, item.request.outputAllocation]) requests
   assertMsg eDuplicateAllocation (length allocationCids == length (dedup allocationCids))
 
+-- | Reject empty or oversized batches and reused allocations; an initial deposit must settle alone.
 validateDepositBatch : [DepositBatchRequest pool] -> Update ()
 validateDepositBatch requests = do
   assertMsg eInvalidBatchSize (not (null requests) && length requests <= maxSettlementBatchSize)
@@ -173,6 +175,7 @@ validateDepositBatch requests = do
         [item.request.baseAllocation, item.request.quoteAllocation, item.request.lpAllocation]) requests
   assertMsg eDuplicateAllocation (length allocationCids == length (dedup allocationCids))
 
+-- | Require a nonempty, bounded withdrawal batch with no allocation reused across requests or legs.
 validateWithdrawalBatch : [WithdrawalBatchRequest pool] -> Update ()
 validateWithdrawalBatch requests = do
   assertMsg eInvalidBatchSize (not (null requests) && length requests <= maxSettlementBatchSize)
@@ -180,6 +183,7 @@ validateWithdrawalBatch requests = do
         [item.request.baseAllocation, item.request.quoteAllocation, item.request.lpAllocation]) requests
   assertMsg eDuplicateAllocation (length allocationCids == length (dedup allocationCids))
 
+-- | Reject swap fees outside the allowed whole-basis-point range before replacing the configuration.
 requireValidFee : Decimal -> Update ()
 requireValidFee feeBps = assertMsg eInvalidFee (validFee feeBps)
 
@@ -249,6 +253,8 @@ data AddLiquidityBatchResult = AddLiquidityBatchResult with
     outcomes : [DepositOutcome]
   deriving (Eq, Show)
 
+-- | Settle deposits in order, mint LP tokens and record receipts against the updated reserves.
+-- The caller persists the final state; the first deposit also locks the minimum LP supply.
 settleDeposits : Pool -> ContractId Pool -> Decimal -> PoolState -> [DepositBatchRequest Pool]
   -> Update (PoolState, [ContractId LiquidityReceipt], [DepositOutcome])
 settleDeposits _ _ _ state [] = pure (state, [], [])
@@ -285,11 +291,14 @@ settleDeposits pool poolCid initialRatio state (item :: rest) = do
   (finalState, receipts, outcomes) <- settleDeposits pool poolCid initialRatio next rest
   pure (finalState, receipt :: receipts, outcome :: outcomes)
 
+-- | Pass the pool identity, settlement parties and three token configurations to liquidity helpers.
 liquidityRoute : Pool -> ContractId Pool -> LiquidityRoute Pool
 liquidityRoute pool poolCid = LiquidityRoute with
   poolCid; dvo = pool.dvo; venueOperator = pool.venueOperator
   baseToken = pool.baseToken; quoteToken = pool.quoteToken; lpToken = pool.lpToken
 
+-- | Settle withdrawals in order, pay out reserves, burn LP tokens and record receipts.
+-- Keep the minimum LP supply locked and return the final state for the caller to persist.
 settleWithdrawals : Pool -> ContractId Pool -> PoolState -> [WithdrawalBatchRequest Pool]
   -> Update (PoolState, [ContractId LiquidityReceipt], [WithdrawalOutcome])
 settleWithdrawals _ _ state [] = pure (state, [], [])

@@ -98,25 +98,30 @@ data WithdrawalOutcome = WithdrawalOutcome with
 data LiquidityOutcome = LiquidityDeposited DepositOutcome | LiquidityWithdrawn WithdrawalOutcome
   deriving (Eq, Show)
 
+-- | Encode deposit limits, mode and deadline into the ID shared by its three allocations.
 depositId : DepositTerms -> Text
 depositId t = "deposit:" <> t.requestId <> ":" <> show t.mode <> ":"
   <> Text.intercalate ":" (map amountText [t.maxBaseAmount, t.maxQuoteAmount, t.minLpOut, t.minRatio, t.maxRatio])
   <> ":" <> deadlineText t.settlementDeadline
 
+-- | Encode LP input, minimum payouts and deadline into the ID shared by withdrawal allocations.
 withdrawalId : WithdrawalTerms -> Text
 withdrawalId t = "withdrawal:" <> t.requestId <> ":"
   <> Text.intercalate ":" (map amountText [t.lpAmount, t.minBaseOut, t.minQuoteOut])
   <> ":" <> deadlineText t.settlementDeadline
 
+-- | Build settlement details linking the pool, encoded request terms and both required executors.
 liquiditySettlement : LiquidityRoute pool -> Text -> A.SettlementInfo
 liquiditySettlement route id = A.SettlementInfo with
   executors = [route.dvo, route.venueOperator]; id
   cid = Some (toAnyContractId route.poolCid); meta = emptyMetadata
 
+-- | Reject liquidity requests from either executor so trader and pool roles remain distinct.
 validateLiquidityTrader : LiquidityRoute pool -> Party -> Update ()
 validateLiquidityTrader route trader =
   assertMsg "liquidity trader must differ from pool executors" (trader /= route.dvo && trader /= route.venueOperator)
 
+-- | Reject invalid deposit limits, ratio bounds, token precision or expired deadlines.
 validateDepositTerms : LiquidityRoute pool -> DepositTerms -> Update ()
 validateDepositTerms route t = do
   assertMsg "invalid deposit terms" (t.requestId /= "" && t.maxBaseAmount > 0.0 && t.maxQuoteAmount > 0.0
@@ -125,6 +130,7 @@ validateDepositTerms route t = do
     && quantized route.quoteToken t.maxQuoteAmount && quantized route.lpToken t.minLpOut)
   assertWithinDeadline "liquidity settlement deadline" t.settlementDeadline
 
+-- | Require positive LP input, nonnegative minimum payouts, correct token precision and a live deadline.
 validateWithdrawalTerms : LiquidityRoute pool -> WithdrawalTerms -> Update ()
 validateWithdrawalTerms route t = do
   assertMsg "invalid withdrawal terms" (t.requestId /= "" && t.lpAmount > 0.0 && t.minBaseOut >= 0.0 && t.minQuoteOut >= 0.0)
@@ -132,10 +138,12 @@ validateWithdrawalTerms route t = do
     && quantized route.baseToken t.minBaseOut && quantized route.quoteToken t.minQuoteOut)
   assertWithinDeadline "liquidity settlement deadline" t.settlementDeadline
 
+-- | Require a nonempty, bounded list of distinct holdings before reserving liquidity inputs.
 validateLiquidityInputs : [ContractId H.Holding] -> Update ()
 validateLiquidityInputs cids = assertMsg "invalid liquidity input holdings"
   (not (null cids) && length cids <= maxInputHoldings && length cids == length (dedup cids))
 
+-- | Lock the trader's maximum base and quote deposits and authorize LP receipt under the same terms.
 requestDeposit : LiquidityRoute pool -> Party -> DepositTerms -> Time
   -> [ContractId H.Holding] -> [ContractId H.Holding] -> ExtraArgs -> ExtraArgs -> ExtraArgs
   -> Update (DepositRequest pool)
@@ -156,6 +164,7 @@ requestDeposit route trader terms requestedAt baseInputs quoteInputs baseArgs qu
     [] (iterationFunding route.lpToken 0.0) (minimumMetadata minLpOutKey terms.minLpOut) [] lpArgs
   pure DepositRequest with poolCid = route.poolCid; trader; terms; baseAllocation; quoteAllocation; lpAllocation
 
+-- | Lock LP tokens for burning and authorize base/quote receipts with the trader's signed minimums.
 requestWithdrawal : LiquidityRoute pool -> Party -> WithdrawalTerms -> Time
   -> [ContractId H.Holding] -> ExtraArgs -> ExtraArgs -> ExtraArgs -> Update (WithdrawalRequest pool)
 requestWithdrawal route trader terms requestedAt lpInputs baseArgs quoteArgs lpArgs = do
@@ -174,7 +183,8 @@ requestWithdrawal route trader terms requestedAt lpInputs baseArgs quoteArgs lpA
     [] (iterationFunding route.quoteToken 0.0) (minimumMetadata minQuoteOutKey terms.minQuoteOut) [] quoteArgs
   pure WithdrawalRequest with poolCid = route.poolCid; trader; terms; baseAllocation; quoteAllocation; lpAllocation
 
--- | Quote exact shares first; round required deposits up so new shares are fully backed.
+-- | Calculate accepted deposits, refunds and LP output for an initial or proportional deposit.
+-- Round proportional deposits up; exclude permanently locked LP shares from initial issuance.
 depositAmounts : LiquidityRoute pool -> Decimal -> Decimal -> Decimal -> Decimal -> DepositTerms -> DepositOutcome
 depositAmounts route initialRatio baseReserve quoteReserve supply t =
   let (base, quote, shares) =
@@ -194,12 +204,15 @@ depositAmounts route initialRatio baseReserve quoteReserve supply t =
        baseAmount = base; quoteAmount = quote
        baseRefund = t.maxBaseAmount - base; quoteRefund = t.maxQuoteAmount - quote; lpAmount = shares
 
+-- | Compute pro-rata reserve payouts for the LP burn, rounding down to each token's precision.
 withdrawalAmounts : LiquidityRoute pool -> Decimal -> Decimal -> Decimal -> WithdrawalTerms -> WithdrawalOutcome
 withdrawalAmounts route baseReserve quoteReserve supply t = WithdrawalOutcome with
   baseAmount = liquidityRatio route.baseToken.decimals Numeric.RoundingFloor t.lpAmount baseReserve supply
   quoteAmount = liquidityRatio route.quoteToken.decimals Numeric.RoundingFloor t.lpAmount quoteReserve supply
   lpAmount = t.lpAmount
 
+-- | Enforce positive deposits, nonnegative refunds and the trader's minimum LP output.
+-- Check the initial or current pool ratio against the trader's signed ratio bounds.
 validateDepositAmounts : Decimal -> Decimal -> Decimal -> DepositTerms -> DepositOutcome -> Update ()
 validateDepositAmounts initialRatio baseReserve quoteReserve terms result = do
   assertMsg "deposit amounts exceed signed limits" (result.baseAmount > 0.0 && result.quoteAmount > 0.0
@@ -210,7 +223,8 @@ validateDepositAmounts initialRatio baseReserve quoteReserve terms result = do
     (Numeric.cast @20 ratioQuote >= Numeric.mul @20 ratioBase terms.minRatio
       && Numeric.cast @20 ratioQuote <= Numeric.mul @20 ratioBase terms.maxRatio)
 
--- | Reserve the full inputs; settlement returns unused funding directly to its owner.
+-- | Settle one deposit token into the pool and return its updated reserve holdings.
+-- Token settlement returns unused trader funding directly to the trader.
 settleDepositAsset : Token -> H.Account -> Party -> A.SettlementInfo -> Time -> Text
   -> Decimal -> Decimal -> Decimal -> [ContractId H.Holding] -> ContractId A.Allocation
   -> ExtraArgs -> ExtraArgs -> Update [ContractId H.Holding]
@@ -225,6 +239,7 @@ settleDepositAsset token poolAccount trader settlement deadline label maximum am
     poolAllocation [receiverSide input] settlementArgs
   pure (change <> received)
 
+-- | Mint the quoted LP amount to the trader and verify the resulting holdings match it exactly.
 settleMint : LiquidityRoute pool -> DepositRequest pool -> Decimal -> ExtraArgs -> ExtraArgs -> Update ()
 settleMint route request amount allocationArgs settlementArgs = do
   let terms = request.terms
@@ -240,6 +255,8 @@ settleMint route request amount allocationArgs settlementArgs = do
   total <- holdingTotal route.lpToken account received
   assertMsg "LP mint delivery mismatch" (total == amount)
 
+-- | Pay one reserve asset to the trader and return the holdings left in the pool.
+-- Require the receive allocation to match the signed minimum output and settlement terms.
 settleWithdrawalAsset : Token -> H.Account -> Party -> A.SettlementInfo -> Time -> Text -> Text
   -> Decimal -> Decimal -> Decimal -> [ContractId H.Holding] -> ContractId A.Allocation
   -> ExtraArgs -> ExtraArgs -> Update [ContractId H.Holding]
@@ -255,6 +272,7 @@ settleWithdrawalAsset token poolAccount trader settlement deadline label minimum
     poolAllocation [senderSide leg] settlementArgs
   pure (change <> retained)
 
+-- | Burn the LP amount locked by the withdrawal request; reject any holdings returned by the burn.
 settleBurn : LiquidityRoute pool -> WithdrawalRequest pool -> ExtraArgs -> ExtraArgs -> Update ()
 settleBurn route request allocationArgs settlementArgs = do
   let terms = request.terms

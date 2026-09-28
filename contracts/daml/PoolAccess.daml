@@ -96,6 +96,7 @@ template PoolAccess
           requireWithdrawalComplete result
           pure result
 
+-- | Return the pool after confirming active KYC and a matching access-granting operator.
 validatePoolAccess : PoolAccess -> Update Pool
 validatePoolAccess access = do
   validateAttestation access
@@ -103,6 +104,7 @@ validatePoolAccess access = do
   assertMsg eAccessRequestMismatch (pool.venueOperator == access.venueOperator)
   pure pool
 
+-- | Require at least one allocation to recover and reject duplicate IDs before withdrawing any funds.
 validateWithdrawalList : [AllocationWithdrawal] -> Update ()
 validateWithdrawalList withdrawals = do
   let allocationCids = map (.allocationCid) withdrawals
@@ -118,6 +120,7 @@ validateWithdrawal poolCid trader allocation = do
     Some deadline -> assertDeadlineExceeded allocationSettlementDeadlineLabel deadline
     None -> abort eWithdrawalDeadlineRequired
 
+-- | Abort recovery unless the token implementation confirms that the allocation was withdrawn.
 requireWithdrawalComplete : A.AllocationResult -> Update ()
 requireWithdrawalComplete result =
   assertMsg eTokenWithdrawalIncomplete (result.output == A.AllocationResult_Withdrawn)
@@ -137,7 +140,7 @@ validateSwapRequest access route terms requestedAt inputHoldingCids = do
   assertMsg eInvalidInputAmount (quantized inputToken terms.amountIn)
   assertMsg eInvalidMinimumOutput (quantized outputToken terms.minOut)
 
--- Before accepting a request, check that its KYC attestation is still active,
+-- | Before accepting a request, check that its KYC attestation is still active,
 -- was issued by this operator, and covers this trader and pool.
 validateAttestation : PoolAccess -> Update ()
 validateAttestation access = do

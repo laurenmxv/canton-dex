@@ -85,6 +85,7 @@ validateDelegatedRequests delegation requests = do
   forA_ requests $ \item ->
     validateRequestAccess delegation item.request.request.trader item.accessCid
 
+-- | Require active access and KYC for this trader, delegated pool and operator before settlement.
 validateRequestAccess : VenueDelegation -> Party -> ContractId PoolAccess -> Update ()
 validateRequestAccess delegation trader accessCid = do
   access <- fetch accessCid
@@ -93,6 +94,7 @@ validateRequestAccess delegation trader accessCid = do
       && access.venueOperator == delegation.venueOperator)
   validateAttestation access
 
+-- | Check that the delegation names the pool's actual dvo and operator before using their authority.
 validatePoolAuthority : VenueDelegation -> Update ()
 validatePoolAuthority delegation = do
   pool <- fetch delegation.poolCid

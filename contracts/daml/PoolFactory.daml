@@ -128,10 +128,12 @@ template PoolProposal
       controller venueOperator
       do assertMsg ePoolProposalAlreadyAccepted (not accepted)
 
+-- | Reject a proposal whose dvo differs from the factory's pool authority.
 requireFactoryAuthority : Party -> Party -> Update ()
 requireFactoryAuthority expected actual =
   assertMsg eFactoryAuthorityMismatch (actual == expected)
 
+-- | Require the factory's dvo and valid pool settings before proposing or creating a pool.
 requirePoolSettings : Party -> PoolSettings -> Update ()
 requirePoolSettings dvo settings = do
   requireFactoryAuthority dvo settings.dvo
@@ -144,6 +146,7 @@ validateProposalFactory proposal = do
   assertMsg eFactoryOperatorMismatch (factory.venueOperator == proposal.venueOperator)
   requireFactoryAuthority factory.dvo proposal.settings.dvo
 
+-- | Check that the pool has a nonempty ID, distinct instruments, an allowed fee and supported token precision.
 validSettings : PoolSettings -> Bool
 validSettings settings =
   settings.poolId /= "" && settings.baseToken.instrument /= settings.quoteToken.instrument

@@ -62,7 +62,7 @@ data SwapResult = SwapResult with
     quoteHoldingCids : [ContractId H.Holding]
   deriving (Eq, Show)
 
--- | Require a request ID, positive input and a nonnegative minimum output.
+-- | Check whether the request has an ID, a positive input and a nonnegative minimum output.
 validTerms : SwapTerms -> Bool
 validTerms terms = terms.requestId /= "" && terms.amountIn > 0.0 && terms.minOut >= 0.0
 
@@ -72,7 +72,7 @@ directionRoute route direction = case direction of
   BaseToQuote -> (route.baseToken, route.quoteToken, route.baseAccount, route.quoteAccount)
   QuoteToBase -> (route.quoteToken, route.baseToken, route.quoteAccount, route.baseAccount)
 
--- | Bind both allocations to the same terms, preventing legs from different requests being paired.
+-- | Encode all swap terms into the settlement ID used to match the input and output allocations.
 -- Fixed decimal units and epoch microseconds keep this encoding consistent across clients.
 settlementId : SwapTerms -> Text
 settlementId terms =
@@ -133,7 +133,7 @@ settleRequest route feeBps baseReserve quoteReserve baseHoldings quoteHoldings b
     amountOut; baseReserve = nextBase; quoteReserve = nextQuote
     baseHoldingCids = nextBaseHoldings; quoteHoldingCids = nextQuoteHoldings
 
--- | Recheck the signed request and quoted output before settlement.
+-- | Check the pool, trader, deadline and amount precision, and require output to meet the signed minimum.
 validateSettlementRequest : SwapRoute pool -> SwapRequest pool -> Decimal -> Update ()
 validateSettlementRequest route request amountOut = do
   let terms = request.terms
@@ -151,7 +151,7 @@ validateReserveDeltas terms amountOut (reserveIn, reserveOut) (inputTotal, outpu
   assertMsg ePoolInputDeltaMismatch (inputTotal == reserveIn + terms.amountIn)
   assertMsg ePoolOutputDeltaMismatch (outputTotal == reserveOut - amountOut)
 
--- | The trader must be independent of both pool executors.
+-- | Reject a trader whose party is the pool authority or venue operator.
 requireTraderDistinct : SwapRoute pool -> Party -> Update ()
 requireTraderDistinct route trader =
   assertMsg eTraderIsPoolExecutor (trader /= route.dvo && trader /= route.venueOperator)

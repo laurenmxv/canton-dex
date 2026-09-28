@@ -89,11 +89,13 @@ template TestTokenReceipt with
     signatory issuer
     observer recipient, operator
 
+-- | Verify that the minting registry belongs to the grant's issuer before claiming test tokens.
 requireRegistryIssuer : Party -> ContractId TokenRules -> Update ()
 requireRegistryIssuer issuer rulesCid = do
   rules <- fetch rulesCid
   assertMsg eRegistryIssuerMismatch (rules.admin == issuer)
 
+-- | Require a nonempty token bundle with named instruments, positive amounts and no duplicates.
 validAmounts : [TestTokenAmount] -> Bool
 validAmounts amounts =
   not (null amounts)

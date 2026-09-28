@@ -39,7 +39,7 @@ import {
   NANOS_PER_SECOND,
 } from '../platform/time.js';
 import { BPS, floorTo, minimumOut, tokenAmount } from '../swaps/math.js';
-import type { Instrument } from '../tokens/model.js';
+import { sameInstrument, type Instrument } from '../tokens/model.js';
 import {
   allocationView,
   MIN_BASE_OUT_KEY,
@@ -75,7 +75,7 @@ import {
 } from './packages.js';
 import { basicAccount, requireLiquidityReady, requireReady, type CantonPools, type PoolSnapshot } from './pools.js';
 import { prepareForWallet, RECOVER_ALLOCATIONS, type Signers } from './swap-ledger.js';
-import { mergeDisclosures, requireFactory, type CantonTokenRegistry, type TokenOperation } from './token-registry.js';
+import { approvedOperations, mergeDisclosures, type CantonTokenRegistry } from './token-registry.js';
 
 const QUOTE_LIFETIME = 30n * NANOS_PER_SECOND;
 const QUOTE_SETTLEMENT_WINDOW = 600n * NANOS_PER_SECOND;
@@ -191,10 +191,6 @@ function tokenAt(pool: PoolContract, index: number): Token {
 
 function instrumentOf(token: Token): Instrument {
   return { admin: token.instrument.admin, id: token.instrument.id };
-}
-
-function sameInstrument(left: Instrument, right: Instrument): boolean {
-  return left.admin === right.admin && left.id === right.id;
 }
 
 /** `Lib.Liquidity.depositId` or `withdrawalId`: integer units and epoch microseconds. */
@@ -911,34 +907,22 @@ export class CantonLiquidityLedger implements LiquidityLedger {
 
   /** The three tokens' allocation and settlement arguments, from their approved factories. */
   async operations(snapshot: PoolSnapshot): Promise<LiquidityOperations> {
-    const allocations: TokenOperation[] = [];
-    const settlements: TokenOperation[] = [];
-    for (const token of [snapshot.pool.baseToken, snapshot.pool.quoteToken, snapshot.pool.lpToken]) {
-      allocations.push(
-        requireFactory(token.allocationFactory, await this.registry.inlineAllocation(token.instrument.admin)),
-      );
-      settlements.push(
-        requireFactory(token.settlementFactory, await this.registry.inlineSettlement(token.instrument.admin)),
-      );
-    }
-    const [baseAllocation, quoteAllocation, lpAllocation] = allocations;
-    const [baseSettlement, quoteSettlement, lpSettlement] = settlements;
-    if (!baseAllocation || !quoteAllocation || !lpAllocation || !baseSettlement || !quoteSettlement || !lpSettlement) {
-      throw new Error('A pool has three tokens');
-    }
+    const base = await approvedOperations(this.registry, snapshot.pool.baseToken);
+    const quote = await approvedOperations(this.registry, snapshot.pool.quoteToken);
+    const lp = await approvedOperations(this.registry, snapshot.pool.lpToken);
     return {
       args: {
-        baseAllocationArgs: baseAllocation.extraArgs,
-        quoteAllocationArgs: quoteAllocation.extraArgs,
-        lpAllocationArgs: lpAllocation.extraArgs,
-        baseSettlementArgs: baseSettlement.extraArgs,
-        quoteSettlementArgs: quoteSettlement.extraArgs,
-        lpSettlementArgs: lpSettlement.extraArgs,
+        baseAllocationArgs: base.allocation.extraArgs,
+        quoteAllocationArgs: quote.allocation.extraArgs,
+        lpAllocationArgs: lp.allocation.extraArgs,
+        baseSettlementArgs: base.settlement.extraArgs,
+        quoteSettlementArgs: quote.settlement.extraArgs,
+        lpSettlementArgs: lp.settlement.extraArgs,
       },
       disclosures: mergeDisclosures(
-        allocations.flatMap((operation, index) => [
-          ...operation.disclosures,
-          ...(settlements[index]?.disclosures ?? []),
+        [base, quote, lp].flatMap(({ allocation, settlement }) => [
+          ...allocation.disclosures,
+          ...settlement.disclosures,
         ]),
       ),
     };

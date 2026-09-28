@@ -1,5 +1,6 @@
 import { Conflict } from '../platform/errors.js';
 import type { RegistryDisclosure, TokenSource } from '../tokens/registry-store.js';
+import type { Token } from './contracts.js';
 import { EMPTY_EXTRA_ARGS, type DisclosedContract } from './ledger.js';
 
 /** The stored issuer factories that the registry reads. */
@@ -40,6 +41,16 @@ export function requireFactory(expected: string, operation: TokenOperation): Tok
     throw new Conflict('Token registry factory differs from the factory approved by the pool', 'TOKEN_FACTORY_CHANGED');
   }
   return operation;
+}
+
+/** The token's approved factories are still its issuer's configured ones. */
+export async function approvedOperations(
+  registry: Pick<CantonTokenRegistry, 'inlineAllocation' | 'inlineSettlement'>,
+  token: Token,
+): Promise<{ allocation: TokenOperation; settlement: TokenOperation }> {
+  const allocation = requireFactory(token.allocationFactory, await registry.inlineAllocation(token.instrument.admin));
+  const settlement = requireFactory(token.settlementFactory, await registry.inlineSettlement(token.instrument.admin));
+  return { allocation, settlement };
 }
 
 function disclosure(contract: RegistryDisclosure): DisclosedContract {

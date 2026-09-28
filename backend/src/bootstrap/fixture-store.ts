@@ -33,8 +33,6 @@ export class SqlFixtureStore implements FixtureStore {
         issuer_party_id: configuration.issuerPartyId,
         rules_id: configuration.rulesId,
         package_id: configuration.packageId,
-        allocation_factory_id: configuration.rulesId,
-        settlement_factory_id: configuration.rulesId,
         faucet_factory_id: configuration.faucetFactoryId,
         synchronizer_id: configuration.synchronizerId,
         rules_created_event_blob: base64(configuration.rulesBlob),

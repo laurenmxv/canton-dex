@@ -1,7 +1,7 @@
 import type { StaticDecode } from 'typebox';
 import type { Family } from '../platform/families.js';
 import { storedEnum, storedInt, storedList, storedNullableText, storedObject, storedText } from '../platform/stored.js';
-import { Instrument, SigningPayload as ParticipantSigningPayload } from '../tokens/model.js';
+import { Instrument, SigningPayload as ParticipantSigningPayload, type PublicSigningFields } from '../tokens/model.js';
 
 export const KINDS = ['DEPOSIT', 'WITHDRAW'] as const;
 export type Kind = (typeof KINDS)[number];
@@ -23,9 +23,8 @@ export const LIQUIDITY_STATUSES = [
   'FAILED',
 ] as const;
 export type LiquidityStatus = (typeof LIQUIDITY_STATUSES)[number];
-export const RECOVERY_KINDS = ['RETURN_FUNDS', 'RELEASE_PERMISSION'] as const;
 /** `RELEASE_PERMISSION` withdraws a receipt authorization and returns no funds. */
-export type RecoveryKind = (typeof RECOVERY_KINDS)[number];
+export const RECOVERY_KINDS = ['RETURN_FUNDS', 'RELEASE_PERMISSION'] as const;
 
 export interface DepositQuoteInput {
   readonly poolId: string;
@@ -143,17 +142,11 @@ export const SigningPayload = storedObject({
 });
 export type SigningPayload = StaticDecode<typeof SigningPayload>;
 
-export interface Preparation {
+export interface Preparation extends PublicSigningFields {
   readonly preparationId: string;
   readonly requestId: string;
   readonly action: LiquidityAction;
   readonly terms: Terms;
-  readonly preparedTransactionHash: string;
-  readonly hashEncoding: string;
-  readonly hashingSchemeVersion: number;
-  readonly partyId: string;
-  readonly publicKeyFingerprint: string;
-  readonly expiresAt: string;
   readonly recoveryEffects: readonly RecoveryEffect[];
 }
 

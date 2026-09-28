@@ -40,7 +40,7 @@ function preparation(): PartyPreparation {
 const iso = (offsetSeconds: number) => new Date(Date.now() + offsetSeconds * 1_000).toISOString();
 
 describe('party readiness', () => {
-  let participant: FakeParticipant;
+  let participant: FakeParticipant | undefined;
   let parties: CantonExternalParties;
   let servingParticipant: string;
   let local: boolean;
@@ -83,10 +83,13 @@ describe('party readiness', () => {
       info: () => undefined,
     });
   });
-  afterEach(() => participant.close());
+  afterEach(async () => {
+    await participant?.close();
+    participant = undefined;
+  });
 
-  const methods = () => participant.exchanges.map((exchange) => METHODS[exchange.path]);
-  const tokens = () => participant.exchanges.map((exchange) => exchange.authorization);
+  const methods = () => (participant?.exchanges ?? []).map((exchange) => METHODS[exchange.path]);
+  const tokens = () => (participant?.exchanges ?? []).map((exchange) => exchange.authorization);
 
   it('uses a fresh caller token for every read of a confirmed party', async () => {
     expect(await parties.confirmed('first-token', preparation())).toBe(true);

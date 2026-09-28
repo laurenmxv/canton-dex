@@ -1,5 +1,6 @@
 import { sql } from 'kysely';
 import { describe, expect, it } from 'vitest';
+import { independently } from '../support/cleanup.js';
 import { at, text } from '../support/json.js';
 import { delay, withBackend, type BackendFixture } from './support/backend.js';
 import { DevelopmentFixtures } from './support/fixtures.js';
@@ -14,7 +15,6 @@ import {
   type RestartState,
   type SavedPolicy,
 } from './support/restart.js';
-import { independently } from './support/traders.js';
 
 /** Exceeds the submission's 30-second deduplication window before recovery is tested. */
 const PAST_DEDUPLICATION_MS = 31_000;

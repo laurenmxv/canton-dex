@@ -40,7 +40,7 @@ import {
 } from './ledger.js';
 import { AllocationInterface, isExactly, PoolAccess, SwapReceipt } from './packages.js';
 import { requireReady, swapRoute, type CantonPools } from './pools.js';
-import { mergeDisclosures, requireFactory, type CantonTokenRegistry } from './token-registry.js';
+import { approvedOperations, mergeDisclosures, type CantonTokenRegistry } from './token-registry.js';
 
 const QUOTE_LIFETIME = 30n * NANOS_PER_SECOND;
 const QUOTE_SETTLEMENT_WINDOW = 600n * NANOS_PER_SECOND;
@@ -456,35 +456,21 @@ export class CantonSwapLedger implements SwapLedger {
       minOut: minimum,
       settlementDeadline: terms.settlementDeadline,
     });
-    const inputAllocation = requireFactory(
-      inputToken.allocationFactory,
-      await this.registry.inlineAllocation(inputToken.instrument.admin),
-    );
-    const outputAllocation = requireFactory(
-      outputToken.allocationFactory,
-      await this.registry.inlineAllocation(outputToken.instrument.admin),
-    );
-    const inputSettlement = requireFactory(
-      inputToken.settlementFactory,
-      await this.registry.inlineSettlement(inputToken.instrument.admin),
-    );
-    const outputSettlement = requireFactory(
-      outputToken.settlementFactory,
-      await this.registry.inlineSettlement(outputToken.instrument.admin),
-    );
+    const input = await approvedOperations(this.registry, inputToken);
+    const output = await approvedOperations(this.registry, outputToken);
     const command = exercise(PoolAccess, access.contractId, REQUEST_SWAP, {
       route: swapRoute(snapshot),
       terms: requested,
       requestedAt: instantText(now),
       inputHoldingCids: inputs,
-      inputAllocationArgs: inputAllocation.extraArgs,
-      outputAllocationArgs: outputAllocation.extraArgs,
+      inputAllocationArgs: input.allocation.extraArgs,
+      outputAllocationArgs: output.allocation.extraArgs,
     });
     const disclosures = mergeDisclosures([
-      ...inputAllocation.disclosures,
-      ...outputAllocation.disclosures,
-      ...inputSettlement.disclosures,
-      ...outputSettlement.disclosures,
+      ...input.allocation.disclosures,
+      ...output.allocation.disclosures,
+      ...input.settlement.disclosures,
+      ...output.settlement.disclosures,
     ]);
     return prepareForWallet(this.interactive, commandId, signer, accessToken, command, disclosures, now);
   }

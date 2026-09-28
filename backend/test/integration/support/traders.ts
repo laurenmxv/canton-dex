@@ -125,19 +125,6 @@ export function secondsFromNow(seconds: number): string {
   return new Date(Math.floor(Date.now() / 1_000) * 1_000 + seconds * 1_000).toISOString().replace(/\.000Z$/, 'Z');
 }
 
-/** Runs every cleanup even when one fails, then reports all failures together. */
-export async function independently(heading: string, ...tasks: (() => Promise<void>)[]): Promise<void> {
-  const failures: unknown[] = [];
-  for (const task of tasks) {
-    try {
-      await task();
-    } catch (error) {
-      failures.push(error);
-    }
-  }
-  if (failures.length > 0) throw new AggregateError(failures, heading);
-}
-
 /** Exact decimal equality, whatever the number of fraction digits. */
 export function expectAmount(actual: string, expected: string): void {
   expect(compareDecimal(actual, expected), `${actual} equals ${expected}`).toBe(0);

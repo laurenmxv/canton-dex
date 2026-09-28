@@ -93,7 +93,6 @@ function confirmation(pending: Pending): Confirmation {
     before: RESERVES,
     after: { stateId: 'after', baseReserve: '110', quoteReserve: '182', spotPrice: '1.6545', invariant: '20020' },
     updateId: 'settlement-update',
-    offset: 44n,
     confirmedAt: OBSERVED,
   };
 }

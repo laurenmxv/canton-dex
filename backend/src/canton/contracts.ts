@@ -5,7 +5,7 @@
  */
 import type { Instrument } from '../tokens/model.js';
 import { numericText, numericUnits } from '../platform/decimal.js';
-import { array, boolean, record, string, strings } from './decode.js';
+import { array, boolean, integer, record, string, strings } from './decode.js';
 
 export interface DamlAccount {
   readonly owner: string | null;
@@ -114,7 +114,8 @@ const INT64_MAX = 2n ** 63n - 1n;
 /** A Daml Int64, exact over its full range. */
 export function int64(value: unknown, what: string): bigint {
   // The participant writes Int64 as a string; `parseLedgerJson` makes a large number a bigint.
-  const source = typeof value === 'number' || typeof value === 'bigint' ? String(value) : string(value, what);
+  const exact = typeof value === 'number' ? integer(value, what) : value;
+  const source = typeof exact === 'number' || typeof exact === 'bigint' ? String(exact) : string(exact, what);
   const parsed = /^-?\d+$/.test(source) ? BigInt(source) : undefined;
   if (parsed === undefined || parsed < INT64_MIN || parsed > INT64_MAX) {
     throw new Error(`Unexpected participant response: ${what} is not an Int64`);

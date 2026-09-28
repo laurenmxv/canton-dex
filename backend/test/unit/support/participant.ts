@@ -1,3 +1,4 @@
+import { once } from 'node:events';
 import { createServer, type IncomingMessage } from 'node:http';
 
 /** One request that the fake participant received. */
@@ -73,7 +74,9 @@ export async function fakeParticipant(routes: Readonly<Record<string, Route>>): 
       response.end(String(error));
     });
   });
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const listening = once(server, 'listening');
+  server.listen(0, '127.0.0.1');
+  await listening;
   const address = server.address();
   if (typeof address !== 'object' || address === null) throw new Error('The fake participant has no port');
   return {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  approvedOperations,
   CantonTokenRegistry,
   mergeDisclosures,
   requireFactory,
@@ -45,8 +46,12 @@ describe('token registry', () => {
       'alice-settlement': disclosure('alice-settlement', 'package-b:Other:Settle', 'sync-a'),
       'bob-allocation': disclosure('bob-allocation', 'package-c:Issuer:Factory', 'sync-b'),
     });
-    const allocated = await tokens.inlineAllocation('alice');
-    const settled = await tokens.inlineSettlement('alice');
+    const { allocation: allocated, settlement: settled } = await approvedOperations(tokens, {
+      instrument: { admin: 'alice', id: 'TOKEN' },
+      allocationFactory: 'alice-allocation',
+      settlementFactory: 'alice-settlement',
+      decimals: 10n,
+    });
     const otherIssuer = await tokens.inlineAllocation('bob');
     expect(allocated.factoryCid).toBe('alice-allocation');
     expect(settled.factoryCid).toBe('alice-settlement');

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyBaseLogger } from 'fastify';
 import { requireRole, type Account } from '../iam/accounts.js';
-import { NUMERIC_SCALE, trimmedText } from '../platform/decimal.js';
+import { compareDecimal, trimmedText } from '../platform/decimal.js';
 import { Conflict, InvalidRequest } from '../platform/errors.js';
 import { clockNanos, epochNanos, instantText, NANOS_PER_MICRO } from '../platform/time.js';
 import { HASH_ENCODING, requireSignable, requireSignatureEncoding } from '../tokens/model.js';
@@ -22,16 +22,11 @@ import { SwapRejected, type SwapLedger, type SwapProgress } from './ports.js';
 
 /** The informational fee keeps four more digits than a token amount. */
 const FEE_AMOUNT = /^(?:0|[1-9][0-9]{0,27})(?:\.([0-9]{1,14}))?$/;
-const FEE_SCALE = 14;
-const FEE_UNITS_PER_AMOUNT_UNIT = 10n ** BigInt(FEE_SCALE - NUMERIC_SCALE);
 
 /** The informational fee may be smaller than a token quantum; it is not a separate transfer. */
 function requireInformationalFee(fee: string, amountIn: string): void {
-  const match = FEE_AMOUNT.exec(fee);
-  if (!match) throw new InvalidRequest('Invalid informational fee');
-  const whole = fee.split('.')[0] ?? '0';
-  const scaled = BigInt(whole + (match[1] ?? '').padEnd(FEE_SCALE, '0'));
-  if (scaled > plainAmount(amountIn, false) * FEE_UNITS_PER_AMOUNT_UNIT) throw new InvalidRequest('Fee exceeds input');
+  if (!FEE_AMOUNT.test(fee)) throw new InvalidRequest('Invalid informational fee');
+  if (compareDecimal(fee, amountIn) > 0) throw new InvalidRequest('Fee exceeds input');
 }
 
 function approvedTerms(quote: Quote, input: PrepareInput): Terms {

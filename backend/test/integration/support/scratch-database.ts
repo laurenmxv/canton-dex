@@ -3,6 +3,7 @@ import { sql } from 'kysely';
 import { initializeSchema } from '../../../src/bootstrap/schema.js';
 import type { DatabaseConfig } from '../../../src/platform/config.js';
 import { createDatabase, type Db } from '../../../src/platform/database.js';
+import { independently } from '../../support/cleanup.js';
 
 const IGNORE_IDLE_ERRORS = () => undefined;
 
@@ -29,7 +30,6 @@ function databaseConfig(url: string, database?: string): DatabaseConfig {
 export async function scratchDatabase(url: string): Promise<ScratchDatabase> {
   const name = `store_test_${randomUUID().replaceAll('-', '')}`;
   const admin = createDatabase(databaseConfig(url), IGNORE_IDLE_ERRORS);
-  await sql.raw(`CREATE DATABASE ${name}`).execute(admin);
   const config = databaseConfig(url, name);
   const pools: Db[] = [];
   const open = () => {
@@ -37,16 +37,24 @@ export async function scratchDatabase(url: string): Promise<ScratchDatabase> {
     pools.push(db);
     return db;
   };
-  const db = open();
-  await initializeSchema(db);
-  return {
-    db,
-    reopen: open,
-    initialize: () => initializeSchema(db),
-    async drop() {
-      await Promise.all(pools.map((pool) => pool.destroy()));
-      await sql.raw(`DROP DATABASE IF EXISTS ${name}`).execute(admin);
-      await admin.destroy();
-    },
-  };
+  const drop = () =>
+    independently(
+      'Scratch database cleanup failed',
+      ...pools.map((pool) => () => pool.destroy()),
+      async () => {
+        await sql.raw(`DROP DATABASE IF EXISTS ${name}`).execute(admin);
+      },
+      () => admin.destroy(),
+    );
+  try {
+    await sql.raw(`CREATE DATABASE ${name}`).execute(admin);
+    const db = open();
+    await initializeSchema(db);
+    return { db, reopen: open, initialize: () => initializeSchema(db), drop };
+  } catch (error) {
+    await drop().catch((cleanup: unknown) => {
+      throw new AggregateError([error, cleanup], 'Scratch database setup failed');
+    });
+    throw error;
+  }
 }

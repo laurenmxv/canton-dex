@@ -72,9 +72,11 @@ export class OnboardingWorkflow {
   ): Promise<Onboarding> {
     if (await this.store.claimParty(id, caller, submission)) {
       try {
-        const topology = await this.store.topology(id);
-        await this.parties.allocate(caller, accessToken, await this.preparedParty(id), topology, submission.signature);
-        if (await this.parties.confirmed(accessToken, await this.preparedParty(id))) await this.store.confirmParty(id);
+        const { party } = await this.store.get(id);
+        if (!party) throw new Error('A claimed registration has no prepared party');
+        if (party.topologyTransactions.length === 0) throw new Error('A claimed registration has no topology');
+        await this.parties.allocate(caller, accessToken, party, party.topologyTransactions, submission.signature);
+        if (await this.parties.confirmed(accessToken, party)) await this.store.confirmParty(id);
         else await this.store.unresolvedParty(id);
       } catch (error) {
         if (error instanceof PartyAlreadyExists) {
@@ -90,12 +92,6 @@ export class OnboardingWorkflow {
       }
     }
     return this.store.getOwned(id, caller);
-  }
-
-  private async preparedParty(id: string): Promise<PartyPreparation> {
-    const { party } = await this.store.get(id);
-    if (!party) throw new Error('A claimed registration has no prepared party');
-    return party;
   }
 
   async mine(caller: Account, accessToken: string): Promise<Onboarding | null> {

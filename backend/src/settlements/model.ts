@@ -282,6 +282,5 @@ export interface Confirmation {
   readonly before: Reserves;
   readonly after: Reserves;
   readonly updateId: string;
-  readonly offset: bigint;
   readonly confirmedAt: string;
 }

@@ -7,6 +7,7 @@ import type { Family } from './families.js';
 /** The application pool: eight connections and 30 s to acquire one. */
 const POOL_SIZE = 8;
 const ACQUIRE_TIMEOUT_MS = 30_000;
+const READINESS_TIMEOUT_MS = 2_000;
 const SCHEMA_FILE = new URL('../../db/schema.sql', import.meta.url);
 export const RESET_INSTRUCTION = 'Recreate the local state with make docker-reset';
 /** The PostgreSQL error code of a duplicate key. */
@@ -166,7 +167,6 @@ export interface SwapQuotesTable {
   id: string;
   account_id: string;
   payload: Json;
-  expires_at: string;
 }
 
 export interface SwapRequestsTable {
@@ -205,7 +205,6 @@ export interface LiquidityQuotesTable {
   account_id: string;
   kind: 'DEPOSIT' | 'WITHDRAW';
   payload: Json;
-  expires_at: string;
 }
 
 export interface LiquidityRequestsTable {
@@ -260,8 +259,6 @@ export interface TestTokenConfigurationTable {
   rules_id: string;
   rules_created_event_blob: string;
   package_id: string;
-  allocation_factory_id: string;
-  settlement_factory_id: string;
   faucet_factory_id: string;
   synchronizer_id: string;
 }
@@ -286,7 +283,6 @@ export interface DevFaucetClaimsTable {
   grant_id: string;
   grant_command_id: string;
   grant_cid: string | null;
-  grant_expires_at: Nullable<string>;
   grant_begin_offset: bigint | null;
   grant_status: Defaulted<'PENDING' | 'SUBMITTING' | 'UNRESOLVED' | 'CONFIRMED'>;
   preparation_id: string | null;
@@ -384,9 +380,21 @@ export function createDatabase(config: DatabaseConfig, onError: (error: Error) =
   return new Kysely<Database>({ dialect: new PostgresDialect({ pool }) });
 }
 
-/** The database health check: it runs one query. */
-export async function databaseReady(db: Db): Promise<void> {
-  await sql`SELECT 1`.execute(db);
+/** Probes database connectivity on a bounded connection, independently of the application pool. */
+export async function databaseReady(config: DatabaseConfig): Promise<void> {
+  const client = new pg.Client({
+    ...config,
+    connectionTimeoutMillis: READINESS_TIMEOUT_MS,
+    query_timeout: READINESS_TIMEOUT_MS,
+  });
+  // Connection errors reject connect/query too; their event must not escape the readiness probe.
+  client.on('error', () => undefined);
+  try {
+    await client.connect();
+    await client.query('SELECT 1');
+  } finally {
+    await client.end();
+  }
 }
 
 export function schemaStatements(): string {

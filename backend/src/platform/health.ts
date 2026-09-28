@@ -34,7 +34,7 @@ function healthMediaType(accept: string | undefined): string | undefined {
   return ranges.some((range) => WILDCARD_MEDIA_TYPES.includes(range)) ? ACTUATOR_V3 : undefined;
 }
 
-async function withinTimeout(check: Indicator): Promise<void> {
+async function withinTimeout(check: Promise<void>): Promise<void> {
   let timer: NodeJS.Timeout | undefined;
   const timeout = new Promise<never>((_resolve, reject) => {
     timer = setTimeout(() => {
@@ -42,7 +42,7 @@ async function withinTimeout(check: Indicator): Promise<void> {
     }, INDICATOR_TIMEOUT_MS);
   });
   try {
-    await Promise.race([check(), timeout]);
+    await Promise.race([check, timeout]);
   } finally {
     clearTimeout(timer);
   }
@@ -59,10 +59,17 @@ export function registerHealth(
   indicators: Readonly<Record<string, Indicator>>,
   deny: Deny,
 ): void {
+  const pending = new Map<string, Promise<void>>();
   async function indicatorStatus(): Promise<Status> {
     const checks = Object.entries(indicators).map(async ([name, check]) => {
       try {
-        await withinTimeout(check);
+        const running =
+          pending.get(name) ??
+          Promise.resolve()
+            .then(check)
+            .finally(() => pending.delete(name));
+        pending.set(name, running);
+        await withinTimeout(running);
         return true;
       } catch (error) {
         app.log.warn({ indicator: name, err: error }, 'Health indicator is down');

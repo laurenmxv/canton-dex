@@ -30,7 +30,7 @@ function rejection(grpcCode: number, code: string, definiteAnswer = false): Ledg
 }
 
 describe('pool submission', () => {
-  let participant: FakeParticipant;
+  let participant: FakeParticipant | undefined;
   let ledger: Ledger;
   let answer: Answer;
 
@@ -49,7 +49,10 @@ describe('pool submission', () => {
     );
   });
 
-  afterEach(() => participant.close());
+  afterEach(async () => {
+    await participant?.close();
+    participant = undefined;
+  });
 
   const submit = () => submitPoolCommand(() => ledger.submit('command', 'operator', [], []));
 

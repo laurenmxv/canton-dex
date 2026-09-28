@@ -11,7 +11,7 @@ const LOCAL = `${HINT}::current-participant`;
 const REMOTE = { party: `${HINT}::previous-participant`, isLocal: false };
 
 describe('Canton admin parties', () => {
-  let participant: FakeParticipant;
+  let participant: FakeParticipant | undefined;
   let admin: CantonAdmin;
   const pages = new Map<string, { partyDetails: unknown[]; nextPageToken?: string }>();
 
@@ -33,12 +33,15 @@ describe('Canton admin parties', () => {
     });
     admin = new CantonAdmin(Ledger.service(new LedgerHttp(participant.url), credentials));
   });
-  afterEach(() => participant.close());
+  afterEach(async () => {
+    await participant?.close();
+    participant = undefined;
+  });
 
   const listings = () =>
-    participant.exchanges.filter((exchange) => exchange.method === 'GET' && exchange.path === '/v2/parties');
+    (participant?.exchanges ?? []).filter((exchange) => exchange.method === 'GET' && exchange.path === '/v2/parties');
   const allocations = () =>
-    participant.exchanges.filter((exchange) => exchange.method === 'POST' && exchange.path === '/v2/parties');
+    (participant?.exchanges ?? []).filter((exchange) => exchange.method === 'POST' && exchange.path === '/v2/parties');
 
   it('reuses the local party even when a remote party appears first', async () => {
     pages.set('', { partyDetails: [REMOTE, { party: LOCAL, isLocal: true }] });

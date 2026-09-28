@@ -53,7 +53,6 @@ export interface OnboardingProgress {
   getOwned(id: string, caller: Account): Promise<Onboarding>;
   mine(caller: Account): Promise<Onboarding | null>;
   claimParty(id: string, caller: Account, submission: PartySubmission): Promise<boolean>;
-  topology(id: string): Promise<readonly string[]>;
   confirmParty(id: string): Promise<void>;
   unresolvedParty(id: string): Promise<void>;
   deniedParty(id: string): Promise<void>;

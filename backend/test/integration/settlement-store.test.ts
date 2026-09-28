@@ -134,8 +134,8 @@ describe.runIf(scenario('swaps') && DATABASE_URL)('settlement store', () => {
       minOut: '15',
       settlementDeadline: instantText(deadline),
     };
-    await sql`INSERT INTO swap_quotes(id,account_id,payload,expires_at)
-      VALUES(${quote},${account},'{}',now()+interval '1 hour')`.execute(scratch.db);
+    await sql`INSERT INTO swap_quotes(id,account_id,payload)
+      VALUES(${quote},${account},'{}')`.execute(scratch.db);
     await sql`INSERT INTO swap_requests(id,account_id,quote_id,terms,status,arrival_sequence,submitted_at,allocation_cids)
       VALUES(${swap},${account},${quote},${jsonText(terms)}::jsonb,${status},${sequence},now(),
         ${jsonText([LOCKED_ALLOCATION])}::jsonb)`.execute(scratch.db);
@@ -147,8 +147,8 @@ describe.runIf(scenario('swaps') && DATABASE_URL)('settlement store', () => {
     const quote = randomUUID();
     const request = randomUUID();
     const preparation = randomUUID();
-    await sql`INSERT INTO liquidity_quotes(id,account_id,kind,payload,expires_at)
-      VALUES(${quote},${account},${kind},'{}',${instantText(after(600))})`.execute(scratch.db);
+    await sql`INSERT INTO liquidity_quotes(id,account_id,kind,payload)
+      VALUES(${quote},${account},${kind},'{}')`.execute(scratch.db);
     const instruments = {
       baseInstrument: { admin: 'issuer', id: 'A' },
       quoteInstrument: { admin: 'issuer', id: 'B' },
@@ -262,7 +262,6 @@ describe.runIf(scenario('swaps') && DATABASE_URL)('settlement store', () => {
       before: reserves,
       after: { stateId: 'after', baseReserve: '110', quoteReserve: '182', spotPrice: '1.65', invariant: '20020' },
       updateId: 'update',
-      offset: 43n,
       confirmedAt: instantText(now),
     };
   }
@@ -730,7 +729,6 @@ describe.runIf(scenario('swaps') && DATABASE_URL)('settlement store', () => {
       before: reserves,
       after: reserves,
       updateId: 'deposit-update',
-      offset: 44n,
       confirmedAt: instantText(now),
     });
 
@@ -758,7 +756,6 @@ describe.runIf(scenario('swaps') && DATABASE_URL)('settlement store', () => {
       before: reserves,
       after: reserves,
       updateId: 'withdrawal-update',
-      offset: 45n,
       confirmedAt: instantText(now),
     });
     expect(await status(unknownSwap)).toBe('UNRESOLVED');
@@ -828,7 +825,6 @@ describe.runIf(scenario('swaps') && DATABASE_URL)('settlement store', () => {
         before: reserves,
         after: reserves,
         updateId: `individual-${family}`,
-        offset: 44n,
         confirmedAt: instantText(now),
       });
       expect((await reopened.get(id)).status).toBe('CONFIRMED');

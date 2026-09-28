@@ -24,11 +24,16 @@ type Filters = Schemas['Filters'];
 type CumulativeFilter = Schemas['CumulativeFilter'];
 /** A request whose int64 offset fields carry exact bigint values; the OpenAPI types say `number`. */
 type ExactOffsets<T, K extends keyof T> = Omit<T, K> & { readonly [P in K]-?: bigint };
-type DeduplicationPeriod =
-  | Exclude<Schemas['DeduplicationPeriod'], { DeduplicationOffset: unknown }>
-  | { DeduplicationOffset: { value: bigint } };
-export type StoredCommands = Omit<Schemas['JsCommands'], 'deduplicationPeriod'> & {
-  deduplicationPeriod?: DeduplicationPeriod;
+/** The replay envelope we read locally; other wire fields remain opaque and survive retries. */
+export type StoredCommands = JsonRecord & {
+  readonly commands: readonly JsonRecord[];
+  readonly commandId: string;
+  readonly actAs: readonly string[];
+  readonly userId?: string;
+  readonly readAs?: readonly string[];
+  readonly deduplicationPeriod?: JsonRecord & {
+    readonly DeduplicationOffset?: JsonRecord & { readonly value: bigint };
+  };
 };
 
 const QUICK_TIMEOUT_MS = 10_000;
@@ -254,28 +259,24 @@ function latest(previous: string | undefined, current: string): string {
  * a retry sends the original intent; the deduplication offset becomes an exact bigint.
  */
 export function parseStoredCommands(text: string): StoredCommands {
-  const value = parseLedgerJson(text);
-  if (!isStoredCommands(value)) throw new Error('Stored commands are invalid');
-  const { deduplicationPeriod: period, ...stored } = value;
-  if (period === undefined) return stored;
-  if (!('DeduplicationOffset' in period)) return { ...stored, deduplicationPeriod: period };
-  const original = period.DeduplicationOffset;
-  const exact = { ...original, value: offset(original.value, 'DeduplicationOffset.value') };
-  return { ...stored, deduplicationPeriod: { DeduplicationOffset: exact } };
-}
-
-function isStoredCommands(value: unknown): value is Schemas['JsCommands'] {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    'commands' in value &&
-    Array.isArray(value.commands) &&
-    'commandId' in value &&
-    typeof value.commandId === 'string' &&
-    'actAs' in value &&
-    Array.isArray(value.actAs) &&
-    value.actAs.every((party: unknown) => typeof party === 'string')
+  const { commands, commandId, actAs, userId, readAs, deduplicationPeriod, ...rest } = record(
+    parseLedgerJson(text),
+    'Stored commands',
   );
+  const stored = {
+    ...rest,
+    commands: array(commands, 'commands', record),
+    commandId: string(commandId, 'commandId'),
+    actAs: array(actAs, 'actAs', string),
+    ...(userId === undefined ? {} : { userId: string(userId, 'userId') }),
+    ...(readAs === undefined ? {} : { readAs: array(readAs, 'readAs', string) }),
+  };
+  if (deduplicationPeriod === undefined) return stored;
+  const period = record(deduplicationPeriod, 'deduplicationPeriod');
+  if (!('DeduplicationOffset' in period)) return { ...stored, deduplicationPeriod: period };
+  const original = record(period.DeduplicationOffset, 'DeduplicationOffset');
+  const exact = { ...original, value: offset(original.value, 'DeduplicationOffset.value') };
+  return { ...stored, deduplicationPeriod: { ...period, DeduplicationOffset: exact } };
 }
 
 /**
@@ -503,8 +504,7 @@ export class Ledger {
    * which identifies an attempt, is new.
    */
   async submitStored(stored: StoredCommands): Promise<Transaction> {
-    const period = stored.deduplicationPeriod;
-    const original = period && 'DeduplicationOffset' in period ? period.DeduplicationOffset.value : undefined;
+    const original = stored.deduplicationPeriod?.DeduplicationOffset?.value;
     if (stored.userId !== this.userId) throw new Error('Stored command belongs to a different ledger user');
     if (original === undefined || original < 0n || stored.actAs.length !== 1 || stored.commands.length === 0) {
       throw new Error('Stored command requires one actor, commands, and an original offset');

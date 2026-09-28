@@ -62,10 +62,6 @@ class Progress extends ProgressDouble {
     return Promise.resolve(true);
   }
 
-  override topology(): Promise<readonly string[]> {
-    return Promise.resolve([TOPOLOGY]);
-  }
-
   override pending(): Promise<readonly string[]> {
     return Promise.resolve(this.status === 'UNRESOLVED' ? [this.id] : []);
   }

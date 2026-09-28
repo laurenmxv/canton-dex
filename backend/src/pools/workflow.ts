@@ -86,12 +86,15 @@ export class PoolWorkflow {
   }
 
   async pools(): Promise<readonly PoolDetail[]> {
-    return this.lock.runExclusive(() => this.currentPools());
+    return this.lock.runExclusive(async () => {
+      await this.refreshIfStale();
+      return this.store.pools(this.ledger.packageId);
+    });
   }
 
   async pool(id: string): Promise<PoolDetail> {
     return this.lock.runExclusive(async () => {
-      await this.currentPools();
+      await this.refreshIfStale();
       return this.store.pool(id, this.ledger.packageId);
     });
   }
@@ -122,9 +125,8 @@ export class PoolWorkflow {
     }
   }
 
-  private async currentPools(): Promise<readonly PoolDetail[]> {
+  private async refreshIfStale(): Promise<void> {
     if (this.refreshedAt < Date.now() - REFRESH_INTERVAL_MS) await this.refreshPools();
-    return this.store.pools(this.ledger.packageId);
   }
 
   private async refreshPools(): Promise<void> {

@@ -118,8 +118,7 @@ CREATE TABLE IF NOT EXISTS pool_request_queues (
 CREATE TABLE IF NOT EXISTS swap_quotes (
     id UUID PRIMARY KEY,
     account_id UUID NOT NULL REFERENCES accounts(id),
-    payload JSONB NOT NULL,
-    expires_at TIMESTAMPTZ NOT NULL
+    payload JSONB NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS swap_requests (
@@ -196,8 +195,6 @@ CREATE TABLE IF NOT EXISTS test_token_configuration (
     rules_id TEXT NOT NULL,
     rules_created_event_blob TEXT NOT NULL,
     package_id TEXT NOT NULL,
-    allocation_factory_id TEXT NOT NULL,
-    settlement_factory_id TEXT NOT NULL,
     faucet_factory_id TEXT NOT NULL,
     synchronizer_id TEXT NOT NULL
 );
@@ -222,7 +219,6 @@ CREATE TABLE IF NOT EXISTS dev_faucet_claims (
     grant_command_id UUID UNIQUE NOT NULL,
     grant_cid TEXT,
     grant_begin_offset BIGINT,
-    grant_expires_at TIMESTAMPTZ,
     grant_status TEXT NOT NULL DEFAULT 'PENDING' CHECK(grant_status IN ('PENDING','SUBMITTING','UNRESOLVED','CONFIRMED')),
     preparation_id UUID UNIQUE,
     prepared_transaction TEXT,
@@ -265,8 +261,7 @@ CREATE TABLE IF NOT EXISTS liquidity_quotes (
     id UUID PRIMARY KEY,
     account_id UUID NOT NULL REFERENCES accounts(id),
     kind TEXT NOT NULL CHECK (kind IN ('DEPOSIT','WITHDRAW')),
-    payload JSONB NOT NULL,
-    expires_at TIMESTAMPTZ NOT NULL
+    payload JSONB NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS liquidity_requests (

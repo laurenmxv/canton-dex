@@ -4,7 +4,7 @@ import { storedNullableText, storedObject, storedText } from '../platform/stored
 import { numericUnits, sameNumeric } from '../platform/decimal.js';
 import { InvalidRequest } from '../platform/errors.js';
 import { isBreakingWhitespace } from '../platform/request.js';
-import { Instrument, type RegisteredInstrument } from '../tokens/model.js';
+import { Instrument, sameInstrument, type RegisteredInstrument } from '../tokens/model.js';
 
 export const ReserveAccount = storedObject({ owner: storedText, provider: storedNullableText, id: storedText });
 export type ReserveAccount = StaticDecode<typeof ReserveAccount>;
@@ -106,10 +106,6 @@ export function proposalOf(terms: Terms): ProposalTerms {
     quoteInstrumentId: terms.quoteInstrumentId,
     feeBps: terms.feeBps,
   };
-}
-
-function sameInstrument(left: Instrument, right: Instrument): boolean {
-  return left.admin === right.admin && left.id === right.id;
 }
 
 /** The same authority, pair and fee value, whatever the scale of the two fee texts. */

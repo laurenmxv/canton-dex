@@ -24,7 +24,6 @@ import {
   type PreviewStep,
   type QueueRequest,
   type RequestRef,
-  type Reserves,
   type Snapshot,
 } from '../settlements/model.js';
 import { RequestBlocked, SettlementExcluded, SettlementRejected, type SettlementLedger } from '../settlements/ports.js';
@@ -68,7 +67,7 @@ import {
   swapRequestOf,
   validateAllocation as validateSwapAllocation,
 } from './swap-ledger.js';
-import { mergeDisclosures, requireFactory, type CantonTokenRegistry } from './token-registry.js';
+import { approvedOperations, mergeDisclosures, type CantonTokenRegistry } from './token-registry.js';
 
 /** The operator command kind of a settlement batch in the durable command journal. */
 const BATCH_COMMAND = 'batch';
@@ -83,7 +82,7 @@ function toSnapshot(pool: PoolSnapshot): Snapshot {
   return {
     poolId: pool.poolId,
     version: snapshotVersion(pool),
-    reserves: poolReserves(pool),
+    reserves: poolReserves(pool.stateEvent.contractId, pool.state),
     feeBps: trimmedText(numericUnits(pool.config.feeBps)),
     health: pool.health,
     reason: pool.reason,
@@ -214,18 +213,6 @@ function blockedBy(ref: RequestRef, error: unknown, mismatchCode: string): unkno
   return error;
 }
 
-function reservesOf(stateId: string, state: { readonly baseReserve: string; readonly quoteReserve: string }): Reserves {
-  const base = numericUnits(state.baseReserve);
-  const quote = numericUnits(state.quoteReserve);
-  return {
-    stateId,
-    baseReserve: trimmedText(base),
-    quoteReserve: trimmedText(quote),
-    spotPrice: base === 0n ? null : trimmedText(divideHalfUp(quote, base)),
-    invariant: plainText(base * quote, 2 * NUMERIC_SCALE),
-  };
-}
-
 function swapFill(queued: QueueRequest & { readonly type: 'swap' }, receipts: ReturnType<typeof swapReceipt>[]): Fill {
   const swap = queued.request;
   const [input, output] = swap.allocationCids;
@@ -275,7 +262,7 @@ export function confirm(tx: Transaction, pending: Pending): Confirmation {
   );
   const [stateEvent] = states;
   if (states.length !== 1 || !stateEvent) throw new Error('Batch must replace pool state once');
-  const after = reservesOf(stateEvent.contractId, poolState(stateEvent.createArgument));
+  const after = poolReserves(stateEvent.contractId, poolState(stateEvent.createArgument));
   const before = pending.settlement.before;
   if (!before || (swaps && compareDecimal(after.invariant, before.invariant) < 0)) {
     throw new Error('Confirmed batch invariant decreased');
@@ -285,7 +272,6 @@ export function confirm(tx: Transaction, pending: Pending): Confirmation {
     before,
     after,
     updateId: tx.updateId,
-    offset: tx.offset,
     confirmedAt: canonicalInstant(tx.effectiveAt),
   };
 }
@@ -554,22 +540,8 @@ export class CantonSettlementLedger implements SettlementLedger {
       );
     }
     const { baseToken, quoteToken } = pool.pool;
-    const baseAllocation = requireFactory(
-      baseToken.allocationFactory,
-      await this.registry.inlineAllocation(baseToken.instrument.admin),
-    );
-    const quoteAllocation = requireFactory(
-      quoteToken.allocationFactory,
-      await this.registry.inlineAllocation(quoteToken.instrument.admin),
-    );
-    const baseSettlement = requireFactory(
-      baseToken.settlementFactory,
-      await this.registry.inlineSettlement(baseToken.instrument.admin),
-    );
-    const quoteSettlement = requireFactory(
-      quoteToken.settlementFactory,
-      await this.registry.inlineSettlement(quoteToken.instrument.admin),
-    );
+    const base = await approvedOperations(this.registry, baseToken);
+    const quote = await approvedOperations(this.registry, quoteToken);
     const requests = [];
     for (const queued of pending.requests) {
       if (queued.type !== 'swap') throw new Error('Settlement spans multiple request families');
@@ -580,15 +552,17 @@ export class CantonSettlementLedger implements SettlementLedger {
         accessCid: access.contractId,
         request: {
           request: encodeSwapRequest(swapRequestOf(swap)),
-          poolInputAllocationArgs: (baseIn ? baseAllocation : quoteAllocation).extraArgs,
-          poolOutputAllocationArgs: (baseIn ? quoteAllocation : baseAllocation).extraArgs,
-          inputSettlementArgs: (baseIn ? baseSettlement : quoteSettlement).extraArgs,
-          outputSettlementArgs: (baseIn ? quoteSettlement : baseSettlement).extraArgs,
+          poolInputAllocationArgs: (baseIn ? base : quote).allocation.extraArgs,
+          poolOutputAllocationArgs: (baseIn ? quote : base).allocation.extraArgs,
+          inputSettlementArgs: (baseIn ? base : quote).settlement.extraArgs,
+          outputSettlementArgs: (baseIn ? quote : base).settlement.extraArgs,
         },
       });
     }
     const disclosures = mergeDisclosures(
-      [baseAllocation, quoteAllocation, baseSettlement, quoteSettlement].flatMap((operation) => operation.disclosures),
+      [base.allocation, quote.allocation, base.settlement, quote.settlement].flatMap(
+        (operation) => operation.disclosures,
+      ),
     );
     return this.ledger.storedCommands(
       pending.commandId,

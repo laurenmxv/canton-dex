@@ -113,18 +113,15 @@ export class LiquidityStore implements LiquidityProgress, LiquidityHistory {
   }
 
   async saveDepositQuote(quote: DepositQuote, caller: Account): Promise<void> {
-    await this.saveQuote(quote.quoteId, 'DEPOSIT', jsonText(quote), quote.quoteExpiresAt, caller);
+    await this.saveQuote(quote.quoteId, 'DEPOSIT', jsonText(quote), caller);
   }
 
   async saveWithdrawalQuote(quote: WithdrawalQuote, caller: Account): Promise<void> {
-    await this.saveQuote(quote.quoteId, 'WITHDRAW', jsonText(quote), quote.quoteExpiresAt, caller);
+    await this.saveQuote(quote.quoteId, 'WITHDRAW', jsonText(quote), caller);
   }
 
-  private async saveQuote(id: string, kind: Kind, payload: string, expiresAt: string, caller: Account): Promise<void> {
-    await this.db
-      .insertInto('liquidity_quotes')
-      .values({ id, account_id: caller.id, kind, payload, expires_at: expiresAt })
-      .execute();
+  private async saveQuote(id: string, kind: Kind, payload: string, caller: Account): Promise<void> {
+    await this.db.insertInto('liquidity_quotes').values({ id, account_id: caller.id, kind, payload }).execute();
   }
 
   async depositQuote(id: string, caller: Account): Promise<DepositQuote> {

@@ -38,9 +38,6 @@ export class ProgressDouble implements OnboardingProgress {
   claimParty(_id: string, _caller: Account, _submission: PartySubmission): Promise<boolean> {
     unexpected('claimParty');
   }
-  topology(_id: string): Promise<readonly string[]> {
-    unexpected('topology');
-  }
   confirmParty(_id: string): Promise<void> {
     unexpected('confirmParty');
   }

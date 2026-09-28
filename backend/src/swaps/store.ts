@@ -100,7 +100,7 @@ export class SwapStore implements SwapProgress, SwapHistory {
   async saveQuote(quote: Quote, caller: Account): Promise<void> {
     await this.db
       .insertInto('swap_quotes')
-      .values({ id: quote.quoteId, account_id: caller.id, payload: jsonText(quote), expires_at: quote.quoteExpiresAt })
+      .values({ id: quote.quoteId, account_id: caller.id, payload: jsonText(quote) })
       .execute();
   }
 

@@ -358,12 +358,7 @@ export class SettlementStore implements SettlementProgress {
           .where('id', '=', ref.requestId)
           .execute();
       }
-      await trx
-        .updateTable('pool_request_queues')
-        .set({ blocked_version: null, updated_at: at })
-        .where('pool_id', '=', poolId)
-        .where('family', '=', ref.type)
-        .execute();
+      await this.clearFamily(trx, poolId, ref.type, at);
     });
   }
 
@@ -551,7 +546,7 @@ export class SettlementStore implements SettlementProgress {
     now: bigint,
   ): Promise<boolean> {
     return this.db.transaction().execute(async (trx) => {
-      const batch = await this.lockBatch(trx, id);
+      const { batch } = await this.lockBatch(trx, id);
       if (batch.status !== 'PREPARING') return false;
       const blockedIndex = batch.requests.findIndex((ref) => sameRef(ref, blocked));
       if (blockedIndex < 0 || !sameRefs(batch.requests.slice(0, blockedIndex), kept)) return false;
@@ -579,7 +574,7 @@ export class SettlementStore implements SettlementProgress {
     now: bigint,
   ): Promise<void> {
     await this.db.transaction().execute(async (trx) => {
-      const batch = await this.lockBatch(trx, id);
+      const { batch } = await this.lockBatch(trx, id);
       if (batch.status !== 'PREPARING') return;
       await this.release(trx, batch, batch.requests, blocked, code, reason, now);
       await this.blockFamily(trx, batch, stateVersion, now);
@@ -589,7 +584,7 @@ export class SettlementStore implements SettlementProgress {
 
   async cancelPreparation(id: string, code: string, reason: string | null, now: bigint): Promise<void> {
     await this.db.transaction().execute(async (trx) => {
-      const batch = await this.lockBatch(trx, id);
+      const { batch } = await this.lockBatch(trx, id);
       if (batch.status !== 'PREPARING') return;
       await this.release(trx, batch, batch.requests, null, null, null, now);
       await this.finishAttempt(trx, batch, 'CANCELLED', code, reason, now);
@@ -604,10 +599,9 @@ export class SettlementStore implements SettlementProgress {
     now: bigint,
   ): Promise<Pending | undefined> {
     return this.db.transaction().execute(async (trx) => {
-      const batch = await this.lockBatch(trx, id);
+      const { batch, row, state } = await this.lockBatch(trx, id);
       const [first] = batch.requests;
       if (batch.status !== 'PREPARING' || !first) return undefined;
-      const state = await this.lockQueue(trx, batch.poolId);
       const policy = familyPolicy(state, first.type);
       const cancel = async (code: string, reason: string) => {
         await this.release(trx, batch, batch.requests, null, null, null, now);
@@ -620,7 +614,7 @@ export class SettlementStore implements SettlementProgress {
         return cancel(POLICY_CHANGED, 'Automatic policy changed before dispatch');
       }
       if (!sameRefs(batch.requests, fills.map(fillRef))) return undefined;
-      const pending = await this.pendingOf(trx, id);
+      const pending = await this.readPending(trx, row);
       const intent = pending.selection;
       if (intent !== null && (intent.stateVersion !== snapshot.version || intent.policyVersion !== policy.version)) {
         return cancel(
@@ -631,7 +625,7 @@ export class SettlementStore implements SettlementProgress {
       if (pending.requests.some((queued) => epochNanos(settlementDeadlineOf(queued)) <= now)) {
         return cancel('DEADLINE_PASSED', 'A request expired before dispatch');
       }
-      await trx
+      const submitted = await trx
         .updateTable('settlement_batches')
         .set({
           status: 'SUBMITTING',
@@ -643,8 +637,9 @@ export class SettlementStore implements SettlementProgress {
         })
         .where('id', '=', id)
         .where('status', '=', 'PREPARING')
-        .execute();
-      return this.pendingOf(trx, id);
+        .returningAll()
+        .executeTakeFirstOrThrow();
+      return this.readPending(trx, submitted);
     });
   }
 
@@ -658,7 +653,7 @@ export class SettlementStore implements SettlementProgress {
 
   async rejectSubmission(id: string, code: string, reason: string, now: bigint): Promise<void> {
     await this.db.transaction().execute(async (trx) => {
-      const batch = await this.lockBatch(trx, id);
+      const { batch } = await this.lockBatch(trx, id);
       // Recovery may already have replayed the immutable command. A late first-attempt rejection
       // cannot prove that the replay did not commit.
       const [first] = batch.requests;
@@ -677,17 +672,17 @@ export class SettlementStore implements SettlementProgress {
   /** Applies proof that this batch cannot commit, without inferring any withdrawal. */
   async excludeSubmission(id: string, code: string, reason: string, now: bigint): Promise<void> {
     await this.db.transaction().execute(async (trx) => {
-      const batch = await this.lockBatch(trx, id);
+      const { batch } = await this.lockBatch(trx, id);
       if (batch.status !== 'SUBMITTING' && batch.status !== 'UNRESOLVED') return;
       await this.release(trx, batch, batch.requests, null, null, null, now);
       await this.finishAttempt(trx, batch, 'REJECTED', code, reason, now);
-      await this.clearFamily(trx, batch, now);
+      await this.clearFamily(trx, batch.poolId, batch.requests[0]?.type, instantText(now));
     });
   }
 
   async confirm(id: string, confirmation: Confirmation): Promise<void> {
     await this.db.transaction().execute(async (trx) => {
-      const batch = await this.lockBatch(trx, id);
+      const { batch } = await this.lockBatch(trx, id);
       if (batch.status === 'CONFIRMED') return;
       if (batch.status !== 'SUBMITTING' && batch.status !== 'UNRESOLVED') {
         throw new Error('Settlement confirmation has no authorized submission');
@@ -711,7 +706,7 @@ export class SettlementStore implements SettlementProgress {
         .where('id', '=', id)
         .execute();
       for (const fill of confirmation.fills) await this.confirmRequest(trx, fill, id, confirmation.updateId, at);
-      await this.clearFamily(trx, batch, epochNanos(at));
+      await this.clearFamily(trx, batch.poolId, batch.requests[0]?.type, instantText(epochNanos(at)));
       await trx
         .updateTable('pool_queues')
         .set({ active_settlement_id: null, updated_at: at })
@@ -794,16 +789,16 @@ export class SettlementStore implements SettlementProgress {
     };
   }
 
-  private async lockBatch(trx: Executor, id: string): Promise<Settlement> {
+  private async lockBatch(trx: Executor, id: string) {
     const batch = await this.get(id, trx);
-    await this.lockQueue(trx, batch.poolId);
+    const state = await this.lockQueue(trx, batch.poolId);
     const row = await trx
       .selectFrom('settlement_batches')
       .selectAll()
       .where('id', '=', id)
       .forUpdate()
       .executeTakeFirstOrThrow();
-    return toSettlement(row);
+    return { batch: toSettlement(row), row, state };
   }
 
   /** Ready and blocked requests past their settlement deadline expire and unblock their family. */
@@ -817,12 +812,7 @@ export class SettlementStore implements SettlementProgress {
         WHERE terms->>'poolId'=${poolId} AND status IN ('READY','BLOCKED')
           AND (terms->>'settlementDeadline')::timestamptz<=${at}::timestamptz ${kind}`.execute(trx);
       if ((result.numAffectedRows ?? 0n) > 0n) {
-        await trx
-          .updateTable('pool_request_queues')
-          .set({ blocked_version: null, updated_at: at })
-          .where('pool_id', '=', poolId)
-          .where('family', '=', family)
-          .execute();
+        await this.clearFamily(trx, poolId, family, at);
       }
     }
   }
@@ -842,14 +832,13 @@ export class SettlementStore implements SettlementProgress {
       .execute();
   }
 
-  private async clearFamily(trx: Executor, batch: Settlement, now: bigint): Promise<void> {
-    const [first] = batch.requests;
-    if (!first) return;
+  private async clearFamily(trx: Executor, poolId: string, family: Family | undefined, at: string): Promise<void> {
+    if (family === undefined) return;
     await trx
       .updateTable('pool_request_queues')
-      .set({ blocked_version: null, updated_at: instantText(now) })
-      .where('pool_id', '=', batch.poolId)
-      .where('family', '=', first.type)
+      .set({ blocked_version: null, updated_at: at })
+      .where('pool_id', '=', poolId)
+      .where('family', '=', family)
       .execute();
   }
 

@@ -100,7 +100,7 @@ registerAuthentication(app, {
   keys: createRemoteJWKSet(config.jwkSetUri),
   authenticate: (issuer, subject, name) => authenticate(db, issuer, subject, name),
 });
-registerHealth(app, { db: () => databaseReady(db), canton: () => ledgerReady(operator) }, deny);
+registerHealth(app, { db: () => databaseReady(config.database), canton: () => ledgerReady(operator) }, deny);
 registerIamRoutes(app, db);
 registerOnboardingRoutes(app, onboardingStore, onboarding);
 registerPoolRoutes(app, poolStore, pools);

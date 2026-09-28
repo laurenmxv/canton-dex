@@ -271,15 +271,6 @@ export class OnboardingStore implements OnboardingProgress {
     });
   }
 
-  async topology(id: string): Promise<readonly string[]> {
-    const row = await this.db
-      .selectFrom('onboardings')
-      .select('topology_transactions')
-      .where('id', '=', id)
-      .executeTakeFirstOrThrow();
-    return stored('topology', present(row.topology_transactions, 'topology_transactions'), strings);
-  }
-
   async confirmParty(id: string): Promise<void> {
     await this.db.transaction().execute(async (trx) => {
       await this.lock(trx, id);
@@ -312,9 +303,8 @@ export class OnboardingStore implements OnboardingProgress {
   async pending(): Promise<readonly string[]> {
     const rows = await sql<{ id: string }>`
       SELECT o.id FROM onboardings o WHERE party_mode='external' AND review_decision='APPROVED'
-        AND (party_status IN ('SUBMITTING','UNRESOLVED') OR
-          (party_status='CONFIRMED' AND (NOT EXISTS(SELECT 1 FROM onboarding_steps s WHERE s.onboarding_id=o.id)
-           OR EXISTS(SELECT 1 FROM onboarding_steps s WHERE s.onboarding_id=o.id AND s.status<>'CONFIRMED'))))
+        AND party_status='CONFIRMED' AND (NOT EXISTS(SELECT 1 FROM onboarding_steps s WHERE s.onboarding_id=o.id)
+          OR EXISTS(SELECT 1 FROM onboarding_steps s WHERE s.onboarding_id=o.id AND s.status<>'CONFIRMED'))
       ORDER BY created_at LIMIT 100`.execute(this.db);
     return rows.rows.map((row) => row.id);
   }

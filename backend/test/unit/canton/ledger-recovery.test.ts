@@ -41,7 +41,7 @@ function transactionUpdate(offset: number, synchronizerId: string, recordTime: s
 }
 
 describe('ledger recovery', () => {
-  let participant: FakeParticipant;
+  let participant: FakeParticipant | undefined;
   let ledger: Ledger;
   let updates: unknown[];
   let updatesFailure: Answer | undefined;
@@ -79,9 +79,12 @@ describe('ledger recovery', () => {
     });
     ledger = Ledger.service(new LedgerHttp(participant.url), credentials);
   });
-  afterEach(() => participant.close());
+  afterEach(async () => {
+    await participant?.close();
+    participant = undefined;
+  });
 
-  const requests = (path: string) => participant.exchanges.filter((exchange) => exchange.path === path);
+  const requests = (path: string) => (participant?.exchanges ?? []).filter((exchange) => exchange.path === path);
   const updateRequest = () => requests('/v2/updates')[0]?.body;
   const submissions = () => requests('/v2/commands/submit-and-wait-for-transaction').map((exchange) => exchange.body);
 
@@ -154,7 +157,7 @@ describe('ledger recovery', () => {
       });
     }
     expect(at(submissions()[0], 'commands', 'submissionId')).not.toBe(at(submissions()[1], 'commands', 'submissionId'));
-    const ledgerCalls = participant.exchanges.filter((exchange) => exchange.path.startsWith('/v2/'));
+    const ledgerCalls = (participant?.exchanges ?? []).filter((exchange) => exchange.path.startsWith('/v2/'));
     expect(ledgerCalls.length).toBeGreaterThan(0);
     expect(ledgerCalls.every((exchange) => exchange.authorization === 'Bearer service-token')).toBe(true);
   });

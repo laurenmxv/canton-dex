@@ -1,14 +1,13 @@
 import { pairKey, type Terms } from '../pools/model.js';
 import type { Instrument } from '../tokens/model.js';
-import { poolTerms } from './pools.js';
+import { poolTerms, selectInputs } from './pools.js';
 import { divideFloor, numericText, numericUnits, sameNumeric } from '../platform/decimal.js';
 import { ledgerTime } from '../platform/time.js';
 import { nameUuid } from '../platform/uuid.js';
 import {
   account,
   encodePoolSettings,
-  instrument,
-  numeric,
+  holdingView,
   pool,
   poolConfig,
   poolSettings,
@@ -34,6 +33,8 @@ import {
   AllocationInterface,
   DEX_PACKAGE_ID,
   FAUCET_PACKAGE_ID,
+  HoldingInterface,
+  isExactly,
   KycAttestation,
   packageOf,
   Pool,
@@ -65,7 +66,6 @@ const FEE_BPS = '30';
 const RULES_MAX_TTL_MICROS = '3600000000';
 const RULES_LOCK_GRACE_MICROS = '300000000';
 const DEPOSIT_DEADLINE_SECONDS = 1_800;
-const MAX_SEED_HOLDINGS = 16;
 /** Packages of the current contract generation; older versions are not reused. */
 const CURRENT_PACKAGES = new Set([TOKEN_PACKAGE_ID, DEX_PACKAGE_ID, FAUCET_PACKAGE_ID]);
 
@@ -604,28 +604,11 @@ export class TestTokenFixture {
   }
 
   private async seedHoldings(token: Instrument, amount: string): Promise<string[]> {
-    const funding: DamlAccount = { owner: this.issuer, provider: null, id: '' };
-    const holdings = await this.find(this.issuerLedger, this.issuer, TokenHolding, (payload) => {
-      const holding = record(record(payload, 'TokenHolding').holding, 'TokenHolding.holding');
-      const held = instrument(holding.instrumentId, 'holding.instrumentId');
-      return (
-        held.admin === token.admin &&
-        held.id === token.id &&
-        sameAccount(account(holding.account, 'holding.account'), funding) &&
-        (holding.lock === null || holding.lock === undefined)
-      );
-    });
-    const selected: string[] = [];
-    let total = 0n;
-    const required = numericUnits(amount);
-    for (const event of holdings) {
-      selected.push(event.contractId);
-      const holding = record(record(event.createArgument, 'TokenHolding').holding, 'TokenHolding.holding');
-      total += numericUnits(numeric(holding.amount, 'holding.amount'));
-      if (total >= required) return selected;
-      if (selected.length === MAX_SEED_HOLDINGS) break;
-    }
-    throw new Error(`Initial LP has insufficient available holdings for ${token.id}`);
+    const holdings = (await this.issuerLedger.activeInterfaceContracts(this.issuer, HoldingInterface)).filter(
+      (event) =>
+        isExactly(event.templateId, TokenHolding) && !holdingView(interfaceView(event, HoldingInterface)).locked,
+    );
+    return selectInputs(holdings, this.issuer, token, numericUnits(amount));
   }
 
   private async factory(): Promise<CreatedEvent> {

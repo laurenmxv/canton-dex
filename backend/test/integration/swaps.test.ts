@@ -3,6 +3,7 @@ import { sql } from 'kysely';
 import { describe, expect, it } from 'vitest';
 import type { Ledger } from '../../src/canton/ledger.js';
 import { compareDecimal, numericUnits } from '../../src/platform/decimal.js';
+import { independently } from '../support/cleanup.js';
 import { at, items, text } from '../support/json.js';
 import { delay, ed25519KeyPair, secp256k1KeyPair, withBackend, type BackendFixture } from './support/backend.js';
 import { backing } from './support/pool-ledger.js';
@@ -13,7 +14,6 @@ import {
   balances,
   expectAmount,
   faucet,
-  independently,
   minus,
   onboard,
   plus,

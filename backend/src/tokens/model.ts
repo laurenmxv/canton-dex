@@ -9,6 +9,10 @@ import { epochNanos } from '../platform/time.js';
 export const Instrument = storedObject({ admin: storedText, id: storedText });
 export type Instrument = StaticDecode<typeof Instrument>;
 
+export function sameInstrument(left: Instrument, right: Instrument): boolean {
+  return left.admin === right.admin && left.id === right.id;
+}
+
 /** The opaque transaction stays in the backend; the wallet signs the participant's hash. */
 export const SigningPayload = storedObject({
   preparedTransaction: storedText,
@@ -19,6 +23,16 @@ export const SigningPayload = storedObject({
   expiresAt: storedText,
 });
 export type SigningPayload = StaticDecode<typeof SigningPayload>;
+
+/** The public signing fields; prepared transaction bytes remain in the backend. */
+export interface PublicSigningFields {
+  readonly preparedTransactionHash: string;
+  readonly hashEncoding: string;
+  readonly hashingSchemeVersion: number;
+  readonly partyId: string;
+  readonly publicKeyFingerprint: string;
+  readonly expiresAt: string;
+}
 
 /**
  * An instrument the venue registers. The administrator and its identifier name it together: two
@@ -95,14 +109,8 @@ export interface FaucetResult {
 }
 
 /** The claim the wallet signs, and the exact amounts it grants. */
-export interface Preparation {
+export interface Preparation extends PublicSigningFields {
   readonly preparationId: string;
-  readonly preparedTransactionHash: string;
-  readonly hashEncoding: string;
-  readonly hashingSchemeVersion: number;
-  readonly partyId: string;
-  readonly publicKeyFingerprint: string;
-  readonly expiresAt: string;
   readonly amounts: readonly Amount[];
 }
 

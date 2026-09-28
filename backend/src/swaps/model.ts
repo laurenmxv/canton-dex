@@ -1,6 +1,6 @@
 import type { StaticDecode } from 'typebox';
 import { storedEnum, storedInt, storedObject, storedText } from '../platform/stored.js';
-import { Instrument, type SigningPayload } from '../tokens/model.js';
+import { Instrument, type PublicSigningFields, type SigningPayload } from '../tokens/model.js';
 
 export { SigningPayload } from '../tokens/model.js';
 
@@ -76,17 +76,11 @@ export interface Submission {
 export const Terms = storedObject({ ...TRADE, settlementDeadline: storedText });
 export type Terms = StaticDecode<typeof Terms>;
 
-export interface Preparation {
+export interface Preparation extends PublicSigningFields {
   readonly preparationId: string;
   readonly swapId: string;
   readonly action: SwapAction;
   readonly terms: Terms;
-  readonly preparedTransactionHash: string;
-  readonly hashEncoding: string;
-  readonly hashingSchemeVersion: number;
-  readonly partyId: string;
-  readonly publicKeyFingerprint: string;
-  readonly expiresAt: string;
 }
 
 export interface Swap extends Terms {

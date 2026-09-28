@@ -3,7 +3,7 @@ import { divideHalfUp, NUMERIC_SCALE, numericUnits, plainText, trimmedText } fro
 import { Conflict } from '../platform/errors.js';
 import { clockNanos, instantText } from '../platform/time.js';
 import type { Reserves } from '../settlements/model.js';
-import type { Instrument } from '../tokens/model.js';
+import { sameInstrument, type Instrument } from '../tokens/model.js';
 import {
   access,
   attestation,
@@ -18,7 +18,6 @@ import {
   type PoolConfigContract,
   type PoolContract,
   type PoolStateContract,
-  type Token,
 } from './contracts.js';
 import { interfaceView, type CreatedEvent, type DisclosedContract, type Ledger } from './ledger.js';
 import {
@@ -33,7 +32,7 @@ import {
   VenueDelegation,
   type DamlName,
 } from './packages.js';
-import { mergeDisclosures, requireFactory, type CantonTokenRegistry } from './token-registry.js';
+import { approvedOperations, mergeDisclosures, type CantonTokenRegistry } from './token-registry.js';
 
 const POOL_UNAVAILABLE = 'POOL_UNAVAILABLE';
 /** The Daml limit on the holdings one allocation may spend. */
@@ -97,11 +96,14 @@ export interface PoolCatalog {
 }
 
 /** The pool state's reserves, spot price (quote per base, half up at scale 10) and invariant. */
-export function poolReserves(snapshot: PoolSnapshot): Reserves {
-  const base = numericUnits(snapshot.state.baseReserve);
-  const quote = numericUnits(snapshot.state.quoteReserve);
+export function poolReserves(
+  stateId: string,
+  state: Pick<PoolStateContract, 'baseReserve' | 'quoteReserve'>,
+): Reserves {
+  const base = numericUnits(state.baseReserve);
+  const quote = numericUnits(state.quoteReserve);
   return {
-    stateId: snapshot.stateEvent.contractId,
+    stateId,
     baseReserve: trimmedText(base),
     quoteReserve: trimmedText(quote),
     spotPrice: base === 0n ? null : trimmedText(divideHalfUp(quote, base)),
@@ -142,10 +144,6 @@ export function swapRoute(snapshot: PoolSnapshot): Record<string, unknown> {
 /** The trader's own account: no provider and no account id. */
 export function basicAccount(party: string): DamlAccount {
   return { owner: party, provider: null, id: '' };
-}
-
-function sameInstrument(left: Instrument, right: Instrument): boolean {
-  return left.admin === right.admin && left.id === right.id;
 }
 
 /**
@@ -304,18 +302,13 @@ export class CantonPools {
     if (!isBacked) return { health: 'BACKING_MISMATCH', reason: 'Pool holdings do not match reserves' };
     if (!delegated) return { health: 'DELEGATION_MISSING', reason: 'Settlement authority is unavailable' };
     try {
-      for (const token of [value.baseToken, value.quoteToken, value.lpToken]) await this.requireFactories(token);
+      for (const token of [value.baseToken, value.quoteToken, value.lpToken])
+        await approvedOperations(this.registry, token);
     } catch (error) {
       if (!(error instanceof Conflict) || error.code === undefined) throw error;
       return { health: error.code, reason: error.message };
     }
     return { health: numericUnits(state.lpTokenSupply) === 0n ? 'EMPTY' : 'READY', reason: null };
-  }
-
-  /** The token's approved factories are still its issuer's configured ones. */
-  private async requireFactories(token: Token): Promise<void> {
-    requireFactory(token.allocationFactory, await this.registry.inlineAllocation(token.instrument.admin));
-    requireFactory(token.settlementFactory, await this.registry.inlineSettlement(token.instrument.admin));
   }
 
   /** The pool contract at an offset. */

@@ -85,6 +85,12 @@ services:
       - ../client:/app/client
       - frontend-node-modules:/app/frontend/node_modules
       - client-node-modules:/app/client/node_modules
+      # Read-only sources for the architecture docs generator.
+      - ../backend/src:/app/backend/src:ro
+      - ../contracts/daml:/app/contracts/daml:ro
+      - ../docs:/app/docs:ro
+      - ./compose.dev.yaml:/app/docker/compose.dev.yaml:ro
+      - ./localnet/participant-bootstrap.sc:/app/docker/localnet/participant-bootstrap.sc:ro
     environment:
       DEX_API_ORIGIN: http://backend:8080
       DEX_SNAP_BIND_HOST: 0.0.0.0

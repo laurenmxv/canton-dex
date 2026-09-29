@@ -1,0 +1,1198 @@
+{
+  "N": {
+    "session": "frontend.session",
+    "trader": "frontend.trader",
+    "operator": "frontend.operator",
+    "wallet": "frontend.wallet",
+    "data": "frontend.data",
+    "reads": "client.reads",
+    "onboardingApi": "client.onboarding",
+    "traderApi": "client.trader",
+    "operatorApi": "client.operator",
+    "http": "client.http",
+    "api": "backend.api",
+    "application": "backend.application",
+    "onboarding": "backend.onboarding",
+    "pools": "backend.pools",
+    "swaps": "backend.swaps",
+    "liquidity": "backend.liquidity",
+    "settlements": "backend.settlements",
+    "settlementQueues": "backend.settlement-queues",
+    "settlementDecision": "backend.settlement-decision",
+    "settlementAutomation": "backend.settlement-automation",
+    "tokens": "backend.tokens",
+    "adapters": "backend.adapters",
+    "stores": "backend.stores",
+    "dbClient": "backend.database-client",
+    "iam": "backend.iam",
+    "activity": "backend.activity",
+    "operations": "backend.operations",
+    "platform": "backend.platform",
+    "kyc": "contracts.kyc",
+    "access": "contracts.access",
+    "factory": "contracts.factory",
+    "proposal": "contracts.proposal",
+    "delegation": "contracts.delegation",
+    "pool": "contracts.pool",
+    "config": "contracts.config",
+    "state": "contracts.state",
+    "swapReceipt": "contracts.swap-receipt",
+    "liquidityReceipt": "contracts.liquidity-receipt",
+    "ledgerApi": "canton.ledger-api",
+    "hosting": "canton.party-hosting",
+    "execution": "canton.execution",
+    "ledger": "canton.ledger-state",
+    "synchronizer": "canton.synchronizer",
+    "externalWallet": "external.wallet",
+    "keycloak": "external.keycloak",
+    "database": "external.postgres",
+    "dvo": "external.dvo",
+    "tokenStandard": "external.token-standard"
+  },
+  "C": {
+    "requestSwap": "PoolAccess_RequestSwap",
+    "requestDeposit": "PoolAccess_RequestLiquidityDeposit",
+    "requestWithdrawal": "PoolAccess_RequestLiquidityWithdrawal",
+    "recover": "PoolAccess_RecoverAllocations",
+    "propose": "PoolFactory_ProposePool",
+    "create": "PoolFactory_CreatePool",
+    "accept": "PoolProposal_Accept",
+    "reject": "PoolProposal_Reject",
+    "withdrawProposal": "PoolProposal_Withdraw",
+    "settleSwap": "VenueDelegation_SettleBatch",
+    "settleDeposit": "VenueDelegation_AddLiquidity",
+    "settleWithdrawal": "VenueDelegation_WithdrawLiquidity",
+    "revoke": "VenueDelegation_Revoke",
+    "swap": "Pool_Swap",
+    "deposit": "Pool_AddLiquidity",
+    "withdrawal": "Pool_WithdrawLiquidity",
+    "fee": "PoolConfig_Update"
+  },
+  "nodes": {
+    "frontend.session": {
+      "id": "frontend.session",
+      "layer": "frontend",
+      "title": "Session & navigation",
+      "chips": [
+        "Sign-in",
+        "Profile",
+        "Role navigation"
+      ],
+      "source": "frontend/src/app/runtime.tsx:1",
+      "purpose": "Identifies the user and chooses a workspace.",
+      "note": "Application roles come from the DEX account model. The login subject also identifies the trader's Ledger API user; it is not the party. The backend relays the trader token to register, prepare and execute. Ledger-user rights, Daml controllers and external-party signatures are separate authorization checks.",
+      "documentation": {
+        "format": "TSDoc",
+        "path": "frontend/src/app/runtime.tsx",
+        "line": 1
+      }
+    },
+    "frontend.trader": {
+      "id": "frontend.trader",
+      "layer": "frontend",
+      "title": "Trader workspace",
+      "chips": [
+        "Onboarding",
+        "Swap",
+        "Liquidity",
+        "Holdings"
+      ],
+      "source": "frontend/src/features/swap/SwapDesk.tsx:1",
+      "purpose": "Shows swaps for the trader's eligible pools.",
+      "note": "App.tsx composes the trader workspace from this swap desk, TraderOnboarding for access, LiquidityDesk for deposits and withdrawals, and Balances for holdings.",
+      "documentation": {
+        "format": "TSDoc",
+        "path": "frontend/src/features/swap/SwapDesk.tsx",
+        "line": 1
+      }
+    },
+    "frontend.operator": {
+      "id": "frontend.operator",
+      "layer": "frontend",
+      "title": "Operator workspace",
+      "chips": [
+        "Access review",
+        "Pools",
+        "Settlement"
+      ],
+      "source": "frontend/src/features/settlement/PoolSettlement.tsx:1",
+      "purpose": "Shows and runs settlement for one pool.",
+      "note": "OperatorSettlement selects the pool. The operator workspace also includes OperatorOnboardingDetail for access reviews and OperatorPools for pool proposals. App.tsx composes these screens. Real DVO decisions use the separate CLI.",
+      "documentation": {
+        "format": "TSDoc",
+        "path": "frontend/src/features/settlement/PoolSettlement.tsx",
+        "line": 1
+      }
+    },
+    "frontend.wallet": {
+      "id": "frontend.wallet",
+      "layer": "frontend",
+      "title": "Wallet bridge",
+      "chips": [
+        "Public key",
+        "Topology signature",
+        "Transaction signature"
+      ],
+      "source": "frontend/src/features/wallet/signing.ts:1",
+      "purpose": "Checks identity and asks the wallet to sign.",
+      "note": "Topology signatures register the party. Transaction signatures authorize prepared ledger transactions. Private keys remain in the wallet.",
+      "documentation": {
+        "format": "TSDoc",
+        "path": "frontend/src/features/wallet/signing.ts",
+        "line": 1
+      }
+    },
+    "frontend.data": {
+      "id": "frontend.data",
+      "layer": "frontend",
+      "title": "API & live status",
+      "chips": [
+        "API adapter",
+        "Polling",
+        "Notices"
+      ],
+      "source": "frontend/src/app/useAsync.ts:1",
+      "purpose": "Adapts errors and refreshes visible status.",
+      "note": "A logical grouping of UI helpers. It is not a separate service or a workflow engine.",
+      "documentation": {
+        "format": "TSDoc",
+        "path": "frontend/src/app/useAsync.ts",
+        "line": 1
+      }
+    },
+    "client.reads": {
+      "id": "client.reads",
+      "layer": "client",
+      "title": "Account & catalogue",
+      "chips": [
+        "Profile",
+        "Pools",
+        "Activity"
+      ],
+      "source": "client/src/client.ts:1",
+      "purpose": "Builds a typed client for account, catalogue and domain APIs.",
+      "note": "me, pools and activity expose profile, catalogue and caller-history reads. Onboarding, swaps, lp, tokens and admin are separate facets of the same client.",
+      "documentation": {
+        "format": "TSDoc",
+        "path": "client/src/client.ts",
+        "line": 1
+      }
+    },
+    "client.onboarding": {
+      "id": "client.onboarding",
+      "layer": "client",
+      "title": "Onboarding API",
+      "chips": [
+        "Apply",
+        "Prepare party",
+        "Confirm party"
+      ],
+      "source": "client/src/modules/onboarding/index.ts:1",
+      "purpose": "Calls application and party-registration endpoints.",
+      "documentation": {
+        "format": "TSDoc",
+        "path": "client/src/modules/onboarding/index.ts",
+        "line": 1
+      }
+    },
+    "client.trader": {
+      "id": "client.trader",
+      "layer": "client",
+      "title": "Trader API",
+      "chips": [
+        "Swaps",
+        "Liquidity",
+        "Tokens"
+      ],
+      "source": "client/src/modules/lp/index.ts:1",
+      "purpose": "Creates the liquidity API for deposits, withdrawals and positions.",
+      "note": "createDexClient composes lp, swaps and tokens as separate trading APIs. The swaps and tokens modules own their operations; all share the HTTP transport.",
+      "documentation": {
+        "format": "TSDoc",
+        "path": "client/src/modules/lp/index.ts",
+        "line": 1
+      }
+    },
+    "client.operator": {
+      "id": "client.operator",
+      "layer": "client",
+      "title": "Operator API",
+      "chips": [
+        "Review",
+        "Proposals",
+        "Settlement"
+      ],
+      "source": "client/src/modules/admin/index.ts:1",
+      "purpose": "Calls review, pool-proposal and settlement endpoints.",
+      "documentation": {
+        "format": "TSDoc",
+        "path": "client/src/modules/admin/index.ts",
+        "line": 1
+      }
+    },
+    "client.http": {
+      "id": "client.http",
+      "layer": "client",
+      "title": "HTTP & errors",
+      "chips": [
+        "Bearer token",
+        "JSON",
+        "Problem Details"
+      ],
+      "source": "client/src/core/http.ts:1",
+      "purpose": "Sends typed requests and returns results or errors.",
+      "note": "Stateless library transport. It does not sign, settle, poll, cache or retry requests.",
+      "documentation": {
+        "format": "TSDoc",
+        "path": "client/src/core/http.ts",
+        "line": 1
+      }
+    },
+    "backend.api": {
+      "id": "backend.api",
+      "layer": "backend",
+      "title": "Fastify router",
+      "chips": [
+        "HTTP entry point"
+      ],
+      "source": "backend/src/platform/server.ts:32",
+      "purpose": "Creates the Fastify HTTP entry point and request router.",
+      "note": "main.ts installs the IAM onRequest hook and registers each domain's routes.ts handlers. The server applies firewall rules, headers, body limits and error responses. Background workers call workflows without HTTP routing.",
+      "documentation": {
+        "format": "TSDoc",
+        "path": "backend/src/platform/server.ts",
+        "line": 32
+      }
+    },
+    "backend.application": {
+      "id": "backend.application",
+      "layer": "backend",
+      "title": "Application wiring",
+      "chips": [
+        "main.ts"
+      ],
+      "source": "backend/src/main.ts:1",
+      "purpose": "Composes the Fastify API, module dependencies and background workers.",
+      "note": "Registers authentication and domain routes. Workers run in this API process; Bootstrap and the DVO CLI are separate processes. Automatic settlement does not pass through HTTP routing.",
+      "documentation": {
+        "format": "TSDoc",
+        "path": "backend/src/main.ts",
+        "line": 1
+      }
+    },
+    "backend.iam": {
+      "id": "backend.iam",
+      "layer": "backend",
+      "title": "IAM",
+      "chips": [
+        "iam/"
+      ],
+      "source": "backend/src/iam/authentication.ts:1",
+      "purpose": "Authenticates HTTP requests and resolves callers in Fastify's onRequest hook.",
+      "note": "Verifies bearer tokens against the configured issuer. Application roles are stored in PostgreSQL. Account helpers query it through the shared database client, without a separate store. Fastify dispatches domain route handlers after this hook completes; IAM does not route requests to the business modules.",
+      "documentation": {
+        "format": "TSDoc",
+        "path": "backend/src/iam/authentication.ts",
+        "line": 1
+      }
+    },
+    "backend.activity": {
+      "id": "backend.activity",
+      "layer": "backend",
+      "title": "Activity",
+      "chips": [
+        "activity/"
+      ],
+      "source": "backend/src/activity/routes.ts:1",
+      "purpose": "Combines the caller's stored swap and liquidity history.",
+      "note": "PostgreSQL history comes through SwapStore and LiquidityStore. Filtered views delegate through each workflow's read-only activity() method; the combined view uses history ports. There are no ledger calls or trade execution. Individual request-status endpoints are separate.",
+      "documentation": {
+        "format": "TSDoc",
+        "path": "backend/src/activity/routes.ts",
+        "line": 1
+      }
+    },
+    "backend.operations": {
+      "id": "backend.operations",
+      "layer": "backend",
+      "title": "Operations",
+      "chips": [
+        "operations/"
+      ],
+      "source": "backend/src/operations/commands.ts:1",
+      "purpose": "Persists operator commands and coordinates SQL request queues.",
+      "note": "The journal stores immutable submissions in PostgreSQL before dispatch. Queue helpers lock and order trader request admission and status updates. SettlementStore takes the shared pool lock itself and uses sequence helpers to return deferred requests to the queue tail.",
+      "documentation": {
+        "format": "TSDoc",
+        "path": "backend/src/operations/commands.ts",
+        "line": 1
+      }
+    },
+    "backend.platform": {
+      "id": "backend.platform",
+      "layer": "backend",
+      "title": "Platform",
+      "chips": [
+        "platform/"
+      ],
+      "source": "backend/src/platform/server.ts:1",
+      "purpose": "Configures shared HTTP safeguards and error handling.",
+      "note": "Platform also provides configuration in config.ts, database connections in database.ts and background loops in worker.ts. Domain rules stay in the business modules.",
+      "documentation": {
+        "format": "TSDoc",
+        "path": "backend/src/platform/server.ts",
+        "line": 1
+      }
+    },
+    "backend.onboarding": {
+      "id": "backend.onboarding",
+      "layer": "backend",
+      "title": "Onboarding",
+      "chips": [
+        "Review",
+        "Register party",
+        "Grant access"
+      ],
+      "source": "backend/src/onboarding/workflow.ts:1",
+      "worker": true,
+      "purpose": "Connects approved accounts to parties and access.",
+      "documentation": {
+        "format": "TSDoc",
+        "path": "backend/src/onboarding/workflow.ts",
+        "line": 1
+      }
+    },
+    "backend.pools": {
+      "id": "backend.pools",
+      "layer": "backend",
+      "title": "Pools",
+      "chips": [
+        "Proposals",
+        "Withdrawals",
+        "Discovery"
+      ],
+      "source": "backend/src/pools/workflow.ts:1",
+      "worker": true,
+      "purpose": "Proposes pools and maintains their catalogue.",
+      "documentation": {
+        "format": "TSDoc",
+        "path": "backend/src/pools/workflow.ts",
+        "line": 1
+      }
+    },
+    "backend.swaps": {
+      "id": "backend.swaps",
+      "layer": "backend",
+      "title": "Swaps",
+      "chips": [
+        "Quote",
+        "Prepare",
+        "Submit",
+        "Recover"
+      ],
+      "source": "backend/src/swaps/workflow.ts:1",
+      "worker": true,
+      "purpose": "Quotes and tracks signed swap requests.",
+      "documentation": {
+        "format": "TSDoc",
+        "path": "backend/src/swaps/workflow.ts",
+        "line": 1
+      }
+    },
+    "backend.liquidity": {
+      "id": "backend.liquidity",
+      "layer": "backend",
+      "title": "Liquidity",
+      "chips": [
+        "Deposit",
+        "Withdrawal",
+        "Positions",
+        "Recover"
+      ],
+      "source": "backend/src/liquidity/workflow.ts:1",
+      "worker": true,
+      "purpose": "Quotes and tracks deposits and LP withdrawals.",
+      "documentation": {
+        "format": "TSDoc",
+        "path": "backend/src/liquidity/workflow.ts",
+        "line": 1
+      }
+    },
+    "backend.settlements": {
+      "id": "backend.settlements",
+      "layer": "backend",
+      "title": "Settlements",
+      "chips": [
+        "Preview",
+        "Dispatch",
+        "Confirm / recover"
+      ],
+      "source": "backend/src/settlements/workflow.ts:1",
+      "worker": true,
+      "purpose": "Runs settlement batches through claim, preflight, dispatch, confirmation and recovery.",
+      "note": "Manual routes and the automatic loop start a run; SettlementStore applies the batch planner when it claims requests. Recovery resumes stored batches without selecting new requests. A PREPARING batch reruns preflight before its first submission or cancellation; confirmation and replay concern an immutable stored command.",
+      "documentation": {
+        "format": "TSDoc",
+        "path": "backend/src/settlements/workflow.ts",
+        "line": 1
+      }
+    },
+    "backend.settlement-queues": {
+      "id": "backend.settlement-queues",
+      "layer": "backend",
+      "title": "Request queues",
+      "chips": [
+        "Swap",
+        "Deposit",
+        "Withdrawal"
+      ],
+      "source": "backend/src/settlements/store.ts:166",
+      "purpose": "Reads and updates shared request rows, settlement policies and batch progress.",
+      "note": "Swap, deposit and withdrawal queues are per pool and backed by PostgreSQL, not a message broker. Swaps and Liquidity assign queue order when submission begins; ledger confirmation makes requests eligible for settlement. SettlementStore reads and updates those same rows. Pool locks serialize admission, policy changes, claims and dispatch. Batch progress is persisted through the shared database client.",
+      "documentation": {
+        "format": "TSDoc",
+        "path": "backend/src/settlements/store.ts",
+        "line": 166
+      }
+    },
+    "backend.settlement-decision": {
+      "id": "backend.settlement-decision",
+      "layer": "backend",
+      "title": "Batch planner",
+      "chips": [
+        "FIFO",
+        "Family policies"
+      ],
+      "source": "backend/src/settlements/selection.ts:1",
+      "purpose": "Selects settlement batches from per-pool queues and family policies.",
+      "note": "SettlementWorkflow starts manual and automatic runs; SettlementStore.claim applies planning inside the pool-lock transaction. Automatic runs rotate enabled, unblocked families and wait for a full swap batch. Normal selection takes a FIFO prefix, skipping deferred requests and stopping at unconfirmed requests. A manual single-request selection may settle out of order.",
+      "documentation": {
+        "format": "TSDoc",
+        "path": "backend/src/settlements/selection.ts",
+        "line": 1
+      }
+    },
+    "backend.settlement-automation": {
+      "id": "backend.settlement-automation",
+      "layer": "backend",
+      "title": "Background loops",
+      "chips": [
+        "Automatic",
+        "Recovery"
+      ],
+      "source": "backend/src/main.ts:123",
+      "worker": true,
+      "purpose": "Runs automatic settlement and recovery in independent background loops.",
+      "note": "Started by main.ts, both loops run inside the backend process and bypass HTTP routing. Automatic dispatch follows each pool family's policy; recovery continues even when automatic dispatch is disabled. Each loop starts immediately and waits three seconds after its previous pass before repeating. The same worker utility also drives domain request reconciliation.",
+      "documentation": {
+        "format": "TSDoc",
+        "path": "backend/src/main.ts",
+        "line": 123
+      }
+    },
+    "backend.tokens": {
+      "id": "backend.tokens",
+      "layer": "backend",
+      "title": "Tokens",
+      "chips": [
+        "Balances",
+        "Development grant",
+        "Signed claim"
+      ],
+      "source": "backend/src/tokens/workflow.ts:1",
+      "purpose": "Reads balances and serves the development faucet.",
+      "note": "Reading token material from an adapter does not imply invoking this business workflow. The faucet is local development support.",
+      "documentation": {
+        "format": "TSDoc",
+        "path": "backend/src/tokens/workflow.ts",
+        "line": 1
+      }
+    },
+    "backend.adapters": {
+      "id": "backend.adapters",
+      "layer": "backend",
+      "title": "Canton client library",
+      "chips": [
+        "canton/"
+      ],
+      "source": "backend/src/canton/ledger.ts:1",
+      "purpose": "Implements business ledger ports in the backend's internal Canton integration library.",
+      "note": "The Canton module contains domain adapters, interactive transactions, party setup and operator submissions. This shared ledger client supplies their JSON Ledger API IO. Token registry material comes from TokenRegistryStore rows in PostgreSQL.",
+      "documentation": {
+        "format": "TSDoc",
+        "path": "backend/src/canton/ledger.ts",
+        "line": 1
+      }
+    },
+    "backend.stores": {
+      "id": "backend.stores",
+      "layer": "backend",
+      "title": "Domain stores",
+      "chips": [
+        "Logical grouping"
+      ],
+      "source": "backend/src/swaps/store.ts:91",
+      "purpose": "Persists business records and request progress through the shared database client.",
+      "note": "Onboarding, Pools, Swaps, Liquidity and Tokens each own their business records. Only SwapStore and LiquidityStore own settlement request rows and use admission helpers; SettlementStore reads and updates those same rows for settlement. A transaction that locks the pool queue row locks it before any request row.",
+      "documentation": {
+        "format": "TSDoc",
+        "path": "backend/src/swaps/store.ts",
+        "line": 91
+      }
+    },
+    "backend.database-client": {
+      "id": "backend.database-client",
+      "layer": "backend",
+      "title": "Database client",
+      "chips": [
+        "Kysely · pg"
+      ],
+      "source": "backend/src/platform/database.ts:1",
+      "purpose": "Defines PostgreSQL table types, the connection pool and schema checks.",
+      "note": "Business workflows keep persistence in their module's store.ts. IAM account helpers and the Operations command journal also use this shared connection and table types.",
+      "documentation": {
+        "format": "TSDoc",
+        "path": "backend/src/platform/database.ts",
+        "line": 1
+      }
+    },
+    "contracts.kyc": {
+      "id": "contracts.kyc",
+      "layer": "contracts",
+      "title": "KYC approval",
+      "purpose": "Approved trader and allowed pools.",
+      "chips": [],
+      "source": "contracts/daml/KycAttestation.daml:7",
+      "exact": "KycAttestation",
+      "signs": "Operator",
+      "sees": "Trader",
+      "choices": []
+    },
+    "contracts.access": {
+      "id": "contracts.access",
+      "layer": "contracts",
+      "title": "Trader access",
+      "purpose": "Requests and expired-fund recovery.",
+      "chips": [],
+      "source": "contracts/daml/PoolAccess.daml:22",
+      "exact": "PoolAccess",
+      "signs": "Operator",
+      "sees": "Trader",
+      "choices": [
+        "PoolAccess_RequestSwap",
+        "PoolAccess_RequestLiquidityDeposit",
+        "PoolAccess_RequestLiquidityWithdrawal",
+        "PoolAccess_RecoverAllocations"
+      ],
+      "note": "Current app onboarding grants access only to the pools approved in that review. Extending an existing trader to a later pool has no implemented app path. The DEX recovery wrapper requires current access/KYC; direct token withdrawal follows the issuer rules."
+    },
+    "contracts.factory": {
+      "id": "contracts.factory",
+      "layer": "contracts",
+      "title": "Pool factory",
+      "purpose": "Validates proposals and creates pool state.",
+      "chips": [],
+      "source": "contracts/daml/PoolFactory.daml:29",
+      "exact": "PoolFactory",
+      "signs": "DVO",
+      "sees": "Operator",
+      "choices": [
+        "PoolFactory_ProposePool",
+        "PoolFactory_CreatePool"
+      ],
+      "note": "The current development fixture creates the factory. The application proposes pools against an existing factory; it has no factory-creation flow."
+    },
+    "contracts.proposal": {
+      "id": "contracts.proposal",
+      "layer": "contracts",
+      "title": "Pool proposal",
+      "purpose": "Settings awaiting the DVO decision.",
+      "chips": [],
+      "source": "contracts/daml/PoolFactory.daml:97",
+      "exact": "PoolProposal",
+      "signs": "Operator · + DVO when accepted",
+      "sees": "DVO",
+      "choices": [
+        "PoolProposal_Accept",
+        "PoolProposal_Reject",
+        "PoolProposal_Withdraw"
+      ],
+      "note": "Conditional signatories: venueOperator always; settings.dvo only for an accepted proposal. Acceptance creates a successor then invokes the factory in the same transaction."
+    },
+    "contracts.delegation": {
+      "id": "contracts.delegation",
+      "layer": "contracts",
+      "title": "Settlement permission",
+      "purpose": "DVO grants settlement authority for one pool.",
+      "chips": [],
+      "source": "contracts/daml/VenueDelegation.daml:28",
+      "exact": "VenueDelegation",
+      "signs": "DVO",
+      "sees": "Operator",
+      "choices": [
+        "VenueDelegation_SettleBatch",
+        "VenueDelegation_AddLiquidity",
+        "VenueDelegation_WithdrawLiquidity",
+        "VenueDelegation_Revoke"
+      ],
+      "note": "Settlement combines trader-authorized allocations, this DVO grant and the operator controller. Revoking this grant moves no funds and does not erase trader allocations."
+    },
+    "contracts.pool": {
+      "id": "contracts.pool",
+      "layer": "contracts",
+      "title": "Pool engine",
+      "purpose": "Stable configuration and settlement choices.",
+      "chips": [],
+      "source": "contracts/daml/Pool.daml:38",
+      "exact": "Pool",
+      "signs": "DVO",
+      "sees": "Operator",
+      "choices": [
+        "Pool_Swap",
+        "Pool_AddLiquidity",
+        "Pool_WithdrawLiquidity"
+      ],
+      "note": "Pool rules verify the allocations bound to trader terms and the actual output limits. Token effects, receipts and state replacement commit together on-ledger; the prior request and application database are separate transactions."
+    },
+    "contracts.config": {
+      "id": "contracts.config",
+      "layer": "contracts",
+      "title": "Pricing configuration",
+      "purpose": "Fee and approved initial ratio.",
+      "chips": [],
+      "source": "contracts/daml/Pool.daml:117",
+      "exact": "PoolConfig",
+      "signs": "DVO",
+      "sees": "Operator",
+      "choices": [
+        "PoolConfig_Update"
+      ]
+    },
+    "contracts.state": {
+      "id": "contracts.state",
+      "layer": "contracts",
+      "title": "Reserves & LP supply",
+      "purpose": "Reserves, backing holdings and LP supply.",
+      "chips": [],
+      "source": "contracts/daml/Pool.daml:138",
+      "exact": "PoolState",
+      "signs": "DVO",
+      "sees": "Operator",
+      "choices": []
+    },
+    "contracts.swap-receipt": {
+      "id": "contracts.swap-receipt",
+      "layer": "contracts",
+      "title": "Swap result",
+      "purpose": "Evidence of a settled swap.",
+      "chips": [],
+      "source": "contracts/daml/Pool.daml:21",
+      "exact": "SwapReceipt",
+      "signs": "DVO + Operator",
+      "sees": "Trader",
+      "choices": []
+    },
+    "contracts.liquidity-receipt": {
+      "id": "contracts.liquidity-receipt",
+      "layer": "contracts",
+      "title": "Liquidity result",
+      "purpose": "Evidence of a deposit or redemption.",
+      "chips": [],
+      "source": "contracts/daml/Pool.daml:227",
+      "exact": "LiquidityReceipt",
+      "signs": "DVO + Operator",
+      "sees": "Trader",
+      "choices": []
+    },
+    "canton.ledger-api": {
+      "id": "canton.ledger-api",
+      "layer": "canton",
+      "title": "Ledger API",
+      "purpose": "Receives reads, commands and signed submissions.",
+      "chips": [
+        "Read",
+        "Submit",
+        "Prepare / execute"
+      ],
+      "source": "backend/src/canton/http.ts:125"
+    },
+    "canton.party-hosting": {
+      "id": "canton.party-hosting",
+      "layer": "canton",
+      "title": "Parties & hosting",
+      "purpose": "Registers parties and verifies local confirmation hosting.",
+      "chips": [
+        "Party identity",
+        "Public key",
+        "Hosting"
+      ],
+      "source": "backend/src/canton/external-parties.ts:168"
+    },
+    "canton.execution": {
+      "id": "canton.execution",
+      "layer": "canton",
+      "title": "Contract execution",
+      "purpose": "Evaluates Daml rules and authorization.",
+      "chips": [
+        "DEX packages",
+        "Authorization",
+        "Atomic effects"
+      ],
+      "source": "backend/src/canton/interactive.ts:197"
+    },
+    "canton.ledger-state": {
+      "id": "canton.ledger-state",
+      "layer": "canton",
+      "title": "Ledger state & history",
+      "purpose": "Exposes contracts and confirmed transaction effects.",
+      "chips": [
+        "Active contracts",
+        "Transactions"
+      ],
+      "source": "backend/src/canton/ledger.ts:322",
+      "note": "Separate from the DEX PostgreSQL database. This is a participant capability, not a new DEX storage service."
+    },
+    "canton.synchronizer": {
+      "id": "canton.synchronizer",
+      "layer": "canton",
+      "title": "Global Synchronizer",
+      "purpose": "Coordinates the connected participant.",
+      "chips": [
+        "LocalNet: global"
+      ],
+      "source": "docker/localnet/participant-bootstrap.sc:6",
+      "note": "LocalNet uses its own synchronizer under the alias global. It does not connect to the public Global Synchronizer."
+    },
+    "external.wallet": {
+      "id": "external.wallet",
+      "layer": "external",
+      "title": "MetaMask + Canton Snap",
+      "chips": [
+        "External wallet"
+      ],
+      "source": "frontend/src/wallet/types.ts:1",
+      "external": true,
+      "purpose": "MetaMask + Canton Snap is the trader's external wallet. It keeps private keys outside the app, signs Canton hashes and returns the signatures through this interface.",
+      "documentation": {
+        "format": "TSDoc",
+        "path": "frontend/src/wallet/types.ts",
+        "line": 1
+      }
+    },
+    "external.keycloak": {
+      "id": "external.keycloak",
+      "layer": "external",
+      "title": "Keycloak",
+      "chips": [
+        "Identity provider"
+      ],
+      "source": "frontend/src/auth/keycloak.ts:1",
+      "external": true,
+      "purpose": "Keycloak is the identity provider for login. It issues the tokens that the configured participant accepts.",
+      "note": "Bootstrap configures this issuer on the participant. Trader operations and operator access reviews relay login tokens. Daml commands acting as the operator party and the DVO CLI use service credentials.",
+      "documentation": {
+        "format": "TSDoc",
+        "path": "frontend/src/auth/keycloak.ts",
+        "line": 1
+      }
+    },
+    "external.postgres": {
+      "id": "external.postgres",
+      "layer": "external",
+      "title": "DEX PostgreSQL",
+      "purpose": "Stores application progress and projections.",
+      "chips": [
+        "Application database"
+      ],
+      "source": "docker/compose.dev.yaml:24",
+      "external": true
+    },
+    "external.dvo": {
+      "id": "external.dvo",
+      "layer": "external",
+      "title": "DVO",
+      "chips": [
+        "Pool-authority party"
+      ],
+      "source": "backend/src/cli/decide-pool.ts:30",
+      "purpose": "The DVO is the pool-authority party on Canton.",
+      "note": "Approves or rejects pool proposals and grants the operator per-pool settlement authority. In LocalNet this alias resolves to a party hosted by the participant. The development CLI acts as that party; the CLI's PostgreSQL access is tooling, not a connection owned by a party.",
+      "documentation": {
+        "format": "TSDoc",
+        "path": "backend/src/cli/decide-pool.ts",
+        "line": 30
+      }
+    },
+    "external.token-standard": {
+      "id": "external.token-standard",
+      "layer": "external",
+      "title": "Token Standard",
+      "purpose": "Holdings, allocations and token settlement interfaces.",
+      "chips": [
+        "Holdings",
+        "Allocation factory",
+        "Allocations",
+        "Settlement factory"
+      ],
+      "source": "contracts/daml/Lib/Tokens.daml:97",
+      "external": true,
+      "note": "Ledger interfaces implemented by issuers. They are not local DEX templates or an HTTP token service."
+    }
+  },
+  "documentationSources": {
+    "frontend.session": {
+      "path": "frontend/src/app/runtime.tsx"
+    },
+    "frontend.trader": {
+      "path": "frontend/src/features/swap/SwapDesk.tsx"
+    },
+    "frontend.operator": {
+      "path": "frontend/src/features/settlement/PoolSettlement.tsx"
+    },
+    "frontend.wallet": {
+      "path": "frontend/src/features/wallet/signing.ts"
+    },
+    "frontend.data": {
+      "path": "frontend/src/app/useAsync.ts"
+    },
+    "client.reads": {
+      "path": "client/src/client.ts"
+    },
+    "client.onboarding": {
+      "path": "client/src/modules/onboarding/index.ts"
+    },
+    "client.trader": {
+      "path": "client/src/modules/lp/index.ts"
+    },
+    "client.operator": {
+      "path": "client/src/modules/admin/index.ts"
+    },
+    "client.http": {
+      "path": "client/src/core/http.ts"
+    },
+    "backend.api": {
+      "path": "backend/src/platform/server.ts",
+      "symbol": "createServer"
+    },
+    "backend.application": {
+      "path": "backend/src/main.ts"
+    },
+    "backend.iam": {
+      "path": "backend/src/iam/authentication.ts"
+    },
+    "backend.activity": {
+      "path": "backend/src/activity/routes.ts"
+    },
+    "backend.operations": {
+      "path": "backend/src/operations/commands.ts"
+    },
+    "backend.platform": {
+      "path": "backend/src/platform/server.ts"
+    },
+    "backend.onboarding": {
+      "path": "backend/src/onboarding/workflow.ts"
+    },
+    "backend.pools": {
+      "path": "backend/src/pools/workflow.ts"
+    },
+    "backend.swaps": {
+      "path": "backend/src/swaps/workflow.ts"
+    },
+    "backend.liquidity": {
+      "path": "backend/src/liquidity/workflow.ts"
+    },
+    "backend.settlements": {
+      "path": "backend/src/settlements/workflow.ts"
+    },
+    "backend.settlement-queues": {
+      "path": "backend/src/settlements/store.ts",
+      "symbol": "SettlementStore"
+    },
+    "backend.settlement-decision": {
+      "path": "backend/src/settlements/selection.ts"
+    },
+    "backend.settlement-automation": {
+      "path": "backend/src/main.ts",
+      "symbol": "workers"
+    },
+    "backend.tokens": {
+      "path": "backend/src/tokens/workflow.ts"
+    },
+    "backend.adapters": {
+      "path": "backend/src/canton/ledger.ts"
+    },
+    "backend.stores": {
+      "path": "backend/src/swaps/store.ts",
+      "symbol": "SwapStore"
+    },
+    "backend.database-client": {
+      "path": "backend/src/platform/database.ts"
+    },
+    "external.wallet": {
+      "path": "frontend/src/wallet/types.ts"
+    },
+    "external.keycloak": {
+      "path": "frontend/src/auth/keycloak.ts"
+    },
+    "external.dvo": {
+      "path": "backend/src/cli/decide-pool.ts",
+      "symbol": "DVO"
+    }
+  },
+  "choices": {
+    "PoolAccess_RequestSwap": {
+      "owner": "contracts.access",
+      "id": "PoolAccess_RequestSwap",
+      "label": "Request swap",
+      "controller": "Trader",
+      "source": "contracts/daml/PoolAccess.daml:33",
+      "consuming": false
+    },
+    "PoolAccess_RequestLiquidityDeposit": {
+      "owner": "contracts.access",
+      "id": "PoolAccess_RequestLiquidityDeposit",
+      "label": "Request deposit",
+      "controller": "Trader",
+      "source": "contracts/daml/PoolAccess.daml:54",
+      "consuming": false
+    },
+    "PoolAccess_RequestLiquidityWithdrawal": {
+      "owner": "contracts.access",
+      "id": "PoolAccess_RequestLiquidityWithdrawal",
+      "label": "Request redemption",
+      "controller": "Trader",
+      "source": "contracts/daml/PoolAccess.daml:70",
+      "consuming": false
+    },
+    "PoolAccess_RecoverAllocations": {
+      "owner": "contracts.access",
+      "id": "PoolAccess_RecoverAllocations",
+      "label": "Recover expired funds",
+      "controller": "Trader",
+      "source": "contracts/daml/PoolAccess.daml:85",
+      "consuming": false
+    },
+    "PoolFactory_ProposePool": {
+      "owner": "contracts.factory",
+      "id": "PoolFactory_ProposePool",
+      "label": "Propose pool",
+      "controller": "Operator",
+      "source": "contracts/daml/PoolFactory.daml:39",
+      "consuming": false
+    },
+    "PoolFactory_CreatePool": {
+      "owner": "contracts.factory",
+      "id": "PoolFactory_CreatePool",
+      "label": "Create pool",
+      "controller": "DVO + Operator",
+      "source": "contracts/daml/PoolFactory.daml:52",
+      "consuming": false
+    },
+    "PoolProposal_Accept": {
+      "owner": "contracts.proposal",
+      "id": "PoolProposal_Accept",
+      "label": "Accept",
+      "controller": "DVO",
+      "source": "contracts/daml/PoolFactory.daml:111",
+      "consuming": true
+    },
+    "PoolProposal_Reject": {
+      "owner": "contracts.proposal",
+      "id": "PoolProposal_Reject",
+      "label": "Reject",
+      "controller": "DVO",
+      "source": "contracts/daml/PoolFactory.daml:122",
+      "consuming": true
+    },
+    "PoolProposal_Withdraw": {
+      "owner": "contracts.proposal",
+      "id": "PoolProposal_Withdraw",
+      "label": "Withdraw proposal",
+      "controller": "Operator",
+      "source": "contracts/daml/PoolFactory.daml:127",
+      "consuming": true
+    },
+    "VenueDelegation_SettleBatch": {
+      "owner": "contracts.delegation",
+      "id": "VenueDelegation_SettleBatch",
+      "label": "Settle swaps",
+      "controller": "Operator",
+      "source": "contracts/daml/VenueDelegation.daml:39",
+      "consuming": false
+    },
+    "VenueDelegation_AddLiquidity": {
+      "owner": "contracts.delegation",
+      "id": "VenueDelegation_AddLiquidity",
+      "label": "Settle deposits",
+      "controller": "Operator",
+      "source": "contracts/daml/VenueDelegation.daml:51",
+      "consuming": false
+    },
+    "VenueDelegation_WithdrawLiquidity": {
+      "owner": "contracts.delegation",
+      "id": "VenueDelegation_WithdrawLiquidity",
+      "label": "Settle redemptions",
+      "controller": "Operator",
+      "source": "contracts/daml/VenueDelegation.daml:64",
+      "consuming": false
+    },
+    "VenueDelegation_Revoke": {
+      "owner": "contracts.delegation",
+      "id": "VenueDelegation_Revoke",
+      "label": "Revoke permission",
+      "controller": "DVO",
+      "source": "contracts/daml/VenueDelegation.daml:77",
+      "consuming": true
+    },
+    "Pool_Swap": {
+      "owner": "contracts.pool",
+      "id": "Pool_Swap",
+      "label": "Swap batch",
+      "controller": "DVO + Operator",
+      "source": "contracts/daml/Pool.daml:63",
+      "consuming": false
+    },
+    "Pool_AddLiquidity": {
+      "owner": "contracts.pool",
+      "id": "Pool_AddLiquidity",
+      "label": "Deposit batch",
+      "controller": "DVO + Operator",
+      "source": "contracts/daml/Pool.daml:85",
+      "consuming": false
+    },
+    "Pool_WithdrawLiquidity": {
+      "owner": "contracts.pool",
+      "id": "Pool_WithdrawLiquidity",
+      "label": "Redemption batch",
+      "controller": "DVO + Operator",
+      "source": "contracts/daml/Pool.daml:101",
+      "consuming": false
+    },
+    "PoolConfig_Update": {
+      "owner": "contracts.config",
+      "id": "PoolConfig_Update",
+      "label": "Change fee",
+      "controller": "DVO",
+      "source": "contracts/daml/Pool.daml:130",
+      "consuming": true
+    }
+  },
+  "layers": {
+    "frontend": {
+      "name": "Frontend",
+      "number": "01",
+      "tag": "React application",
+      "purpose": "People request actions and understand their outcomes.",
+      "short": "Trader and operator workspaces · React + TypeScript",
+      "nodes": [
+        "frontend.session",
+        "frontend.trader",
+        "frontend.operator",
+        "frontend.wallet",
+        "frontend.data"
+      ],
+      "context": [
+        "external.keycloak",
+        "external.wallet"
+      ],
+      "boundary": "Browser application",
+      "note": "Wallet keys stay outside the application. The UI asks for a signature and sends it through the client."
+    },
+    "client": {
+      "name": "Client",
+      "number": "02",
+      "tag": "TypeScript library",
+      "purpose": "A small, typed vocabulary for calling the backend.",
+      "short": "Typed HTTP APIs for the backend · TypeScript",
+      "nodes": [
+        "client.reads",
+        "client.onboarding",
+        "client.trader",
+        "client.operator",
+        "client.http"
+      ],
+      "context": [],
+      "boundary": "Imported into the browser — no separate service",
+      "note": "The client sends requests. It does not sign, price, settle or own background polling."
+    },
+    "backend": {
+      "name": "Backend",
+      "number": "03",
+      "tag": "Node / TypeScript / Fastify",
+      "purpose": "Durable business workflows, explicit settlement and ledger integration.",
+      "short": "HTTP API, workflows and persistence · TypeScript + Fastify + PostgreSQL",
+      "nodes": [
+        "backend.api",
+        "backend.application",
+        "backend.iam",
+        "backend.activity",
+        "backend.onboarding",
+        "backend.pools",
+        "backend.swaps",
+        "backend.liquidity",
+        "backend.settlements",
+        "backend.settlement-queues",
+        "backend.settlement-decision",
+        "backend.settlement-automation",
+        "backend.tokens",
+        "backend.adapters",
+        "backend.stores",
+        "backend.database-client",
+        "backend.operations",
+        "backend.platform"
+      ],
+      "context": [
+        "external.postgres"
+      ],
+      "boundary": "Backend process, with a separate Canton network boundary",
+      "note": "Automatic settlement and recovery run as independent loops in the API process. Settlement boxes show logical responsibilities; request queues are backed by shared PostgreSQL tables. Canton client library is the internal canton/ integration package. Development setup tooling is omitted."
+    },
+    "contracts": {
+      "name": "Contracts",
+      "number": "04",
+      "tag": "Daml rules & state",
+      "purpose": "Who may act, what can change, and which effects commit together.",
+      "short": "Access, pools and settlement rules · Daml on Canton",
+      "nodes": [
+        "contracts.kyc",
+        "contracts.access",
+        "contracts.factory",
+        "contracts.proposal",
+        "contracts.delegation",
+        "contracts.pool",
+        "contracts.config",
+        "contracts.state",
+        "contracts.swap-receipt",
+        "contracts.liquidity-receipt"
+      ],
+      "context": [
+        "external.token-standard"
+      ],
+      "boundary": "DEX templates — executed by the Canton participant",
+      "note": "DVO = pool authority. Operator = venueOperator. Trader = trader. Signatory, observer and controller are different roles."
+    },
+    "canton": {
+      "name": "Canton",
+      "number": "05",
+      "tag": "Ledger runtime",
+      "purpose": "Hosts parties, evaluates contracts and confirms ledger effects.",
+      "short": "Participant · state · synchronizer",
+      "nodes": [
+        "canton.ledger-api",
+        "canton.party-hosting",
+        "canton.execution",
+        "canton.ledger-state",
+        "canton.synchronizer"
+      ],
+      "context": [],
+      "boundary": "Application participant + its synchronizer connection",
+      "note": "Boxes show responsibilities. LocalNet configuration is the evidence baseline; no live deployment status is displayed."
+    }
+  },
+  "overview": {
+    "name": "All Layers",
+    "short": "React UI → TypeScript client → Fastify backend → Daml contracts on Canton"
+  },
+  "baseline": "c36dd63",
+  "sourceRoot": "https://github.com/OpenZeppelin/canton-dex/blob/c36dd63249cd36e6665e6fd41bb2f43800a37c4f/"
+}

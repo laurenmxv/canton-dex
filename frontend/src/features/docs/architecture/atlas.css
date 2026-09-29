@@ -1,0 +1,116 @@
+@import '@xyflow/react/dist/style.css';
+@import './nodes.css';
+
+/* Fills the page with one structural diagram canvas. */
+.atlas {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--surface);
+  color: var(--foreground);
+}
+
+.atlas-header {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 24px;
+  min-height: 48px;
+  padding: 6px 16px;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+}
+
+/* One line under the heading and layer navigation: the view's responsibility and stack. */
+.atlas-summary {
+  flex-basis: 100%;
+  margin: 0;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.atlas-nav,
+.atlas-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.atlas-body {
+  display: grid;
+  flex: 1;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: 12px;
+  min-height: 0;
+  padding: 12px;
+}
+
+.atlas-canvas {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.atlas-stage {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  opacity: 0;
+}
+
+/* Each view mounts a new stage, so the entry runs on every layer change, cached routes included. */
+.atlas-stage.is-shown {
+  opacity: 1;
+  animation: atlas-stage-in 180ms var(--ease-out);
+}
+
+@keyframes atlas-stage-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .atlas-stage.is-shown { animation: none; }
+}
+
+.atlas-canvas .react-flow {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+  background: var(--surface);
+}
+
+.atlas-canvas .react-flow__attribution {
+  background: transparent;
+}
+
+.atlas-canvas .react-flow__attribution a {
+  color: var(--muted-foreground);
+}
+
+.atlas-canvas-toolbar { padding: 8px; border-bottom: 1px solid var(--border); }
+.atlas-canvas-toolbar .atlas-toolbar { width: fit-content; }
+
+.atlas-toolbar {
+  padding: 4px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}

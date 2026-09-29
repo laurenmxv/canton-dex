@@ -11,7 +11,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "provision:keycloak": "node scripts/provision-keycloak.mjs",
-    "dev:keycloak": "vite --mode keycloak"
+    "dev:keycloak": "vite --mode keycloak",
+    "architecture:content": "node scripts/architecture-model.cjs",
+    "test:architecture-docs": "node --test scripts/architecture-docs.test.cjs"
   },
   "overridesReason": "nwsapi from 2.2.27 recurses on :modal, which Floating UI queries whenever a kit listbox opens. It takes one open from about 70ms to over 12s under jsdom. Re-check on the next jsdom major.",
   "overrides": {

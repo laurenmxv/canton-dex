@@ -1,0 +1,190 @@
+.atlas-node {
+  display: block;
+  box-sizing: border-box;
+  gap: 0;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  outline: 1px solid var(--border);
+  background: var(--card);
+  color: var(--foreground);
+  box-shadow: 0 2px 5px rgb(0 0 0 / 4%);
+}
+.atlas-node-frame { width: 100%; height: 100%; }
+.atlas-tip.atlas-tip {
+  z-index: 1000;
+  display: grid;
+  gap: 6px;
+  max-width: min(340px, calc(100vw - 24px));
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: var(--foreground);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 12%);
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: normal;
+  pointer-events: none;
+}
+.atlas-tip p { margin: 0; }
+.atlas-tip-title { font-size: 13px; font-weight: 600; }
+.atlas-tip-note { padding-top: 6px; border-top: 1px solid var(--border); color: var(--muted-foreground); }
+.atlas-tip-source { font-size: 11px; color: var(--muted-foreground); overflow-wrap: anywhere; }
+.atlas-node--context { outline-style: dashed; }
+.atlas-node--boundary {
+  padding: 12px 16px;
+  outline-color: var(--primary-border);
+  background: color-mix(in srgb, var(--primary-soft) 42%, transparent);
+  box-shadow: none;
+  pointer-events: none;
+}
+.atlas-group .atlas-node--boundary { outline-style: dashed; }
+.atlas-node--boundary > span { font-size: 13px; font-weight: 600; color: var(--muted-foreground); }
+/* The All Layers view's top-level bands; the router's BAND_CAPTION extent matches this size and line. */
+.atlas-band .atlas-node--boundary > span {
+  display: block;
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 650;
+  color: var(--foreground);
+}
+/*
+ * External dependencies and separate tools: an amber outline, tint and
+ * glyph derived from the theme's warning colour. Titles keep the foreground colour for contrast.
+ */
+.atlas {
+  --atlas-external: color-mix(in oklab, var(--warning) 78%, var(--foreground));
+  --atlas-external-border: color-mix(in oklab, var(--warning) 70%, var(--border));
+  --atlas-external-surface: color-mix(in oklab, var(--warning) 9%, var(--card));
+}
+.atlas-node.atlas-node--external {
+  outline-color: var(--atlas-external-border);
+  background: var(--atlas-external-surface);
+}
+.atlas-node--external .atlas-glyph { color: var(--atlas-external); }
+/* A view's presentation choice: the same palette on a box the model does not mark external. */
+.atlas-amber .atlas-node {
+  outline-color: var(--atlas-external-border);
+  background: var(--atlas-external-surface);
+}
+.atlas-amber .atlas-glyph { color: var(--atlas-external); }
+/*
+ * The block that carries the Canton symbol takes the accent of the official logo (#F3FF97): a gold
+ * surface and a darker gold outline in the light theme, a restrained tint and a bright outline in the
+ * dark theme. Titles keep the foreground colour.
+ */
+.atlas {
+  --atlas-canton: #f3ff97;
+  --atlas-canton-surface: color-mix(in oklab, var(--atlas-canton) 60%, var(--card));
+  --atlas-canton-border: color-mix(in oklab, color-mix(in oklab, var(--atlas-canton) 40%, var(--warning)) 70%, var(--foreground));
+}
+.dark .atlas {
+  --atlas-canton-surface: color-mix(in oklab, var(--atlas-canton) 20%, var(--card));
+  --atlas-canton-border: color-mix(in oklab, var(--atlas-canton) 65%, var(--border));
+}
+.atlas-node.atlas-node--canton {
+  outline-width: 1.5px;
+  outline-color: var(--atlas-canton-border);
+  background: var(--atlas-canton-surface);
+}
+.atlas-node-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 58px;
+  padding: 0 10px;
+}
+.atlas-glyph { width: 20px; height: 20px; flex: 0 0 20px; color: var(--primary); }
+.atlas-brand { display: inline-flex; align-items: center; justify-content: center; }
+.atlas-brand img { width: 100%; height: 100%; object-fit: contain; }
+.atlas-brand .atlas-brand-dark,
+.dark .atlas-brand .atlas-brand-light { display: none; }
+.dark .atlas-brand .atlas-brand-dark { display: block; }
+.atlas-node .atlas-node-title {
+  min-width: 0;
+  flex: 1;
+  height: auto;
+  min-height: 32px;
+  padding: 4px;
+  justify-content: flex-start;
+  text-align: left;
+  white-space: normal;
+  color: inherit;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+.atlas-node .atlas-node-title--static { display: flex; align-items: center; }
+.atlas-node .atlas-node-title--static:focus-visible,
+.atlas-node .atlas-choice:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; border-radius: 3px; }
+.atlas-tip-facts { display: grid; gap: 2px; margin: 0; font-size: 12px; }
+.atlas-tip-facts > div { display: flex; gap: 6px; }
+.atlas-tip-facts dt { color: var(--muted-foreground); }
+.atlas-tip-facts dd { margin: 0; overflow-wrap: anywhere; }
+.atlas-node .atlas-choices { margin: 0; padding: 0; list-style: none; }
+.atlas-choice-row { height: 32px; }
+/* Contracts reads its choices as text, so its titles and choice rows are larger. Row heights stay, so choice ports do not move. */
+.atlas[data-view='contracts'] .atlas-node .atlas-node-title { font-size: 20px; }
+/* Template names stand clearly above their choices; context cards keep 20px. */
+.atlas[data-view='contracts'] .atlas-node--template .atlas-node-title { font-size: 22px; font-weight: 700; }
+.atlas[data-view='contracts'] .atlas-node .atlas-choice { font-size: 18px; font-weight: 500; line-height: 1.25; }
+/* Each template lists its choices with a compact bullet, in the primary colour for a choice that keeps the contract. */
+.atlas[data-view='contracts'] .atlas-node .atlas-choice { justify-content: flex-start; gap: 6px; white-space: nowrap; }
+.atlas[data-view='contracts'] .atlas-node .atlas-choice::before {
+  content: '';
+  flex: none;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--muted-foreground);
+}
+.atlas[data-view='contracts'] .atlas-node .atlas-choice--kept::before { background: var(--primary); }
+/* A choice that keeps its contract active (non-consuming) carries the primary accent; consuming ones stay neutral. */
+.atlas[data-view='contracts'] .atlas-node .atlas-choice--kept {
+  background: var(--primary-soft);
+  box-shadow: inset 3px 0 0 var(--primary), inset 0 0 0 1px var(--primary-border);
+  color: var(--foreground);
+}
+.atlas-node .atlas-choice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: calc(100% - 12px);
+  height: 32px;
+  min-height: 32px;
+  margin: 0 6px;
+  padding: 0 8px;
+  border-radius: 3px;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 400;
+  color: inherit;
+}
+.atlas-node-chips { display: flex; flex-wrap: wrap; gap: 3px 8px; padding: 0 14px 8px; font-size: 12px; line-height: 1.4; }
+.atlas-node-chips > span { border-bottom: 1px solid var(--primary-border); }
+.atlas-node .atlas-port {
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  min-width: 5px;
+  min-height: 5px;
+  border: 0;
+  background: var(--primary);
+  opacity: 0;
+  pointer-events: none;
+}
+.atlas-edge-label {
+  position: absolute;
+  padding: 2px 5px;
+  border-radius: 3px;
+  background: var(--card);
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.25;
+  white-space: nowrap;
+  pointer-events: none;
+}

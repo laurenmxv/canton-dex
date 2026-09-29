@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
+import { architectureContent } from './dev/architectureContent';
 import { cantonSnapServer } from './dev/cantonSnap';
 
 /**
@@ -20,7 +21,13 @@ const apiProxy = {
 };
 
 export default defineConfig({
-  plugins: [tailwindcss(), react(), cantonSnapServer()],
+  plugins: [
+    // Tests read the committed model; only dev and build regenerate it from source docs.
+    ...(process.env['VITEST'] ? [] : [architectureContent()]),
+    tailwindcss(),
+    react(),
+    cantonSnapServer(),
+  ],
   // Treat the SDK as source so edits participate in Vite's normal HMR graph.
   resolve: {
     alias: {
@@ -35,10 +42,14 @@ export default defineConfig({
       allow: [
         fileURLToPath(new URL('.', import.meta.url)),
         fileURLToPath(new URL('../client', import.meta.url)),
+        // The Daml flows page reads its PlantUML sources from the repository docs.
+        fileURLToPath(new URL('../docs/flows', import.meta.url)),
       ],
     },
   },
   test: {
+    // `scripts/` holds node:test suites with their own command, test:architecture-docs.
+    include: ['src/**/*.test.{ts,tsx}'],
     environment: 'jsdom',
     // An origin is what gives jsdom a working localStorage.
     environmentOptions: { jsdom: { url: 'http://localhost:5180/' } },

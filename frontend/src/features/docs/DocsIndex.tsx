@@ -54,7 +54,7 @@ const pages: readonly { href: string; title: string; summary: string; icon: Reac
   {
     href: FLOWS_HOME,
     title: 'Daml flows',
-    summary: 'Contract steps per workflow, from their PlantUML sources.',
+    summary: 'Contract steps per workflow.',
     icon: <FlowIcon />,
   },
 ];

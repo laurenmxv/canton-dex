@@ -14,7 +14,7 @@ const PORTS = [
 ] as const;
 const BADGES: Record<string, string> = { exercise: 'Exercise', create: 'Create', archive: 'Archive',
   check: 'Check', decision: 'Decision', loop: 'For each', activity: 'Action' };
-const MIN_ZOOM = 0.08;
+const MIN_ZOOM = 0.01;
 const MAX_ZOOM = 1.8;
 const READING_ZOOM = 0.75;
 const VIEW_PADDING = 24;
@@ -86,6 +86,14 @@ function clampView(x: number, y: number, zoom: number, graph: FlowGraph, area: H
 function ViewTools({ graph, canvas }: { graph: FlowGraph; canvas: RefObject<HTMLDivElement | null> }) {
   const { setViewport, getViewport, viewportInitialized } = useReactFlow();
   const zoom = useStore((state) => state.transform[2]);
+  const fit = useCallback(() => {
+    const area = canvas.current;
+    if (!area || area.clientWidth <= VIEW_PADDING * 2) return;
+    const scale = Math.max(MIN_ZOOM, Math.min(1,
+      (area.clientWidth - VIEW_PADDING * 2) / graph.width));
+    void setViewport({ x: (area.clientWidth - graph.width * scale) / 2,
+      y: VIEW_PADDING, zoom: scale });
+  }, [canvas, graph, setViewport]);
   const readable = useCallback(() => {
     const area = canvas.current;
     if (!area?.clientWidth) return;
@@ -103,11 +111,11 @@ function ViewTools({ graph, canvas }: { graph: FlowGraph; canvas: RefObject<HTML
   }, [canvas, getViewport, graph, setViewport]);
   useEffect(() => {
     if (!viewportInitialized || !canvas.current) return;
-    readable();
-    const observer = new ResizeObserver(readable);
+    fit();
+    const observer = new ResizeObserver(fit);
     observer.observe(canvas.current);
     return () => observer.disconnect();
-  }, [viewportInitialized, canvas, readable]);
+  }, [viewportInitialized, canvas, fit]);
   return <div className="flow-tools" role="toolbar" aria-label="Diagram view">
     <Button size="sm" variant="secondary" onClick={readable}>Reading view</Button>
     <Button size="sm" variant="ghost" aria-label="Zoom out" onClick={() => zoomBy(1 / ZOOM_STEP)}>−</Button>

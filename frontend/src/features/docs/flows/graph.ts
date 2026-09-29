@@ -5,13 +5,14 @@ export interface StepData extends Record<string, unknown> {
   label: string;
   kind: FlowStep['kind'] | 'exercise' | 'create' | 'archive' | 'check';
   number: number | null;
+  offLedger: boolean;
   lane: string;
   gutterLeft: number;
   gutterRight: number;
   trackGutter: number;
 }
 export type StepNode = Node<StepData, 'step'> & { width: number; height: number };
-export interface LaneData extends Record<string, unknown> { label: string; index: number; x: number; width: number }
+export interface LaneData extends Record<string, unknown> { label: string; index: number; x: number; width: number; offLedger: boolean }
 export type LaneNode = Node<LaneData, 'lane'>;
 export type GroupNode = Node<{ label: string }, 'region'>;
 export type FlowNode = StepNode | LaneNode | GroupNode;
@@ -32,9 +33,11 @@ interface Tail { id: string; label?: string; route?: Route; branch?: number }
 
 const CARD = 440;
 const BRANCH_CARD = 380;
+const TERMINAL_WIDTH = 160;
+const TERMINAL_HEIGHT = 64;
 const GAP = 40;
 const DECISION_GAP = 80;
-const HEADER = 100;
+const TOP_PADDING = 20;
 const LANE = CARD + 48;
 const BRANCH_LANE = BRANCH_CARD * 2 + 88;
 const TRACK_CENTER = BRANCH_CARD / 2 + 32;
@@ -44,6 +47,9 @@ const FORK = 100;
 const FORK_TURN = 56;
 /** Room beside the lanes for a branch that must pass a group spanning every lane. */
 const CORRIDOR = 48;
+/** A shared width keeps fit-to-width text at the same scale across flows. */
+const DIAGRAM_WIDTH = LANE * 4 + CORRIDOR;
+const OFF_LEDGER_LABEL = /\s*\(off-ledger\)\s*$/i;
 
 const unmark = (value: string) => value.replaceAll('**', '');
 function kindOf(step: FlowStep): StepData['kind'] {
@@ -54,9 +60,19 @@ function kindOf(step: FlowStep): StepData['kind'] {
   if (/^(Check|Validate|Recheck|Verify)/.test(step.label)) return 'check';
   return 'activity';
 }
-function heightOf(step: FlowStep, width: number) {
-  if (['start', 'stop'].includes(step.kind)) return 24;
-  const lines = unmark(step.label).split('\n').reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length / ((width - 34) / 12))), 0);
+/** Hide a choice's repeated template while retaining qualifiers and other details. */
+function labelOf(step: FlowStep): string {
+  const label = step.label.replace(OFF_LEDGER_LABEL, '');
+  if (step.kind !== 'activity') return label;
+  const lines = label.split('\n');
+  const choice = /^Exercise \*\*([^*]+)\*\*$/.exec(lines[0]!);
+  const target = /^on (?:(.+) )?\*\*([^*]+)\*\*$/.exec(lines[1] ?? '');
+  if (!choice || !target || !choice[1]!.startsWith(`${target[2]}_`)) return label;
+  return [lines[0], ...(target[1] ? [`(${target[1]})`] : []), ...lines.slice(2)].join('\n');
+}
+function heightOf(step: FlowStep, width: number, label: string) {
+  if (['start', 'stop'].includes(step.kind)) return TERMINAL_HEIGHT;
+  const lines = unmark(label).split('\n').reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length / ((width - 34) / 12))), 0);
   return 50 + lines * 30;
 }
 
@@ -74,10 +90,13 @@ export function makeGraph(flow: FlowDocument): FlowGraph {
     }
   }
   inspect(flow.steps);
+  const laneWidths = flow.lanes.map(label => branchLanes.has(label) ? BRANCH_LANE : LANE);
+  const horizontalScale = (DIAGRAM_WIDTH - CORRIDOR) / laneWidths.reduce((sum, width) => sum + width, 0);
+  const horizontal = (value: number) => value * horizontalScale;
   let x = 0;
   const lanes = flow.lanes.map((label, index) => {
-    const width = branchLanes.has(label) ? BRANCH_LANE : LANE;
-    const lane = { label, index, x, width };
+    const width = horizontal(laneWidths[index]!);
+    const lane = { label, index, x, width, offLedger: /\boff-ledger\b/i.test(label) };
     x += width;
     return lane;
   });
@@ -89,14 +108,16 @@ export function makeGraph(flow: FlowDocument): FlowGraph {
   function put(step: FlowStep, y: number, track: number | null): StepNode {
     const lane = byLane.get(step.lane)!;
     const terminal = ['start', 'stop'].includes(step.kind);
-    const width = terminal ? 24 : track == null ? CARD : BRANCH_CARD;
-    const cx = track == null ? lane.x + lane.width / 2 : lane.x + (track === 0 ? TRACK_CENTER : lane.width - TRACK_CENTER);
-    const height = heightOf(step, width);
+    const width = terminal ? TERMINAL_WIDTH : horizontal(track == null ? CARD : BRANCH_CARD);
+    const cx = track == null ? lane.x + lane.width / 2 : lane.x + (track === 0 ? horizontal(TRACK_CENTER) : lane.width - horizontal(TRACK_CENTER));
+    const label = labelOf(step);
+    const height = heightOf(step, width, label);
     const node: StepNode = { id: step.id, type: 'step', position: { x: cx - width / 2, y }, width, height,
       style: { width, height }, draggable: false, selectable: false,
-      data: { ...step, kind: kindOf(step), number: terminal ? null : ++count, width, height, lane: lane.label,
-        gutterLeft: lane.x + 12, gutterRight: lane.x + lane.width - 12,
-        trackGutter: track === 0 ? lane.x + 16 : track === 1 ? lane.x + lane.width - 16 : lane.x + lane.width - 12 } };
+      data: { ...step, label, offLedger: OFF_LEDGER_LABEL.test(step.label),
+        kind: kindOf(step), number: terminal ? null : ++count, width, height, lane: lane.label,
+        gutterLeft: lane.x + horizontal(12), gutterRight: lane.x + lane.width - horizontal(12),
+        trackGutter: track === 0 ? lane.x + horizontal(16) : track === 1 ? lane.x + lane.width - horizontal(16) : lane.x + lane.width - horizontal(12) } };
     nodes.push(node);
     nodeById.set(node.id, node);
     return node;
@@ -116,13 +137,13 @@ export function makeGraph(flow: FlowDocument): FlowGraph {
         const result = sequence(step.steps, y + GROUP_HEADER, tails, track);
         const members = nodes.slice(from).filter((node): node is StepNode => node.type === 'step');
         if (!members.length) throw new Error(`Group ${step.label} has no visible steps.`);
-        const left = Math.min(...members.map(node => node.position.x)) - GROUP_PADDING;
-        const right = Math.max(...members.map(node => node.position.x + node.width)) + GROUP_PADDING;
+        const left = Math.min(...members.map(node => node.position.x)) - horizontal(GROUP_PADDING);
+        const right = Math.max(...members.map(node => node.position.x + node.width)) + horizontal(GROUP_PADDING);
         const bottom = Math.max(...members.map(node => node.position.y + node.height)) + GROUP_PADDING;
         nodes.push({ id: step.id, type: 'region', position: { x: left, y },
           width: right - left, height: bottom - y,
           style: { width: right - left, height: bottom - y, pointerEvents: 'none' },
-          data: { label: step.label }, selectable: false, draggable: false });
+          data: { label: step.label }, zIndex: -1, selectable: false, draggable: false });
         y = Math.max(result.y, bottom + GAP);
         tails = result.tails;
         continue;
@@ -156,23 +177,22 @@ export function makeGraph(flow: FlowDocument): FlowGraph {
     return { y, tails };
   }
 
-  const y = sequence(flow.steps, HEADER).y + 24;
+  const y = sequence(flow.steps, TOP_PADDING).y + 24;
   const height = Math.max(y, 460);
   const laneNodes: LaneNode[] = lanes.map((lane) => ({ id: `lane-${lane.index}`, type: 'lane', position: { x: lane.x, y: 0 },
-    style: { width: lane.width, height }, data: lane, zIndex: -1, selectable: false, draggable: false }));
+    style: { width: lane.width, height }, data: lane, zIndex: -2, selectable: false, draggable: false }));
 
   const regions = nodes.filter((node): node is GroupNode => node.type === 'region');
   const within = (node: StepNode, region: GroupNode) => node.position.x >= region.position.x
     && node.position.x + node.width <= region.position.x + region.width!
     && node.position.y >= region.position.y && node.position.y + node.height <= region.position.y + region.height!;
-  let width = x;
   for (const edge of edges) {
     const data = edge.data!;
     const { source, target } = data;
     const sy = source.position.y + source.height, ty = target.position.y;
     const long = edges.filter((other) => other.source === edge.source && other.data!.target.position.y - sy > 160);
     if (source.data.kind !== 'decision' || long.length < 2 || !long.includes(edge)) continue;
-    const exitX = source.position.x + source.width / 2 + (data.branch === 0 ? -FORK : FORK);
+    const exitX = source.position.x + source.width / 2 + horizontal(data.branch === 0 ? -FORK : FORK);
     const entered = regions.some((region) => within(target, region) && !within(source, region));
     let gutterX: number | null = null;
     if (!entered) {
@@ -180,7 +200,6 @@ export function makeGraph(flow: FlowDocument): FlowGraph {
       const passed = regions.filter((region) => region.position.y > sy && region.position.y < ty && !within(target, region));
       if (passed.some((region) => gutterX! > region.position.x && gutterX! < region.position.x + region.width!)) {
         gutterX = x + CORRIDOR / 2;
-        width = Math.max(width, x + CORRIDOR);
       }
     }
     data.fork = { exitX, gutterX };
@@ -210,7 +229,7 @@ export function makeGraph(flow: FlowDocument): FlowGraph {
       }
     }
   }
-  return { nodes: [...laneNodes, ...nodes], edges, width, height, count };
+  return { nodes: [...laneNodes, ...nodes], edges, width: DIAGRAM_WIDTH, height, count };
 }
 
 /** Orthogonal routes use empty row gaps and lane gutters for long skips and loops. */

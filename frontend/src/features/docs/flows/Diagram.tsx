@@ -3,7 +3,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, type RefObject } fro
 import { Background, BaseEdge, EdgeLabelRenderer, Handle, Position, ReactFlow, ReactFlowProvider,
   useReactFlow, useStore, useViewport, type EdgeProps, type NodeProps } from '@xyflow/react';
 import type { DamlFlow } from './catalog';
-import { edgeGeometry, makeGraph, type FlowEdge, type FlowGraph, type GroupNode, type LaneData, type LaneNode, type StepData } from './graph';
+import { edgeGeometry, makeGraph, type FlowEdge, type FlowGraph, type GroupNode, type LaneData, type StepData } from './graph';
 import type { FlowDocument } from './source';
 import './flows.css';
 
@@ -23,6 +23,7 @@ const EXTENT_MARGIN = 64;
 /** The verb a badge already names, dropped only where a named contract follows it. */
 const BADGE_VERB = /^(Exercise|Create|Archive) (?=(?:[a-z]+ )?\*\*)/;
 const LEGEND = ['exercise', 'create', 'archive', 'check', 'activity', 'decision', 'loop'] as const;
+const OFF_LEDGER = 'Off-ledger';
 
 function RichText({ text }: { text: string }) {
   return text.split(/(\*\*[^*]+\*\*)/g).map((part, i) => {
@@ -35,7 +36,8 @@ function Step({ data }: { data: StepData }) {
   const terminal = data.kind === 'start' || data.kind === 'stop';
   const label = ['exercise', 'create', 'archive'].includes(data.kind) ? data.label.replace(BADGE_VERB, '') : data.label;
   return (
-    <div className={`flow-step flow-step--${data.kind}`}>
+    <div className={`flow-step flow-step--${data.kind}${data.offLedger ? ' flow-step--off-ledger' : ''}`}
+      role={data.offLedger ? 'group' : undefined} aria-label={data.offLedger ? OFF_LEDGER : undefined}>
       {PORTS.map(([id, type, position]) => <Handle key={id} id={id} type={type} position={position} isConnectable={false} />)}
       {terminal ? <span className="terminal-label">{data.kind === 'start' ? 'Start' : 'End'}</span> : <>
         <div className="step-meta">
@@ -47,13 +49,11 @@ function Step({ data }: { data: StepData }) {
     </div>
   );
 }
-function Lane({ data }: NodeProps<LaneNode>) {
-  const [name, detail] = data.label.split('\n');
-  return <div className="flow-lane"><header>
-    <span className="lane-index">{String(data.index + 1).padStart(2, '0')}</span>
-    <div><strong>{name}</strong>{detail && <span>{detail}</span>}</div>
-  </header></div>;
+function LaneTitle({ label }: { label: string }) {
+  const [name, detail] = label.replace(/ · off-ledger\b/i, '').split('\n');
+  return <div><strong>{name}</strong>{detail && <span>{detail}</span>}</div>;
 }
+function Lane() { return <div className="flow-lane" />; }
 function Group({ data }: NodeProps<GroupNode>) {
   return <div className="flow-group" role="group" aria-label={data.label.replaceAll('\n', ' ')}>
     <div className="flow-group-label">{data.label}</div>
@@ -126,16 +126,13 @@ function ViewTools({ graph, canvas }: { graph: FlowGraph; canvas: RefObject<HTML
 }
 
 function LaneHeaders({ lanes }: { lanes: LaneData[] }) {
-  const { x, y, zoom } = useViewport();
-  if (y >= 0) return null;
-  return <div className="flow-lane-headers" aria-hidden="true" style={{ transform: `translate(${x}px, 0) scale(${zoom})` }}>
-    {lanes.map((lane) => {
-      const [name, detail] = lane.label.split('\n');
-      return <header key={lane.index} style={{ left: lane.x, width: lane.width }}>
-        <span className="lane-index">{String(lane.index + 1).padStart(2, '0')}</span>
-        <div><strong>{name}</strong>{detail && <span>{detail}</span>}</div>
-      </header>;
-    })}
+  const { x, zoom } = useViewport();
+  return <div className="flow-lane-headers">
+    {lanes.map((lane) => <header key={lane.index} style={{ left: x + lane.x * zoom, width: lane.width * zoom }}
+      className={lane.offLedger ? 'flow-header--off-ledger' : undefined}
+      aria-label={lane.offLedger ? OFF_LEDGER : undefined}>
+      <LaneTitle label={lane.label} />
+    </header>)}
   </div>;
 }
 
@@ -145,12 +142,14 @@ export function Diagram({ flow, document }: { flow: DamlFlow; document: FlowDocu
   const canvas = useRef<HTMLDivElement>(null);
   const lanes = useMemo(() => graph.nodes.flatMap((node) => (node.type === 'lane' ? [node.data] : [])), [graph]);
   const kinds = useMemo(() => new Set(graph.nodes.flatMap((node) => (node.type === 'step' ? [node.data.kind] : []))), [graph]);
+  const hasOffLedger = graph.nodes.some(node => (node.type === 'step' || node.type === 'lane') && node.data.offLedger);
   const extent = useMemo<[[number, number], [number, number]]>(() => [[-EXTENT_MARGIN, -EXTENT_MARGIN],
     [graph.width + EXTENT_MARGIN, graph.height + EXTENT_MARGIN]], [graph]);
   return <>
     <section className="flow-shell" aria-label={`${flow.title} diagram`}>
       <ReactFlowProvider>
         <ViewTools graph={graph} canvas={canvas} />
+        <LaneHeaders lanes={lanes} />
         <div className="flow-canvas" ref={canvas}>
           <div className="absolute inset-0">
             <ReactFlow nodes={graph.nodes} edges={graph.edges} nodeTypes={NODE_TYPES} edgeTypes={EDGE_TYPES}
@@ -161,13 +160,13 @@ export function Diagram({ flow, document }: { flow: DamlFlow; document: FlowDocu
               <Background gap={22} size={1} color="var(--border)" />
             </ReactFlow>
           </div>
-          <LaneHeaders lanes={lanes} />
         </div>
       </ReactFlowProvider>
     </section>
     <footer className="flow-footer"><span>{graph.count} steps</span>
       <span className="flow-legend">{LEGEND.filter((kind) => kinds.has(kind)).map((kind) =>
-        <Fragment key={kind}><i className={`legend-${kind}`} />{BADGES[kind]}</Fragment>)}</span>
+        <Fragment key={kind}><i className={`legend-${kind}`} />{BADGES[kind]}</Fragment>)}
+        {hasOffLedger && <><i className="legend-off-ledger" />{OFF_LEDGER}</>}</span>
     </footer>
   </>;
 }

@@ -1,3 +1,12 @@
+/**
+ * Builds a typed client for account, catalogue and domain APIs.
+ *
+ * @remarks
+ * me, pools and activity expose profile, catalogue and caller-history reads.
+ * Onboarding, swaps, lp, tokens and admin are separate facets of the same client.
+ *
+ * @packageDocumentation
+ */
 import { listActivity } from './activity.js';
 import { createSend } from './core/http.js';
 import { getProfile } from './me.js';

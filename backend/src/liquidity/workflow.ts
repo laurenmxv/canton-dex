@@ -1,3 +1,8 @@
+/**
+ * Quotes and tracks deposits and LP withdrawals.
+ *
+ * @packageDocumentation
+ */
 import { randomUUID } from 'node:crypto';
 import type { FastifyBaseLogger } from 'fastify';
 import { requireRole, type Account } from '../iam/accounts.js';

@@ -1,3 +1,14 @@
+/**
+ * Authenticates HTTP requests and resolves callers in Fastify's onRequest hook.
+ *
+ * @remarks
+ * Verifies bearer tokens against the configured issuer. Application roles are stored in
+ * PostgreSQL. Account helpers query it through the shared database client, without a separate
+ * store. Fastify dispatches domain route handlers after this hook completes; IAM does not route
+ * requests to the business modules.
+ *
+ * @packageDocumentation
+ */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { jwtVerify, type JWTPayload, type JWTVerifyGetKey } from 'jose';
 import { AccessDenied } from '../platform/errors.js';

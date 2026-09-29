@@ -1,3 +1,12 @@
+/**
+ * Reads balances and serves the development faucet.
+ *
+ * @remarks
+ * Reading token material from an adapter does not imply invoking this business workflow. The
+ * faucet is local development support.
+ *
+ * @packageDocumentation
+ */
 import { randomUUID } from 'node:crypto';
 import type { FastifyBaseLogger } from 'fastify';
 import type { Account } from '../iam/accounts.js';

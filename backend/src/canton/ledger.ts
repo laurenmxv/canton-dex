@@ -1,3 +1,13 @@
+/**
+ * Implements business ledger ports in the backend's internal Canton integration library.
+ *
+ * @remarks
+ * The Canton module contains domain adapters, interactive transactions, party setup and operator
+ * submissions. This shared ledger client supplies their JSON Ledger API IO. Token registry
+ * material comes from TokenRegistryStore rows in PostgreSQL.
+ *
+ * @packageDocumentation
+ */
 import { randomUUID } from 'node:crypto';
 import { epochNanos } from '../platform/time.js';
 import type { components } from './generated/ledger-api.js';

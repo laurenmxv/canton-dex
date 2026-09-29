@@ -164,8 +164,14 @@ function historyCursor(last: Settlement): string {
 }
 
 /**
- * Per-pool settlement queues: family policies, queued requests and settlement batches. The pool
- * queue row serializes admission, policy changes, deferral, claims and dispatch.
+ * Reads and updates shared request rows, settlement policies and batch progress.
+ *
+ * @remarks
+ * Swap, deposit and withdrawal queues are per pool and backed by PostgreSQL, not a message broker.
+ * Swaps and Liquidity assign queue order when submission begins; ledger confirmation makes
+ * requests eligible for settlement. SettlementStore reads and updates those same rows. Pool locks
+ * serialize admission, policy changes, claims and dispatch. Batch progress is persisted through
+ * the shared database client.
  */
 export class SettlementStore implements SettlementProgress {
   constructor(

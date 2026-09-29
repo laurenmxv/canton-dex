@@ -1,3 +1,14 @@
+/**
+ * Identifies the user and chooses a workspace.
+ *
+ * @remarks
+ * Application roles come from the DEX account model. The login subject also identifies the
+ * trader's Ledger API user; it is not the party. The backend relays the trader token to register,
+ * prepare and execute. Ledger-user rights, Daml controllers and external-party signatures are
+ * separate authorization checks.
+ *
+ * @packageDocumentation
+ */
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { AuthAdapter, AuthState } from '../auth/types';
 import type { DemoApi, DemoControls, DexBackend, Identity } from '../lib/api/demo';

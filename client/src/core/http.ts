@@ -1,3 +1,11 @@
+/**
+ * Sends typed requests and returns results or errors.
+ *
+ * @remarks
+ * Stateless library transport. It does not sign, settle, poll, cache or retry requests.
+ *
+ * @packageDocumentation
+ */
 import { DexClientError, readProblem, type ProblemDetails } from '../errors.js';
 import type { DexClientConfig, RequestOptions } from '../types/common.js';
 

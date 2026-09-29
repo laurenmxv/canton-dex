@@ -1,3 +1,14 @@
+/**
+ * Runs settlement batches through claim, preflight, dispatch, confirmation and recovery.
+ *
+ * @remarks
+ * Manual routes and the automatic loop start a run; SettlementStore applies the batch planner
+ * when it claims requests. Recovery resumes stored batches without selecting new requests.
+ * A PREPARING batch reruns preflight before its first submission or cancellation; confirmation
+ * and replay concern an immutable stored command.
+ *
+ * @packageDocumentation
+ */
 import { randomUUID } from 'node:crypto';
 import type { FastifyBaseLogger } from 'fastify';
 import { requireRole, type Account } from '../iam/accounts.js';

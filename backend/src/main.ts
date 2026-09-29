@@ -1,3 +1,12 @@
+/**
+ * Composes the Fastify API, module dependencies and background workers.
+ *
+ * @remarks
+ * Registers authentication and domain routes. Workers run in this API process; Bootstrap and the
+ * DVO CLI are separate processes. Automatic settlement does not pass through HTTP routing.
+ *
+ * @packageDocumentation
+ */
 import { createRemoteJWKSet } from 'jose';
 import { registerActivityRoutes } from './activity/routes.js';
 import { CantonExternalParties } from './canton/external-parties.js';
@@ -111,7 +120,16 @@ registerActivityRoutes(app, { swaps, liquidity, swapHistory: swapStore, liquidit
 registerSettlementRoutes(app, settlements);
 
 await app.listen({ host: '0.0.0.0', port: HTTP_PORT });
-// Each loop runs on its own; settlement recovery also runs while automatic dispatch is disabled.
+/**
+ * Runs automatic settlement and recovery in independent background loops.
+ *
+ * @remarks
+ * Started by main.ts, both loops run inside the backend process and bypass HTTP routing.
+ * Automatic dispatch follows each pool family's policy; recovery continues even when automatic
+ * dispatch is disabled.
+ * Each loop starts immediately and waits three seconds after its previous pass before repeating.
+ * The same worker utility also drives domain request reconciliation.
+ */
 const workers = [
   startWorker('onboarding', RECONCILE_DELAY_MS, () => onboarding.reconcile(), app.log),
   startWorker('pools', RECONCILE_DELAY_MS, () => pools.reconcile(), app.log),

@@ -1,3 +1,11 @@
+/**
+ * Adapts errors and refreshes visible status.
+ *
+ * @remarks
+ * A logical grouping of UI helpers. It is not a separate service or a workflow engine.
+ *
+ * @packageDocumentation
+ */
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 export interface AsyncResult<T> {

@@ -1,3 +1,13 @@
+/**
+ * Combines the caller's stored swap and liquidity history.
+ *
+ * @remarks
+ * PostgreSQL history comes through SwapStore and LiquidityStore. Filtered views delegate
+ * through each workflow's read-only activity() method; the combined view uses history ports.
+ * There are no ledger calls or trade execution. Individual request-status endpoints are separate.
+ *
+ * @packageDocumentation
+ */
 import type { FastifyInstance } from 'fastify';
 import { requireRole, type Account } from '../iam/accounts.js';
 import { requireCaller } from '../iam/authentication.js';

@@ -1,3 +1,12 @@
+/**
+ * Shows swaps for the trader's eligible pools.
+ *
+ * @remarks
+ * App.tsx composes the trader workspace from this swap desk, TraderOnboarding for
+ * access, LiquidityDesk for deposits and withdrawals, and Balances for holdings.
+ *
+ * @packageDocumentation
+ */
 import { Banner, Button } from '@openzeppelin/ui-components';
 import { useEffect, useRef, useState } from 'react';
 import { useDexClient, useWallet } from '../../app/runtime';

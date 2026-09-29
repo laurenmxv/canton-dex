@@ -1,3 +1,12 @@
+/**
+ * Prepares schema, Daml packages, identities and development fixtures.
+ *
+ * @remarks
+ * A separate setup process run before the API. It uploads and vets DARs and configures participant
+ * identities; ordinary HTTP requests do not invoke it.
+ *
+ * @packageDocumentation
+ */
 import { join } from 'node:path';
 import { sql } from 'kysely';
 import { CantonAdmin } from '../canton/admin.js';

@@ -1,3 +1,14 @@
+/**
+ * Keycloak is the identity provider for login. It issues the tokens that the configured
+ * participant accepts.
+ *
+ * @remarks
+ * Bootstrap configures this issuer on the participant. Trader operations and operator access
+ * reviews relay login tokens. Daml commands acting as the operator party and the DVO CLI use
+ * service credentials.
+ *
+ * @packageDocumentation
+ */
 import Keycloak from 'keycloak-js';
 import type { KeycloakConfig } from './config';
 import type { AuthAdapter, AuthState } from './types';

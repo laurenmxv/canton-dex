@@ -1,3 +1,13 @@
+/**
+ * Shows and runs settlement for one pool.
+ *
+ * @remarks
+ * OperatorSettlement selects the pool. The operator workspace also includes
+ * OperatorOnboardingDetail for access reviews and OperatorPools for pool proposals.
+ * App.tsx composes these screens. Real DVO decisions use the separate CLI.
+ *
+ * @packageDocumentation
+ */
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useDexClient } from '../../app/runtime';
 import { useAction, useAsync } from '../../app/useAsync';

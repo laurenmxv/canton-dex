@@ -1,3 +1,13 @@
+/**
+ * Persists operator commands and coordinates SQL request queues.
+ *
+ * @remarks
+ * The journal stores immutable submissions in PostgreSQL before dispatch. Queue helpers
+ * lock and order trader request admission and status updates. SettlementStore takes the
+ * shared pool lock itself and uses sequence helpers to return deferred requests to the queue tail.
+ *
+ * @packageDocumentation
+ */
 import type { Db } from '../platform/database.js';
 
 /** The immutable outcome of building an operator command: its payload, or proof it can never be sent. */

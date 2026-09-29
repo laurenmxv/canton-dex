@@ -1,3 +1,12 @@
+/**
+ * Creates the liquidity API for deposits, withdrawals and positions.
+ *
+ * @remarks
+ * createDexClient composes lp, swaps and tokens as separate trading APIs.
+ * The swaps and tokens modules own their operations; all share the HTTP transport.
+ *
+ * @packageDocumentation
+ */
 import type { Send } from '../../core/http.js';
 import { listDeposits, listWithdrawals } from './activity.js';
 import {

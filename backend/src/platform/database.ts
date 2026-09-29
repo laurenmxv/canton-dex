@@ -1,3 +1,12 @@
+/**
+ * Defines PostgreSQL table types, the connection pool and schema checks.
+ *
+ * @remarks
+ * Business workflows keep persistence in their module's store.ts. IAM account helpers
+ * and the Operations command journal also use this shared connection and table types.
+ *
+ * @packageDocumentation
+ */
 import { readFileSync } from 'node:fs';
 import { Kysely, PostgresDialect, sql, type ColumnType, type Generated } from 'kysely';
 import pg from 'pg';

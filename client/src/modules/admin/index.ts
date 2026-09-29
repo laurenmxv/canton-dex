@@ -1,3 +1,8 @@
+/**
+ * Calls review, pool-proposal and settlement endpoints.
+ *
+ * @packageDocumentation
+ */
 import type { Send } from '../../core/http.js';
 import { createPoolProposal } from './create-pool-proposal.js';
 import { getPoolProposal } from './get-pool-proposal.js';

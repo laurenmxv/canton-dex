@@ -88,7 +88,15 @@ function pendingQuery(db: Executor) {
     .select(['p.id as preparation_id', 'p.command_id', 'p.action', 'p.signing', 'p.signature', 'p.begin_offset']);
 }
 
-/** Durable swap requests. A transaction that locks the pool queue row locks it before any request row. */
+/**
+ * Persists business records and request progress through the shared database client.
+ *
+ * @remarks
+ * Onboarding, Pools, Swaps, Liquidity and Tokens each own their business records. Only SwapStore
+ * and LiquidityStore own settlement request rows and use admission helpers; SettlementStore
+ * reads and updates those same rows for settlement.
+ * A transaction that locks the pool queue row locks it before any request row.
+ */
 export class SwapStore implements SwapProgress, SwapHistory {
   constructor(
     private readonly db: Executor,

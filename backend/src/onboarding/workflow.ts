@@ -1,3 +1,8 @@
+/**
+ * Connects approved accounts to parties and access.
+ *
+ * @packageDocumentation
+ */
 import { Mutex } from 'async-mutex';
 import type { FastifyBaseLogger } from 'fastify';
 import type { Account } from '../iam/accounts.js';

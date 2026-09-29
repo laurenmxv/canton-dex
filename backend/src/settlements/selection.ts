@@ -1,4 +1,14 @@
-/** FIFO batch selection over a pool's per-family queues. */
+/**
+ * Selects settlement batches from per-pool queues and family policies.
+ *
+ * @remarks
+ * SettlementWorkflow starts manual and automatic runs; SettlementStore.claim applies planning
+ * inside the pool-lock transaction. Automatic runs rotate enabled, unblocked families and wait
+ * for a full swap batch. Normal selection takes a FIFO prefix, skipping deferred requests and
+ * stopping at unconfirmed requests. A manual single-request selection may settle out of order.
+ *
+ * @packageDocumentation
+ */
 import type { Family } from '../platform/families.js';
 import { FAMILIES, type Policy, type QueueRequest } from './model.js';
 

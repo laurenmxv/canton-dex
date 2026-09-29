@@ -1,3 +1,12 @@
+/**
+ * Checks identity and asks the wallet to sign.
+ *
+ * @remarks
+ * Topology signatures register the party. Transaction signatures authorize prepared ledger
+ * transactions. Private keys remain in the wallet.
+ *
+ * @packageDocumentation
+ */
 import { useCallback } from 'react';
 import { useKeyIndex } from '../../app/runtime';
 import { useLive } from '../../app/useAsync';

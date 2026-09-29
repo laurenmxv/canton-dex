@@ -1,4 +1,14 @@
 /**
+ * The pool authority (DVO) submits decisions and delegation directly to the Ledger API.
+ *
+ * @remarks
+ * Runs outside the backend API process. Reads the stored proposal, fixture identity and token
+ * registry from DEX PostgreSQL; writes only to the ledger. Acceptance creates Pool, PoolConfig and
+ * PoolState atomically; delegation is a later submission.
+ *
+ * @packageDocumentation
+ */
+/**
  * The local development DVO approver: `decide-pool.sh accept PROPOSAL_UUID INITIAL_RATIO` or
  * `reject PROPOSAL_UUID`. It acts with the fixture DVO identity, never the web operator's.
  */
@@ -17,6 +27,14 @@ import { PoolStore } from '../pools/store.js';
 import { TokenRegistryStore } from '../tokens/registry-store.js';
 
 const USAGE = 'Usage: decide-pool.sh accept PROPOSAL_UUID INITIAL_RATIO | reject PROPOSAL_UUID';
+/**
+ * The DVO is the pool-authority party on Canton.
+ *
+ * @remarks
+ * Approves or rejects pool proposals and grants the operator per-pool settlement authority.
+ * In LocalNet this alias resolves to a party hosted by the participant. The development CLI
+ * acts as that party; the CLI's PostgreSQL access is tooling, not a connection owned by a party.
+ */
 const DVO = 'dvo';
 
 /** The command's arguments; the ratio stays text until the decision. */

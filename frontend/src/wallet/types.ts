@@ -1,3 +1,9 @@
+/**
+ * MetaMask + Canton Snap is the trader's external wallet. It keeps private keys outside the app,
+ * signs Canton hashes and returns the signatures through this interface.
+ *
+ * @packageDocumentation
+ */
 /** Why the wallet could not do what was asked, at the level a reader can act on. */
 export type WalletErrorKind =
   | 'missing'

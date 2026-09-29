@@ -1,3 +1,8 @@
+/**
+ * Proposes pools and maintains their catalogue.
+ *
+ * @packageDocumentation
+ */
 import { randomUUID } from 'node:crypto';
 import { Mutex } from 'async-mutex';
 import type { FastifyBaseLogger } from 'fastify';

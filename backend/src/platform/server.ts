@@ -1,3 +1,12 @@
+/**
+ * Configures shared HTTP safeguards and error handling.
+ *
+ * @remarks
+ * Platform also provides configuration in config.ts, database connections in database.ts
+ * and background loops in worker.ts. Domain rules stay in the business modules.
+ *
+ * @packageDocumentation
+ */
 import { maxHeaderSize } from 'node:http';
 import Fastify, { LogController, type FastifyInstance } from 'fastify';
 import { INVALID_REQUEST } from './errors.js';
@@ -20,6 +29,14 @@ const SECURITY_HEADERS = {
 const BODY_LIMIT_BYTES = 8 * 1024 * 1024;
 const BODY_TOO_LARGE = 'FST_ERR_CTP_BODY_TOO_LARGE';
 
+/**
+ * Creates the Fastify HTTP entry point and request router.
+ *
+ * @remarks
+ * main.ts installs the IAM onRequest hook and registers each domain's routes.ts handlers.
+ * The server applies firewall rules, headers, body limits and error responses.
+ * Background workers call workflows without HTTP routing.
+ */
 export function createServer(): FastifyInstance {
   const app = Fastify({
     logger: {

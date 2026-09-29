@@ -1,3 +1,8 @@
+/**
+ * Calls application and party-registration endpoints.
+ *
+ * @packageDocumentation
+ */
 import type { Send } from '../../core/http.js';
 import { confirmParty } from './confirm-party.js';
 import { get } from './get.js';

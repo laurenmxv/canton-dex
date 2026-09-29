@@ -108,15 +108,53 @@
     animation-delay: 165ms;
   }
 
-  /* The drawer arrives from the edge it is anchored to. */
+  /* The sidebar's new layout settles in after its width changes. */
+  .animate-sidebar-swap {
+    animation: venue-fade var(--animation-fast) var(--ease-out);
+  }
+
+  /*
+   * The drawer arrives from the edge it is anchored to and leaves the same way. Its scrim fades
+   * with it. The dialog keeps each part mounted until its closing animation ends.
+   */
   .animate-drawer-in {
     animation: venue-drawer-in var(--animation-fast) var(--ease-out);
+  }
+
+  .animate-drawer-in[data-state='closed'] {
+    animation: venue-drawer-out var(--animation-fast) var(--ease-in, cubic-bezier(0.4, 0, 1, 1)) forwards;
+  }
+
+  [data-state='open']:has(+ .animate-drawer-in) {
+    animation: venue-fade var(--animation-fast) var(--ease-out);
+  }
+
+  [data-state='closed']:has(+ .animate-drawer-in) {
+    animation: venue-fade-out var(--animation-fast) var(--ease-in, cubic-bezier(0.4, 0, 1, 1)) forwards;
   }
 }
 
 @keyframes venue-drawer-in {
   from {
     transform: translateX(-100%);
+  }
+}
+
+@keyframes venue-drawer-out {
+  to {
+    transform: translateX(-100%);
+  }
+}
+
+@keyframes venue-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes venue-fade {
+  from {
+    opacity: 0;
   }
 }
 

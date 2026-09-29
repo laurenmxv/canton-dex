@@ -1,8 +1,9 @@
 import { Button } from '@openzeppelin/ui-components';
-import { useState, type ReactElement } from 'react';
+import { lazy, Suspense, useState, type ReactElement } from 'react';
 import { useDemoApi, useDemoControls, useSession, type Session } from './app/runtime';
 import { Sidebar } from './app/Sidebar';
 import { Mark } from './app/Mark';
+import { useDocsRoute } from './app/useDocsRoute';
 import { useTheme } from './app/useTheme';
 import type { NextStepTarget } from './features/dashboard/nextStep';
 import { TraderDashboard } from './features/dashboard/TraderDashboard';
@@ -22,7 +23,13 @@ import type { Role } from './lib/api/types';
 import { roleLabels } from './lib/labels';
 import { Card } from './ui/Card';
 import { SelectControl } from './ui/Field';
+import { TextLink } from './ui/Link';
 import { EmptyState, Loading } from './ui/States';
+
+/** Loaded on first visit, so the docs stay out of the trading bundle. */
+const DocsPage = lazy(() =>
+  import('./features/docs/DocsPage').then((module) => ({ default: module.DocsPage })),
+);
 
 type View =
   | { name: 'trader-dashboard' }
@@ -95,6 +102,7 @@ export function App() {
   const controls = useDemoControls();
   const { dark, toggle } = useTheme();
   const [requested, setView] = useState<View>({ name: 'trader-dashboard' });
+  const { docs, open: openDocs, leave: leaveDocs } = useDocsRoute();
   const role = session.current?.role;
   const realLogin = session.mode === 'keycloak';
   // Demo mode is always signed in; real mode only once the provider says so.
@@ -125,20 +133,31 @@ export function App() {
       <a
         className="bg-primary text-primary-foreground absolute top-0 -left-[9999px] z-[1100] rounded-br-md px-3.5 py-2 text-xs focus:left-0"
         href="#main"
+        // Focus without the fragment, which would replace a docs link in the URL.
+        onClick={(event) => {
+          event.preventDefault();
+          document.getElementById('main')?.focus();
+        }}
       >
         Skip to content
       </a>
 
       <div className="flex min-h-0 flex-1 flex-col wide:flex-row wide:items-stretch">
-        {session.current ? (
+        {/* The docs are public, so they keep a sidebar before anyone signs in. */}
+        {session.current || docs ? (
           <Sidebar
-            items={items}
+            items={session.current ? items : []}
             activeId={sectionOf(view)}
-            onSelect={(id) => setView(sectionViews[id])}
+            onSelect={(id) => {
+              leaveDocs();
+              setView(sectionViews[id]);
+            }}
+            docs={{ active: docs, onSelect: openDocs }}
             footer={
               <SidebarFooter
                 session={session}
                 signedIn={signedIn}
+                onSignIn={realLogin && !signedIn ? leaveDocs : undefined}
                 onResetDemo={
                   controls && signedIn
                     ? async () => {
@@ -158,20 +177,30 @@ export function App() {
         <div className="flex min-w-0 flex-1 flex-col wide:overflow-y-auto">
           <main
             className={
-              session.auth?.status === 'anonymous'
-                ? 'grid min-h-[100svh] place-items-center px-5 py-12'
-                : 'mx-auto w-full max-w-6xl flex-1 px-4 pt-6 pb-12 sm:px-7 sm:pt-9 sm:pb-16'
+              docs
+                ? 'flex min-h-[40rem] flex-1 flex-col wide:min-h-0'
+                : session.auth?.status === 'anonymous'
+                  ? 'grid min-h-[100svh] place-items-center px-5 py-12'
+                  : 'mx-auto w-full max-w-6xl flex-1 px-4 pt-6 pb-12 sm:px-7 sm:pt-9 sm:pb-16'
             }
             id="main"
             tabIndex={-1}
           >
-            {/* Keyed on the actor, so one trader's data never lands on another's screen. */}
-            <AppBody
-              key={session.current?.accountId ?? 'anonymous'}
-              session={session}
-              view={view}
-              navigate={setView}
-            />
+            {/* Read-only and account-free, so no sign-in gate stands in front of it. */}
+            {docs ? (
+              <Suspense fallback={<Loading label="Loading docs" />}>
+                <DocsPage />
+              </Suspense>
+            ) : (
+              // Keyed on the actor, so one trader's data never lands on another's screen.
+              <AppBody
+                key={session.current?.accountId ?? 'anonymous'}
+                session={session}
+                view={view}
+                navigate={setView}
+                onOpenDocs={openDocs}
+              />
+            )}
           </main>
         </div>
       </div>
@@ -182,12 +211,15 @@ export function App() {
 function SidebarFooter({
   session,
   signedIn,
+  onSignIn,
   onResetDemo,
   dark,
   onToggleTheme,
 }: {
   session: Session;
   signedIn: boolean;
+  /** Back to the sign-in screen, for a visitor reading the docs signed out. */
+  onSignIn: (() => void) | undefined;
   onResetDemo: (() => void) | undefined;
   dark: boolean;
   onToggleTheme: () => void;
@@ -227,6 +259,11 @@ function SidebarFooter({
             Sign out
           </Button>
         ) : null}
+        {onSignIn ? (
+          <Button size="sm" variant="secondary" onClick={onSignIn}>
+            Sign in
+          </Button>
+        ) : null}
         {onResetDemo ? (
           <Button size="sm" variant="ghost" onClick={onResetDemo}>
             Reset demo data
@@ -251,10 +288,12 @@ function AppBody({
   session,
   view,
   navigate,
+  onOpenDocs,
 }: {
   session: Session;
   view: View;
   navigate: (next: View) => void;
+  onOpenDocs: () => void;
 }) {
   const auth = session.auth;
 
@@ -302,6 +341,9 @@ function AppBody({
         <p className="text-muted-foreground mt-7 text-[0.75rem] tracking-[0.025em]">
           Built on Canton Network
         </p>
+        <TextLink className="text-muted-foreground mt-3 text-[0.75rem]" onClick={onOpenDocs}>
+          Developer docs
+        </TextLink>
       </section>
     );
   }

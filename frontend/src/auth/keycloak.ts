@@ -18,8 +18,15 @@ import type { AuthAdapter, AuthState } from './types';
  *
  * Tokens stay in memory inside the keycloak-js instance. Nothing is written to
  * storage, and a failed start never degrades into the demo adapter.
+ *
+ * `checkSso: false` starts without the silent sign-in check. That check leaves
+ * the page and returns to the bare origin, so a page whose URL must survive
+ * the start, such as a docs link, skips it. Explicit sign-in still works.
  */
-export function createKeycloakAuth(config: KeycloakConfig): AuthAdapter {
+export function createKeycloakAuth(
+  config: KeycloakConfig,
+  { checkSso = true }: { checkSso?: boolean } = {},
+): AuthAdapter {
   const keycloak = new Keycloak({
     url: config.url,
     realm: config.realm,
@@ -80,7 +87,7 @@ export function createKeycloakAuth(config: KeycloakConfig): AuthAdapter {
       started = (async () => {
         try {
           await keycloak.init({
-            onLoad: 'check-sso',
+            ...(checkSso ? { onLoad: 'check-sso' as const } : {}),
             pkceMethod: 'S256',
             // No hidden iframe, so the adapter works without a silent-check page.
             checkLoginIframe: false,

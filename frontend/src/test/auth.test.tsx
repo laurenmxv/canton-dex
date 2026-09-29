@@ -17,7 +17,7 @@ import type { Profile } from '../lib/api/types';
  * leaves on the instance is what the provider found.
  */
 const provider = vi.hoisted(() => ({
-  init: vi.fn<(keycloak: FakeKeycloak) => Promise<boolean>>(),
+  init: vi.fn<(keycloak: FakeKeycloak, options?: { onLoad?: string }) => Promise<boolean>>(),
 }));
 
 interface FakeKeycloak {
@@ -31,8 +31,8 @@ vi.mock('keycloak-js', () => ({
     authenticated = false;
     tokenParsed: object | undefined;
     onAuthLogout?: () => void;
-    init() {
-      return provider.init(this);
+    init(options?: { onLoad?: string }) {
+      return provider.init(this, options);
     }
     /** As keycloak-js does when a token can no longer be refreshed. */
     clearToken() {
@@ -327,6 +327,21 @@ describe('the Keycloak adapter, when the runtime mounts again', () => {
     mount(auth);
     expect(await screen.findByText(shown)).toBeInTheDocument();
     expect(provider.init).toHaveBeenCalledOnce();
+  });
+
+  it('checks for a signed-in session by default, and skips the check when told to', async () => {
+    provider.init.mockImplementation(async () => false);
+
+    const trading = mount(createKeycloakAuth(CONFIG));
+    expect(await screen.findByText('Sign in to continue')).toBeInTheDocument();
+    trading.unmount();
+    mount(createKeycloakAuth(CONFIG, { checkSso: false }));
+    expect(await screen.findByText('Sign in to continue')).toBeInTheDocument();
+
+    expect(provider.init.mock.calls.map(([, options]) => options?.onLoad)).toEqual([
+      'check-sso',
+      undefined,
+    ]);
   });
 
   it('answers the runtime mounted while the first start still runs', async () => {

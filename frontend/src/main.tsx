@@ -7,6 +7,7 @@ import { DemoRuntime, KeycloakRuntime } from './app/runtime';
 import { apiBaseUrl, authMode, keycloakConfig, snapTarget } from './auth/config';
 import { createKeycloakAuth } from './auth/keycloak';
 import { applyStoredTheme } from './app/useTheme';
+import { isDocsHash } from './features/docs/routes';
 import { venueClient } from './lib/api/venue';
 import { createMetaMaskWallet } from './wallet/metamask';
 import { createFixtureBackend } from './mocks/client';
@@ -20,7 +21,10 @@ import { createFixtureBackend } from './mocks/client';
  * before every request. In demo mode nothing leaves the browser.
  */
 function realSession() {
-  const auth = createKeycloakAuth(keycloakConfig());
+  // A docs link opens without the silent sign-in check, whose redirect drops the link.
+  const auth = createKeycloakAuth(keycloakConfig(), {
+    checkSso: !isDocsHash(window.location.hash),
+  });
   const client = venueClient(
     createDexClient({ baseUrl: apiBaseUrl(), getAccessToken: () => auth.accessToken() }),
   );

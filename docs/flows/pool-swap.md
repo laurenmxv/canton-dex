@@ -36,4 +36,4 @@ Records the settled terms, actual output, allocations, and batch reference.
 - **Signatories:** `dvo` and `venueOperator`.
 - **Observer:** `trader`.
 
-![Pool swap flow](images/pool-swap.png)
+Diagram source: [pool-swap.puml](pool-swap.puml). The DEX app renders it under Dev -> Docs -> Daml flows.

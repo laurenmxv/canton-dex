@@ -1,0 +1,88 @@
+@startuml pool-creation
+skinparamlocked dpiCommandLine 200
+title Pool creation
+
+<style>
+activityDiagram {
+  FontName Inter
+  FontSize 13
+  BackgroundColor #FFFFFF
+  activity {
+    BackgroundColor #FFFFFF
+    LineColor #64748B
+    LineThickness 1
+    RoundCorner 6
+    FontColor #0F172A
+    Padding 8
+    Margin 7
+  }
+  arrow {
+    LineColor #64748B
+    LineThickness 1.2
+    FontColor #4A5A6A
+    FontSize 11
+  }
+  swimlane {
+    LineColor #CBD5E1
+    LineThickness 1
+    FontColor #334155
+    FontStyle bold
+  }
+  circle {
+    BackgroundColor #334155
+    LineColor #334155
+  }
+  note {
+    BackgroundColor #FFFFFF
+    LineColor #CBD5E1
+    FontColor #475569
+    FontSize 11
+  }
+  .created {
+    BackgroundColor #ECFDF5
+    LineColor #34D399
+    FontColor #065F46
+  }
+}
+</style>
+
+|#F5F3FF|venueOperator\nParty|
+|#F8FAFC|dvo\nParty|
+|#EFF6FF|DEX\nContracts · on-ledger|
+
+|venueOperator\nParty|
+start
+:Exercise **PoolFactory_ProposePool**\non **PoolFactory**;
+|DEX\nContracts · on-ledger|
+:Create pending **PoolProposal**; <<created>>
+if (Awaiting approval\nFirst confirmed action?) then (withdraw)
+  group Optional withdrawal\nWhile pending — before dvo accepts or rejects {
+    |venueOperator\nParty|
+    :Exercise **PoolProposal_Withdraw**\non pending **PoolProposal**;
+    |DEX\nContracts · on-ledger|
+    :Archive pending **PoolProposal**;
+    stop
+  }
+else (dvo decision)
+endif
+|dvo\nParty|
+if (Accept proposal?) then (yes)
+  :Exercise **PoolProposal_Accept**\non **PoolProposal**\nwith initial ratio (quote / base);
+  |DEX\nContracts · on-ledger|
+  :Archive pending **PoolProposal**;
+  :Create accepted **PoolProposal**; <<created>>
+  :Exercise **PoolFactory_CreatePool**\non **PoolFactory**\n(dvo + venueOperator);
+  :Archive accepted **PoolProposal**;
+  :Create **Pool**\nwith token factories + reserve accounts; <<created>>
+  :Create **PoolConfig**\nwith fee + initial ratio; <<created>>
+  :Create **PoolState**\nwith reserves + LP supply = 0; <<created>>
+  stop
+else (no)
+  |dvo\nParty|
+  :Exercise **PoolProposal_Reject**\non **PoolProposal**;
+  |DEX\nContracts · on-ledger|
+  :Archive **PoolProposal**;
+  stop
+endif
+
+@enduml

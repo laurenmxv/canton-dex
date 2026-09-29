@@ -27,7 +27,10 @@ function read(path: string): { name: string; text: string } {
 }
 
 describe('webapp and client boundary', () => {
-  const screens = sourcesUnder('features', 'ui').map(read);
+  // A colocated test is not a screen; its fixtures may quote URLs a screen must not fetch.
+  const screens = sourcesUnder('features', 'ui')
+    .filter((path) => !/\.test\.tsx?$/.test(path))
+    .map(read);
   screens.push(read(join(SRC, 'App.tsx')));
 
   it('keeps transport, credentials and Canton out of every screen', () => {

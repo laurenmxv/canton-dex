@@ -30,4 +30,4 @@ Each withdrawal uses the updated reserves, supply and holding IDs from the previ
 
 After `settlementDeadline`, a trader with current access and KYC can exercise **`PoolAccess_RecoverAllocations`** on `PoolAccess`. **`Allocation_Withdraw`** returns any still-allocated LP tokens and closes the remaining receipt authorizations. Allocations already withdrawn directly are omitted.
 
-![Pool withdraw liquidity flow](images/pool-withdraw-liquidity.png)
+Diagram source: [pool-withdraw-liquidity.puml](pool-withdraw-liquidity.puml). The DEX app renders it under Dev -> Docs -> Daml flows.

@@ -1,0 +1,97 @@
+@startuml pool-swap
+skinparamlocked dpiCommandLine 200
+title Pool swap
+
+<style>
+activityDiagram {
+  FontName Inter
+  FontSize 13
+  BackgroundColor #FFFFFF
+  activity {
+    BackgroundColor #FFFFFF
+    LineColor #64748B
+    LineThickness 1
+    RoundCorner 6
+    FontColor #0F172A
+    Padding 8
+    Margin 7
+  }
+  arrow {
+    LineColor #64748B
+    LineThickness 1.2
+    FontColor #4A5A6A
+    FontSize 11
+  }
+  swimlane {
+    LineColor #CBD5E1
+    LineThickness 1
+    FontColor #334155
+    FontStyle bold
+  }
+  circle {
+    BackgroundColor #334155
+    LineColor #334155
+  }
+  note {
+    BackgroundColor #FFFFFF
+    LineColor #CBD5E1
+    FontColor #475569
+    FontSize 11
+  }
+  .created {
+    BackgroundColor #ECFDF5
+    LineColor #34D399
+    FontColor #065F46
+  }
+}
+</style>
+
+|#F5F3FF|trader\nParty|
+|#F8FAFC|venueOperator\nParty|
+|#EFF6FF|DEX\nContracts · on-ledger|
+|#FFF7ED|CIP-0112\nToken contracts · on-ledger|
+
+|trader\nParty|
+start
+:Exercise **PoolAccess_RequestSwap**\non **PoolAccess**;
+|DEX\nContracts · on-ledger|
+:Validate **KycAttestation**,\npool access and swap terms;
+|CIP-0112\nToken contracts · on-ledger|
+:Exercise **AllocationFactory_Allocate**\non **AllocationFactory**\n(trader input + receipt);
+:Create **TokenAllocation** contracts\nLock input / authorize receipt; <<created>>
+|DEX\nContracts · on-ledger|
+:Return **SwapRequest** record\nwith both allocation IDs;
+-> separate transaction;
+|CIP-0112\nToken contracts · on-ledger|
+if (Allocations pending\nNext action?) then (recover after deadline)
+  group Optional recovery\nUnsettled allocations after the deadline {
+    |trader\nParty|
+    :Exercise **PoolAccess_RecoverAllocations**\non **PoolAccess**;
+    |DEX\nContracts · on-ledger|
+    :Validate access, KYC, trader,\npool and expired deadline;
+    |CIP-0112\nToken contracts · on-ledger|
+    :Exercise **Allocation_Withdraw**\non **Allocation**;
+    stop
+  }
+else (settle before deadline)
+endif
+
+|venueOperator\nParty|
+:Exercise **VenueDelegation_SettleBatch**\non **VenueDelegation**;
+|DEX\nContracts · on-ledger|
+:Recheck **PoolAccess**\nand **KycAttestation**;
+:Exercise **Pool_Swap**\non **Pool**\n(dvo + venueOperator);
+while (Next swap in batch?) is (yes)
+  :Price against current reserves\nCheck **minOut** and deadline;
+  |CIP-0112\nToken contracts · on-ledger|
+  :Exercise **AllocationFactory_Allocate**\non **AllocationFactory**\n(pool receipt + output);
+  :Create pool **TokenAllocation** contracts; <<created>>
+  :Exercise **SettlementFactory_SettleBatch**\non **SettlementFactory**\n(once per token);
+  :Exercise **Allocation_Settle**\non **Allocation**;
+  |DEX\nContracts · on-ledger|
+  :Create **SwapReceipt**; <<created>>
+endwhile (no)
+:Archive **PoolState**;
+:Create **PoolState**\nwith final reserves and holdings; <<created>>
+stop
+@enduml

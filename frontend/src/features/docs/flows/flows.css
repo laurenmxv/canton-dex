@@ -1,0 +1,52 @@
+@import '@xyflow/react/dist/style.css';
+
+.daml-flows { --flow-bg: oklch(0.945 0.025 250); --flow-lane-border: color-mix(in oklab, var(--foreground) 15%, var(--flow-bg)); }
+.dark .daml-flows { --flow-bg: oklch(0.35 0.06 250); }
+.daml-flows .flow-shell { display: flex; flex: 1; min-height: 0; flex-direction: column; margin: 12px 16px 0; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); box-shadow: var(--shadow-sm); }
+.daml-flows .flow-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; padding: 7px 12px; border-bottom: 1px solid var(--border); flex: none; }
+.daml-flows .flow-tools button { flex: none; }
+.daml-flows .zoom-value { font-variant-numeric: tabular-nums; color: var(--muted-foreground); width: 36px; text-align: center; font-size: 12px; }
+.daml-flows .canvas-instruction { margin-left: auto; color: var(--muted-foreground); font-size: 12px; }
+.daml-flows .flow-canvas { position: relative; flex: 1; min-height: 0; background: var(--card); --flow-wire: color-mix(in oklab, var(--foreground) 50%, var(--flow-bg)); }
+.daml-flows .react-flow__attribution { background: var(--card); }
+.daml-flows .react-flow__attribution a { color: var(--muted-foreground); }
+.daml-flows .flow-footer { display: flex; justify-content: space-between; gap: 12px; color: var(--muted-foreground); padding: 10px 26px 12px; font-size: 12px; }
+.daml-flows .flow-legend { display: flex; align-items: center; gap: 6px; }
+.daml-flows .flow-legend i { width: 5px; height: 5px; border-radius: 2px; margin-left: 9px; }
+.daml-flows .legend-exercise { background: var(--primary); }
+.daml-flows .legend-create { background: var(--success); }
+.daml-flows .legend-decision { background: var(--primary); transform: rotate(45deg); }
+.daml-flows .legend-archive, .daml-flows .legend-check, .daml-flows .legend-activity { background: var(--muted-foreground); }
+.daml-flows .legend-loop { background: var(--primary); }
+@media(max-width: 900px) { .daml-flows .flow-canvas { min-height: 420px; } .daml-flows .canvas-instruction { flex-basis: 100%; margin-left: 0; } }
+
+/* The fixed copy of the lane headers, shown once the diagram's own headers scroll away. */
+.daml-flows .flow-lane-headers { position: absolute; top: 0; left: 0; z-index: 5; transform-origin: 0 0; pointer-events: none; }
+.daml-flows .flow-lane-headers header { position: absolute; top: 0; box-sizing: border-box; border-left: 1px solid var(--flow-lane-border); border-right: 1px solid var(--flow-lane-border); box-shadow: 0 1px 0 var(--border); }
+.daml-flows .flow-lane { width: 100%; height: 100%; border-left: 1px solid var(--flow-lane-border); border-right: 1px solid var(--flow-lane-border); background: var(--flow-bg); }
+.daml-flows .flow-lane header, .daml-flows .flow-lane-headers header { height: 80px; padding: 0 22px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--border); background: var(--card); }
+.daml-flows .flow-lane header strong, .daml-flows .flow-lane-headers strong { font-size: 22px; line-height: 28px; font-weight: 600; }
+.daml-flows .flow-lane header div > span, .daml-flows .flow-lane-headers header div > span { display: block; margin-top: 4px; color: var(--muted-foreground); font-size: 16px; line-height: 22px; }
+.daml-flows .lane-index { color: var(--muted-foreground); font-size: 14px; letter-spacing: .06em; border: 1px solid var(--border); border-radius: 6px; padding: 2px 5px; }
+.daml-flows .flow-step { width: 100%; height: 100%; padding: 12px 16px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--card); color: var(--foreground); box-shadow: var(--shadow-sm); }
+.daml-flows .step-meta { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; line-height: 18px; }
+.daml-flows .step-kind { display: flex; align-items: center; gap: 5px; color: var(--muted-foreground); font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .07em; }
+.daml-flows .step-kind i { width: 5px; height: 5px; border-radius: 2px; background: currentColor; opacity: .8; }
+.daml-flows .step-number { font-size: 13px; color: var(--muted-foreground); font-variant-numeric: tabular-nums; opacity: .6; }
+.daml-flows .step-label { font-size: 22px; white-space: pre-line; overflow-wrap: anywhere; line-height: 30px; }
+.daml-flows .step-label strong { font-weight: 600; }
+.daml-flows .flow-step--exercise { border-top-color: var(--primary-border); }
+.daml-flows .flow-step--exercise .step-kind { color: var(--primary); }
+.daml-flows .flow-step--create { border-color: color-mix(in oklab, var(--success) 30%, var(--border)); background: color-mix(in oklab, var(--success) 5%, var(--card)); }
+.daml-flows .flow-step--create .step-kind { color: var(--success); }
+.daml-flows .flow-step--archive .step-kind { color: var(--muted-foreground); }
+.daml-flows .flow-step--decision, .daml-flows .flow-step--loop { border-color: var(--primary-border); background: color-mix(in oklab, var(--primary) 6%, var(--card)); }
+.daml-flows .flow-step--decision .step-kind, .daml-flows .flow-step--loop .step-kind { color: var(--primary); }
+.daml-flows .flow-step--decision .step-kind i { transform: rotate(45deg); border-radius: 0; }
+.daml-flows .flow-step--start, .daml-flows .flow-step--stop { width: 24px; height: 24px; padding: 0; border-radius: 50%; border: 5px solid var(--card); background: var(--muted-foreground); box-shadow: 0 0 0 1px var(--border); }
+.daml-flows .flow-step--stop { background: var(--foreground); }
+.daml-flows .terminal-label { position: absolute; left: 31px; top: -3px; font-size: 16px; line-height: 22px; color: var(--muted-foreground); white-space: nowrap; }
+.daml-flows .flow-step .react-flow__handle { opacity: 0; width: 1px; height: 1px; min-width: 1px; min-height: 1px; pointer-events: none; }
+.daml-flows .wire-label { position: absolute; border: 1px solid var(--border); background: var(--card); color: var(--muted-foreground); padding: 2px 7px; border-radius: 5px; font-size: 14px; line-height: 20px; }
+.daml-flows .flow-group { width: 100%; height: 100%; border: 2px dashed var(--muted-foreground); border-radius: var(--radius); }
+.daml-flows .flow-group-label { position: absolute; top: 12px; left: 16px; padding: 6px 12px; background: var(--card); color: var(--foreground); font-size: 20px; line-height: 28px; white-space: pre-line; }

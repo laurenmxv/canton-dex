@@ -1,0 +1,96 @@
+@startuml pool-provide-liquidity
+skinparamlocked dpiCommandLine 200
+title Provide liquidity
+
+<style>
+activityDiagram {
+  FontName Inter
+  FontSize 13
+  BackgroundColor #FFFFFF
+  activity {
+    BackgroundColor #FFFFFF
+    LineColor #64748B
+    LineThickness 1
+    RoundCorner 6
+    FontColor #0F172A
+    Padding 8
+    Margin 7
+  }
+  arrow {
+    LineColor #64748B
+    LineThickness 1.2
+    FontColor #4A5A6A
+    FontSize 11
+  }
+  swimlane {
+    LineColor #CBD5E1
+    LineThickness 1
+    FontColor #334155
+    FontStyle bold
+  }
+  circle {
+    BackgroundColor #334155
+    LineColor #334155
+  }
+  note {
+    BackgroundColor #FFFFFF
+    LineColor #CBD5E1
+    FontColor #475569
+    FontSize 11
+  }
+  .created {
+    BackgroundColor #ECFDF5
+    LineColor #34D399
+    FontColor #065F46
+  }
+}
+</style>
+
+|#F5F3FF|trader (LP)\nParty|
+|#F8FAFC|venueOperator\nParty|
+|#EFF6FF|DEX\nContracts · on-ledger|
+|#FFF7ED|CIP-0112\nToken contracts · on-ledger|
+
+|trader (LP)\nParty|
+start
+:Exercise **PoolAccess_RequestLiquidityDeposit**\non **PoolAccess**;
+|DEX\nContracts · on-ledger|
+:Validate **PoolAccess**, **KycAttestation**\nand signed deposit terms;
+|CIP-0112\nToken contracts · on-ledger|
+:Exercise **AllocationFactory_Allocate**\non **AllocationFactory**\n(base + quote + LP receipt);
+|DEX\nContracts · on-ledger|
+:Return **DepositRequest** record;
+-> separate transaction;
+|CIP-0112\nToken contracts · on-ledger|
+if (Allocations pending\nNext action?) then (recover after deadline)
+  group Optional recovery\nUnsettled allocations after the deadline {
+    |trader (LP)\nParty|
+    :Exercise **PoolAccess_RecoverAllocations**\non **PoolAccess**;
+    |DEX\nContracts · on-ledger|
+    :Validate access, KYC, trader,\npool and expired deadline;
+    |CIP-0112\nToken contracts · on-ledger|
+    :Exercise **Allocation_Withdraw**\non **Allocation**;
+    stop
+  }
+else (settle before deadline)
+endif
+
+|venueOperator\nParty|
+:Exercise **VenueDelegation_AddLiquidity**\non **VenueDelegation**;
+|DEX\nContracts · on-ledger|
+:Recheck each provider's **PoolAccess**\nand **KycAttestation**;
+:Exercise **Pool_AddLiquidity**\non **Pool**\n(dvo + venueOperator);
+while (Next deposit in batch?) is (yes)
+:Compute initial or proportional deposit\nusing **PoolConfig** + **PoolState**;
+:Check **minLpOut**, ratio bounds\nand deadline;
+|CIP-0112\nToken contracts · on-ledger|
+:Exercise **AllocationFactory_Allocate**\non **AllocationFactory**\n(pool reserves + LP mint);
+:Exercise **SettlementFactory_SettleBatch**\non **SettlementFactory**\n(deposits + refunds + LP mint);
+
+|DEX\nContracts · on-ledger|
+:Create **LiquidityReceipt**; <<created>>
+endwhile (no)
+:Archive **PoolState**;
+:Create **PoolState**\nwith final reserves, holdings and LP supply; <<created>>
+stop
+@enduml

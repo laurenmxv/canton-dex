@@ -35,4 +35,4 @@ Shared with [LP withdrawal](pool-withdraw-liquidity.md). Records the request ID,
 
 After `settlementDeadline`, the trader can exercise **`PoolAccess_RecoverAllocations`** on `PoolAccess` to withdraw the remaining allocations through **`Allocation_Withdraw`**. It requires current KYC and `PoolAccess`; allocations already withdrawn directly are omitted.
 
-![Pool provide liquidity flow](images/pool-provide-liquidity.png)
+Diagram source: [pool-provide-liquidity.puml](pool-provide-liquidity.puml). The DEX app renders it under Dev -> Docs -> Daml flows.

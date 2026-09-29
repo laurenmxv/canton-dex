@@ -1,0 +1,90 @@
+@startuml onboarding
+skinparamlocked dpiCommandLine 200
+<style>
+activityDiagram {
+  FontName Inter
+  FontSize 14
+  BackgroundColor #FFFFFF
+  activity {
+    BackgroundColor #FFFFFF
+    LineColor #334155
+    RoundCorner 6
+    FontColor #0F172A
+    Padding 10
+    Margin 10
+  }
+  arrow {
+    LineColor #64748B
+    LineThickness 1.2
+    FontColor #64748B
+    FontSize 12
+  }
+  swimlane {
+    LineColor #CBD5E1
+    FontColor #334155
+    FontStyle bold
+  }
+  circle {
+    BackgroundColor #334155
+    LineColor #334155
+  }
+  .created {
+    BackgroundColor #ECFDF5
+    LineColor #059669
+    FontColor #065F46
+  }
+}
+</style>
+
+title Onboarding
+
+|#ECFEFF|Trader\nUser · app + wallet|
+|#F8FAFC|DEX backend\nApp · off-ledger|
+|#F5F3FF|Venue operator\nUser · operator app|
+
+|#ECFEFF|Trader\nUser · app + wallet|
+start
+:Create account\nSubmit KYC documents\n(off-ledger);
+-> async;
+
+|#F5F3FF|Venue operator\nUser · operator app|
+:Review KYC\n(off-ledger);
+
+if (Approve application?) then (no)
+  :Reject application\n(off-ledger);
+  |#ECFEFF|Trader\nUser · app + wallet|
+  :View rejection;
+  stop
+else (yes)
+  |#F5F3FF|Venue operator\nUser · operator app|
+  :Approve selected pools\nConfirm party name\n(off-ledger);
+endif
+
+if (External party exists?\n(off-ledger)) then (yes)
+  |#ECFEFF|Trader\nUser · app + wallet|
+  :Sign wallet proof\n(off-ledger);
+  |#F5F3FF|Venue operator\nUser · operator app|
+  :Verify proof and link party\n(off-ledger);
+else (no)
+  |#ECFEFF|Trader\nUser · app + wallet|
+  :Connect wallet\nShare public key\n(off-ledger);
+  |#F8FAFC|DEX backend\nApp · off-ledger|
+  :Prepare party registration\nusing the wallet's public key;
+  |#ECFEFF|Trader\nUser · app + wallet|
+  :Sign prepared registration\nwith wallet\n(off-ledger);
+  |#F8FAFC|DEX backend\nApp · off-ledger|
+  :Register external party\n(Canton topology);
+endif
+
+|#F8FAFC|DEX backend\nApp · off-ledger|
+:Check hosting on venue participant,\nsynchronizer and required packages;
+:Confirm registration\nLink party to account;
+:Create and confirm\n**KycAttestation**\n(as venueOperator);
+:Create and confirm **PoolAccess**\nfor each approved pool\n(as venueOperator); <<created>>
+:Complete onboarding;
+-> visible to trader;
+
+|#ECFEFF|Trader\nUser · app + wallet|
+:View **KycAttestation**\nand **PoolAccess**;
+stop
+@enduml

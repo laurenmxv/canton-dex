@@ -24,4 +24,4 @@ This contract authorizes swaps, deposits, [liquidity withdrawals](pool-withdraw-
 
 The backend confirms the party's registration before issuing `KycAttestation` and then one `PoolAccess` per approved pool, as `venueOperator`. Onboarding completes after all contracts are confirmed.
 
-![Onboarding flow](images/onboarding.png)
+Diagram source: [onboarding.puml](onboarding.puml). The DEX app renders it under Dev -> Docs -> Daml flows.

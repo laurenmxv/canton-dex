@@ -25,7 +25,7 @@ Stores the proposed settings and factory reference.
 | **`PoolFactory_ProposePool`** (nonconsuming) | `venueOperator`. | Validates settings and creates a pending `PoolProposal`. |
 | **`PoolFactory_CreatePool`** (nonconsuming) | `dvo` and `venueOperator`, through `PoolProposal_Accept`. | Validates and archives the accepted proposal; creates `Pool`, `PoolConfig` and `PoolState` atomically. |
 
-![Pool creation flow](images/pool-creation.png)
+Diagram source: [pool-creation.puml](pool-creation.puml). The DEX app renders it under Dev -> Docs -> Daml flows.
 
 ## Created pool contracts
 

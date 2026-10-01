@@ -55,6 +55,7 @@ services:
       - contract-dars:/dars:ro
     depends_on:
       app-db: {condition: service_healthy}
+      keycloak: {condition: service_healthy}
       application-participant: {condition: service_healthy}
       contract-builder: {condition: service_completed_successfully}
   backend:

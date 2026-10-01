@@ -480,14 +480,14 @@
         "Automatic",
         "Recovery"
       ],
-      "source": "backend/src/main.ts:123",
+      "source": "backend/src/main.ts:128",
       "worker": true,
       "purpose": "Runs automatic settlement and recovery in independent background loops.",
       "note": "Started by main.ts, both loops run inside the backend process and bypass HTTP routing. Automatic dispatch follows each pool family's policy; recovery continues even when automatic dispatch is disabled. Each loop starts immediately and waits three seconds after its previous pass before repeating. The same worker utility also drives domain request reconciliation.",
       "documentation": {
         "format": "TSDoc",
         "path": "backend/src/main.ts",
-        "line": 123
+        "line": 128
       }
     },
     "backend.tokens": {

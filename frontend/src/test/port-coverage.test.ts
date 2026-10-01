@@ -157,6 +157,7 @@ async function walkEveryFlow(calls: Calls) {
     () => operator.admin.withdrawPoolProposal('prop-0001'),
     () => operator.admin.listPools(),
     () => alice.pools.get('pool-usdc-eurc'),
+    () => alice.pools.marketData('pool-usdc-eurc'),
     // The demo signs nothing and settles nothing, so it serves none of the
     // venue's real swap, balance or settlement routes either.
     () =>

@@ -133,6 +133,40 @@ describe('the pools an operator sees', () => {
 
     expect(calls[0]?.url).toBe(`${BASE}/v1/pools`);
   });
+
+  it('reads bounded market data from the selected pool with encoded query values', async () => {
+    const market = {
+      poolId: '00pool0001',
+      asOf: '2026-10-01T12:00:00Z',
+      interval: '1h',
+      spotPrice: '60000',
+      baseVolume24h: '2.5',
+      quoteVolume24h: '150000',
+      priceChangePercent24h: '1.25',
+      candles: [],
+      recentTrades: [],
+    };
+    const { client, calls } = clientWith(market);
+
+    await expect(
+      client.pools.marketData('pool a/b', { interval: '1h', candleLimit: 12, recentLimit: 7 }),
+    ).resolves.toEqual(market);
+
+    expect(calls[0]?.method).toBe('GET');
+    expect(calls[0]?.url).toBe(
+      `${BASE}/v1/pools/pool%20a%2Fb/market-data?interval=1h&candleLimit=12&recentLimit=7`,
+    );
+  });
+
+  it('carries cancellation and venue failures through the market-data call', async () => {
+    const controller = new AbortController();
+    const refused = clientWith({ title: 'Unavailable', status: 503 }, 503, 'application/problem+json');
+
+    await expect(
+      refused.client.pools.marketData('pool', undefined, { signal: controller.signal }),
+    ).rejects.toMatchObject({ kind: 'http', status: 503 });
+    expect(refused.calls[0]?.signal).toBe(controller.signal);
+  });
 });
 
 describe('what the venue refuses', () => {

@@ -130,3 +130,53 @@ export interface PoolCreationOptions {
   venueOperator: string;
   instruments: readonly RegisteredInstrument[];
 }
+
+/** One confirmed swap, normalized into the pool's base and quote instruments. */
+export interface MarketTrade {
+  swapId: string;
+  direction: 'BaseToQuote' | 'QuoteToBase';
+  baseAmount: string;
+  quoteAmount: string;
+  /** Quote units per base unit. */
+  executionPrice: string;
+  settledAt: string;
+}
+
+/** One non-empty UTC hour of confirmed execution history. */
+export interface MarketCandle {
+  startedAt: string;
+  open: string;
+  high: string;
+  low: string;
+  close: string;
+  baseVolume: string;
+  quoteVolume: string;
+  tradeCount: number;
+}
+
+/**
+ * A current reserve price and a rolling 24-hour confirmed-trade window.
+ *
+ * All financial values remain decimal strings. Empty hours are omitted,
+ * `spotPrice` is null for an empty pool, and change is null until two trades
+ * establish both boundaries.
+ */
+export interface MarketData {
+  poolId: string;
+  asOf: string;
+  interval: '1h';
+  spotPrice: string | null;
+  baseVolume24h: string;
+  quoteVolume24h: string;
+  priceChangePercent24h: string | null;
+  candles: readonly MarketCandle[];
+  recentTrades: readonly MarketTrade[];
+}
+
+export interface MarketDataQuery {
+  interval?: '1h';
+  /** Positive, with a venue maximum of 24. */
+  candleLimit?: number;
+  /** Positive, with a venue maximum of 20. */
+  recentLimit?: number;
+}

@@ -38,6 +38,7 @@ export function testClient(parts: {
     pools: {
       list: unused('pools.list'),
       get: unused('pools.get'),
+      marketData: unused('pools.marketData'),
       ...parts.pools,
     },
     swaps: {

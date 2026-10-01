@@ -16,6 +16,10 @@ export type { Activity, ActivityQuery, RequestType, TaggedRequest } from './type
 export type {
   CreatePoolProposal,
   InstrumentId,
+  MarketCandle,
+  MarketData,
+  MarketDataQuery,
+  MarketTrade,
   PoolAccount,
   PoolCreationOptions,
   PoolDetail,

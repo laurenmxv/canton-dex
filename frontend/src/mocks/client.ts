@@ -93,6 +93,7 @@ export function createFixtureBackend(options: FixtureBackendOptions = {}): DexBa
         pools: {
           list: () => settle(() => demo.poolCatalogue(state, accountId)),
           get: absent('a pool of its own'),
+          marketData: absent('venue market data'),
         },
 
         // The demo signs nothing and settles nothing, so it serves none of the

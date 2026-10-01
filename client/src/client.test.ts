@@ -45,7 +45,7 @@ describe('the client surface', () => {
       'prepareParty',
       'submitApplication',
     ]);
-    expect(Object.keys(client.pools).sort()).toEqual(['get', 'list']);
+    expect(Object.keys(client.pools).sort()).toEqual(['get', 'list', 'marketData']);
     expect(Object.keys(client.swaps).sort()).toEqual([
       'activity',
       'get',

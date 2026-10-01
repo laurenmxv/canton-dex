@@ -78,6 +78,8 @@ export function venueClient(api: DexClient): DexClient {
     pools: {
       list: (options) => translate(api.pools.list(options)),
       get: (poolId, options) => translate(api.pools.get(poolId, options)),
+      marketData: (poolId, query, options) =>
+        translate(api.pools.marketData(poolId, query, options)),
     },
     swaps: {
       quote: (input, options) => translate(api.swaps.quote(input, options)),

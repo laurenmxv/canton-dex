@@ -61,6 +61,8 @@ After onboarding, exchange local test tokens: the trader signs a request and the
 3. Review the quote, click **Request swap**, confirm in MetaMask, and wait for **Queued for settlement** under **Your requests**.
 4. **Operator:** Open **Settlement**, choose the same pool, and click **Run batch**.
 5. **Trader:** Check the final status and tokens received under **Your requests**.
+   The selected pool's **Market data** panel updates its spot price, rolling
+   24-hour volumes, hourly candles, and confirmed trade tape after settlement.
 
 ## Liquidity
 

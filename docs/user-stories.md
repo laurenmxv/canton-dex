@@ -110,6 +110,22 @@ Example:
     pool details from the ledger.
   - **DAML:** -
 
+- **Review pool market data.** Can inspect the selected pool's current
+  quote-per-base spot price, rolling 24-hour confirmed volumes and price
+  change, hourly OHLC history, and recent confirmed trades.
+  **(Required role: authenticated `venue_user` or `venue_operator`)**
+
+  - **Frontend:** Places the market panel in the trader's pool/swap journey and
+    distinguishes loading, unavailable, empty-pool, no-trade, and refresh-error
+    states. Exact decimal strings label the plotted values.
+  - **Client:** Exposes `pools.marketData(poolId, query?, options?)` with typed
+    `1h` interval and bounded candle/trade limits.
+  - **Backend:** Derives the rolling window from confirmed settlement records
+    and settled swaps using scaled-integer decimal arithmetic. Restarting the
+    process cannot duplicate the tape because no separate projection is stored.
+  - **DAML:** No new contract or choice. Existing settlement remains the source
+    of confirmed token movement and pool reserve changes.
+
 ### Swaps
 
 - **Request a swap.** Can choose a pool for the desired pair, enter an amount,

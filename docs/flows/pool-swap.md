@@ -29,6 +29,21 @@ Settles the batch against the current `PoolConfig` and `PoolState`.
 
 The transfers, one `SwapReceipt` per swap, and one replacement `PoolState` for the batch commit atomically.
 
+## Confirmed market data
+
+The trader's market panel is deliberately off ledger. A confirmed settlement
+already records the authoritative batch time, fills, and before/after reserves
+in the backend's durable recovery journal. The market-data read joins that
+record to its settled swap requests and derives exact quote-per-base prices,
+24-hour volumes, sparse UTC-hour OHLC candles, and the recent trade tape.
+
+Only `CONFIRMED` batches and `SETTLED` swaps qualify. A submitted or unresolved
+request is not a trade, even if the browser has already displayed it in the
+trader's activity. Daml remains responsible for atomic token movement and pool
+state; the backend is responsible only for indexing and presenting confirmed
+evidence. This avoids adding a public reporting contract or changing settlement
+authorization.
+
 ## `template SwapReceipt`
 
 Records the settled terms, actual output, allocations, and batch reference.

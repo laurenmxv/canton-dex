@@ -38,6 +38,21 @@ requires `dvo` authorization.
 | --- | --- | --- | --- |
 | `GET /v1/pools` | `venue_user` or `venue_operator` | Return cached public pools, pairs, prices, liquidity, fees, and earnings for both roles. | - |
 | `GET /v1/pools/{poolId}` | `venue_user` or `venue_operator` | Return cached public details, plus permitted party-specific eligibility and disclosure status. | - |
+| `GET /v1/pools/{poolId}/market-data` | Any authenticated account | Return current reserve spot price, rolling 24-hour confirmed volume and price change, sparse hourly OHLC candles, and recent confirmed trades. Optional `interval=1h`, `candleLimit` (1–24), and `recentLimit` (1–20). | - |
+
+Market data is an off-ledger read model, not a new Daml contract. The current
+spot price is exact quote units per base unit from the latest pool reserves and
+is `null` while either reserve is zero. History is derived from durable
+`CONFIRMED` settlement batches joined to `SETTLED` swap requests; queued,
+unresolved, rejected, and cancelled work never appears. The 24-hour window is
+inclusive at both boundaries, candles use UTC epoch-hour buckets and omit empty
+hours, and recent trades are newest first.
+
+All amounts, prices, volumes, OHLC values, and percentage changes are decimal
+strings. Backend aggregation uses scaled integers and round-half-up division;
+consumers must not parse financial values into JavaScript floating-point
+numbers. Restarting the backend re-reads the settlement journal, so there is no
+market projection to replay, duplicate, or repair.
 
 ## Swaps
 

@@ -141,6 +141,7 @@ CREATE TABLE IF NOT EXISTS swap_requests (
 
 CREATE UNIQUE INDEX IF NOT EXISTS swap_queue_sequence ON swap_requests ((terms->>'poolId'),arrival_sequence) WHERE arrival_sequence IS NOT NULL;
 CREATE INDEX IF NOT EXISTS swap_owner_activity ON swap_requests(account_id,created_at DESC,id DESC);
+CREATE INDEX IF NOT EXISTS swap_settlement_market ON swap_requests(settlement_id) WHERE settlement_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS swap_preparations (
     id UUID PRIMARY KEY,
@@ -180,6 +181,7 @@ CREATE TABLE IF NOT EXISTS settlement_batches (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS one_active_pool_settlement ON settlement_batches(pool_id) WHERE status IN ('PREPARING','SUBMITTING','UNRESOLVED');
+CREATE INDEX IF NOT EXISTS confirmed_pool_market ON settlement_batches(pool_id,updated_at,id) WHERE status='CONFIRMED';
 
 CREATE TABLE IF NOT EXISTS operator_commands (
     id UUID PRIMARY KEY,

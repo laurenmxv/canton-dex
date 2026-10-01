@@ -69,7 +69,14 @@ function requestPath(url: string): string {
 function accessRule(path: string): Access {
   const under = (prefix: string) => path === prefix || path.startsWith(`${prefix}/`);
   if (under('/actuator/health')) return 'permitAll';
-  if (path === '/v1/me' || path === '/v1/pools' || /^\/v1\/pools\/[^/]*$/.test(path)) return 'authenticated';
+  if (
+    path === '/v1/me' ||
+    path === '/v1/pools' ||
+    /^\/v1\/pools\/[^/]*$/.test(path) ||
+    /^\/v1\/pools\/[^/]+\/market-data$/.test(path)
+  ) {
+    return 'authenticated';
+  }
   if (under('/v1/admin')) return 'OPERATOR';
   if (under('/v1/onboardings')) return 'TRADER';
   if (['/v1/swaps', '/v1/lp', '/v1/dev/faucet'].some(under) || path === '/v1/activity' || path === '/v1/balances') {

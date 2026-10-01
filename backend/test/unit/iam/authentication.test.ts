@@ -42,11 +42,21 @@ describe('account authentication', () => {
       return reply.send({});
     });
     app.get('/v1/admin/onboardings', (_request, reply) => reply.send({}));
+    app.get('/v1/pools/pool-1/market-data', (_request, reply) => reply.send({}));
 
     const authorization = `Bearer ${token}`;
     expect((await app.inject({ method: 'GET', url: '/v1/me', headers: { authorization } })).statusCode).toBe(200);
     expect(seen?.account).toBe(account);
     expect(seen?.accessToken).toBe(token);
+    expect(
+      (
+        await app.inject({
+          method: 'GET',
+          url: '/v1/pools/pool-1/market-data',
+          headers: { authorization },
+        })
+      ).statusCode,
+    ).toBe(200);
     // Database roles are authoritative: the token's OPERATOR claim grants nothing.
     expect(
       (await app.inject({ method: 'GET', url: '/v1/admin/onboardings', headers: { authorization } })).statusCode,

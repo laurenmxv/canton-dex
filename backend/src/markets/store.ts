@@ -1,5 +1,5 @@
 import type { Db } from '../platform/database.js';
-import { instantText } from '../platform/time.js';
+import { instantText, isoInstant } from '../platform/time.js';
 import { readSwap } from '../swaps/store.js';
 import type { TradeEvidence } from './model.js';
 
@@ -33,7 +33,7 @@ export class MarketStore {
         direction: swap.direction,
         amountIn: swap.amountIn,
         amountOut: swap.amountOut,
-        settledAt: row.settled_at,
+        settledAt: isoInstant(row.settled_at),
       };
     });
   }

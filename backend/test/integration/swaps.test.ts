@@ -240,6 +240,20 @@ describe.runIf(scenario('swaps'))('swaps', () => {
         );
         expectAmount(balance(await traderBalances(alice), 'USDC', 'locked'), '0');
         await allocations(ledger, await f.token(alice.name), alice.party, first, false);
+        const market = await f.request(
+          'GET',
+          `/v1/pools/${btc}/market-data`,
+          await f.token(alice.name),
+          undefined,
+          200,
+        );
+        expect(text(market, 'spotPrice')).not.toBe('');
+        expect(numericUnits(text(market, 'baseVolume24h'))).toBeGreaterThan(0n);
+        expect(numericUnits(text(market, 'quoteVolume24h'))).toBeGreaterThan(0n);
+        expect(items(market, 'candles')).not.toHaveLength(0);
+        expect(items(market, 'recentTrades')).toContainEqual(
+          expect.objectContaining({ swapId: text(first, 'swapId'), direction: 'QuoteToBase' }),
+        );
         await f.request(
           'POST',
           `/v1/admin/pools/${btc}/settlements`,

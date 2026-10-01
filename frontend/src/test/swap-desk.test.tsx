@@ -4,7 +4,13 @@ import { describe, expect, it, vi } from 'vitest';
 import { DexProvider, type Session } from '../app/runtime';
 import { SwapDesk } from '../features/swap/SwapDesk';
 import type { DexClient } from '../lib/api/port';
-import { DomainError, type FaucetResult, type SubmitSignatureInput, type Swap } from '../lib/api/types';
+import {
+  DomainError,
+  type FaucetResult,
+  type MarketData,
+  type SubmitSignatureInput,
+  type Swap,
+} from '../lib/api/types';
 import { WalletError, type CantonWallet } from '../wallet/types';
 import { testClient } from './clients';
 import { testWallet } from './wallets';
@@ -31,6 +37,45 @@ const CLAIMED: FaucetResult = {
   errorCode: null,
   error: null,
 };
+const MARKET: MarketData = {
+  poolId: POOL_ID,
+  asOf: '2026-10-01T12:00:00Z',
+  interval: '1h',
+  spotPrice: '60000',
+  baseVolume24h: '1.5',
+  quoteVolume24h: '91000',
+  priceChangePercent24h: '3.3333333333',
+  candles: [
+    {
+      startedAt: '2026-10-01T11:00:00Z',
+      open: '60000',
+      high: '62000',
+      low: '60000',
+      close: '62000',
+      baseVolume: '1.5',
+      quoteVolume: '91000',
+      tradeCount: 2,
+    },
+  ],
+  recentTrades: [
+    {
+      swapId: 'market-swap-2',
+      direction: 'QuoteToBase',
+      baseAmount: '0.5',
+      quoteAmount: '31000',
+      executionPrice: '62000',
+      settledAt: '2026-10-01T11:45:00Z',
+    },
+    {
+      swapId: 'market-swap-1',
+      direction: 'BaseToQuote',
+      baseAmount: '1',
+      quoteAmount: '60000',
+      executionPrice: '60000',
+      settledAt: '2026-10-01T11:05:00Z',
+    },
+  ],
+};
 
 type Parts = Parameters<typeof testClient>[0];
 
@@ -42,6 +87,7 @@ function desk(parts: Parts = {}, wallet: CantonWallet = signingWallet()) {
     pools: {
       list: () => Promise.resolve([{ poolId: POOL_ID, name: POOL.name }]),
       get: () => Promise.resolve(POOL),
+      marketData: () => Promise.resolve(MARKET),
       ...parts.pools,
     },
     tokens: {
@@ -448,6 +494,62 @@ describe('which pools are open', () => {
   });
 });
 
+describe('the selected pool market', () => {
+  it('shows exact confirmed-only summary, candles and newest-first trades', async () => {
+    desk();
+
+    expect(await screen.findByText('Market data')).toBeInTheDocument();
+    expect(screen.getAllByText('60,000.00 USDC / BTC')).not.toHaveLength(0);
+    expect(screen.getByText('+3.3333333333%')).toBeInTheDocument();
+    expect(screen.getByText('1.50 BTC')).toBeInTheDocument();
+    expect(
+      screen.getByRole('img', { name: 'Hourly BTC price in USDC; 1 non-empty hours' }),
+    ).toBeInTheDocument();
+    const trades = screen.getByText('Recent confirmed trades').parentElement!;
+    const rows = within(trades).getAllByRole('row');
+    expect(rows[1]).toHaveTextContent('31,000.00 USDC');
+    expect(rows[2]).toHaveTextContent('60,000.00 USDC');
+    expect(screen.getByText(/Confirmed settlements only/)).toBeInTheDocument();
+  });
+
+  it('distinguishes an empty pool and a no-trade window from a load failure', async () => {
+    desk({
+      pools: {
+        marketData: () =>
+          Promise.resolve({
+            ...MARKET,
+            spotPrice: null,
+            baseVolume24h: '0',
+            quoteVolume24h: '0',
+            priceChangePercent24h: null,
+            candles: [],
+            recentTrades: [],
+          }),
+      },
+    });
+
+    expect(
+      await screen.findByText('Unavailable until the pool has liquidity'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('No confirmed trades in the last 24 hours')).toBeInTheDocument();
+    expect(screen.getByText('No trades to show yet.')).toBeInTheDocument();
+    expect(screen.getByText('Not enough trades')).toBeInTheDocument();
+  });
+
+  it('offers a retry when market data cannot be loaded', async () => {
+    const marketData = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('Market feed unavailable'))
+      .mockResolvedValue(MARKET);
+    const user = desk({ pools: { marketData } });
+
+    expect(await screen.findByText('Market feed unavailable')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /try again/i }));
+    expect(await screen.findAllByText('60,000.00 USDC / BTC')).not.toHaveLength(0);
+    expect(marketData).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('a submission whose reply never arrives', () => {
   it('recovers the request from the venue rather than asking for another signature', async () => {
     // The venue took the submission and only the answer was lost, so the
@@ -524,8 +626,10 @@ describe('what the ledger does to a balance', () => {
     let history: Swap[] = [swap({ status: 'READY' })];
     let held = BALANCES;
     const balances = vi.fn(() => Promise.resolve(held));
+    const marketData = vi.fn(() => Promise.resolve(MARKET));
 
     desk({
+      pools: { marketData },
       tokens: { balances, faucetStatus: () => Promise.resolve(CLAIMED) },
       swaps: { activity: () => Promise.resolve({ items: history, nextCursor: null }) },
     });
@@ -552,6 +656,7 @@ describe('what the ledger does to a balance', () => {
     // The poll notices the settlement, and the holdings follow from it.
     expect(await screen.findByText('Settled', {}, { timeout: 10_000 })).toBeInTheDocument();
     await waitFor(() => expect(balances.mock.calls.length).toBeGreaterThan(reads));
+    await waitFor(() => expect(marketData.mock.calls.length).toBeGreaterThan(1));
     expect(await screen.findByText('0.05 BTC available')).toBeInTheDocument();
   });
 

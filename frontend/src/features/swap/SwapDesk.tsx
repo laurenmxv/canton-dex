@@ -20,6 +20,7 @@ import { Balances } from '../tokens/Balances';
 import { useWalletSigner } from '../wallet/signing';
 import { SigningKey } from '../wallet/SigningKey';
 import { hasOutstanding, SwapActivity } from './SwapActivity';
+import { MarketDataPanel } from './MarketDataPanel';
 import { SwapTicket } from './SwapTicket';
 import { eligiblePools } from './terms';
 
@@ -93,10 +94,6 @@ export function SwapDesk({
     },
   );
 
-  // The ledger moved this trader's funds whenever a request changed, so what
-  // they hold is read again rather than assumed.
-  useChange(lifecycle(activity.data), balances.reload);
-
   useEffect(() => {
     if (recovering !== undefined && shows(activity.data, recovering)) setRecovering(undefined);
   }, [activity.data, recovering]);
@@ -114,6 +111,26 @@ export function SwapDesk({
     [client, selected?.poolId],
     { enabled: selected !== undefined },
   );
+  const market = useAsync(
+    (signal) => client.pools.marketData(selected!.poolId, undefined, { signal }),
+    [client, selected?.poolId],
+    { enabled: selected !== undefined },
+  );
+
+  // A newly confirmed request changes both the trader's holdings and the pool's
+  // public tape. Both are re-read rather than inferred in the browser.
+  useChange(lifecycle(activity.data), () => {
+    balances.reload();
+    market.reload();
+  });
+  const activityLifecycle = lifecycle(activity.data);
+  useEffect(() => {
+    // If the first observed page already contains the transition (for example
+    // after a fast poll or remount), do not mistake it for a baseline.
+    if (!activityLifecycle?.includes(':SETTLED:')) return;
+    balances.reload();
+    market.reload();
+  }, [activityLifecycle, balances.reload, market.reload]);
 
   if (onboarding.loading && onboarding.data === undefined) {
     return <Loading label="Loading your account" />;
@@ -172,6 +189,14 @@ export function SwapDesk({
         )}
         <Balances balances={balances} />
       </div>
+
+      {selected ? (
+        <MarketDataPanel
+          market={market}
+          base={pool.data?.settings.baseInstrumentId.id ?? selected.name.split('/')[0]?.trim() ?? 'Base'}
+          quote={pool.data?.settings.quoteInstrumentId.id ?? selected.name.split('/')[1]?.trim() ?? 'Quote'}
+        />
+      ) : null}
 
       <SwapActivity
         activity={activity}
